@@ -1,0 +1,65 @@
+[metadata]
+language = "el"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (nominative and accusative forms)
+    "αυτός", "αυτή", "αυτό", "αυτοί", "αυτές", "αυτά",
+    "αυτόν", "αυτήν", "αυτούς",
+    # Demonstratives and spatial anaphora
+    "τούτος", "τούτη", "τούτο", "τούτοι", "τούτες", "τούτα",
+    "εκείνος", "εκείνη", "εκείνο", "εκείνοι", "εκείνες", "εκείνα",
+    "εδώ", "εκεί", "έτσι",
+    # Logical, causal, and discourse connectives
+    "επιπλέον", "επιπροσθέτως", "επίσης", "αφετέρου", "από την άλλη πλευρά", "εξάλλου",
+    "ωστόσο", "εντούτοις", "παρ' όλα αυτά", "παρόλα αυτά", "όμως", "αντιθέτως",
+    "επομένως", "συνεπώς", "κατά συνέπεια", "ως εκ τούτου", "για το λόγο αυτό",
+    "πράγματι", "στην πραγματικότητα", "ουσιαστικά", "με άλλα λόγια", "εν συντομία", "συμπερασματικά",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "και", "κι", "είτε", "ή", "μα", "αλλά", "όμως", "παρά",
+    # Subordinating conjunctions - causal and purpose
+    "επειδή", "γιατί", "μια και", "μιας και", "καθώς", "αφού", "διότι",
+    "ώστε", "για να",
+    # Subordinating conjunctions - concessive and conditional
+    "αν", "εάν", "άμα", "εκτός αν", "παρόλο που", "αν και", "μολονότι", "παρά το ότι",
+    # Subordinating conjunctions - temporal
+    "όταν", "όποτε", "ενώ", "καθώς", "αφού", "μόλις", "πριν", "προτού", "ώσπου", "όσο",
+    # Relative pronouns and locatives
+    "που", "ο οποίος", "η οποία", "το οποίο", "οι οποίοι", "οι οποίες", "τα οποία",
+    "όπου", "ό,τι",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Academic, ecclesiastic, and professional titles
+    "δρ.", "καθ.", "υφηγ.", "κ.", "κα.", "δις.", "π.", "αγ.",
+    # Citations, scholarly references, and publishing
+    "σελ.", "άρθρ.", "κεφ.", "τομ.", "παράγρ.", "αριθ.", "αρ.", "τεύχ.", "εκδ.",
+    # Chronology, units of measurement, and directions
+    "π.χ.", "δηλ.", "βλ.", "πρβλ.", "π.Χ.", "μ.Χ.", "χλμ.", "εκ.", "χιλ.",
+    "οδ.", "λεωφ.", "τηλ.",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "no.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "κ.λπ.", "κ.τ.λ.", "κ.ά.", "etc.", "al.",
+]

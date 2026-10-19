@@ -1,0 +1,64 @@
+[metadata]
+language = "nl"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_final"
+
+[discourse]
+discourse_starters = [
+    # Derde persoon anaforische en bezittelijke voornaamwoorden
+    "haar", "hare", "hem", "hen", "het", "hij", "hun", "ze", "zij", "zijn",
+    # Aanwijzende voornaamwoorden
+    "dat", "datgene", "deze", "dezen", "die", "diegene", "dit",
+    # Discoursverbinders en logische connectieven
+    "bijgevolg", "bovendien", "daarnaast", "daarom", "derhalve",
+    "desondanks", "echter", "evenwel", "immers", "kortom", "namelijk",
+    "niettemin", "nochtans", "overigens", "tevens", "vandaar",
+    "zodoende",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Neveschikkende voegwoorden
+    "doch", "en", "maar", "of", "want",
+    # Onderschikkende voegwoorden - reden, oorzaak en gevolg
+    "aangezien", "daar", "doordat", "omdat", "opdat", "vermits",
+    "waardoor", "zodat",
+    # Onderschikkende voegwoorden - toegeving en voorwaarde
+    "alhoewel", "als", "hoewel", "indien", "mits", "ofschoon",
+    "ook al", "op voorwaarde dat", "tenzij", "wanneer", "zelfs als",
+    # Onderschikkende voegwoorden - tijd
+    "aleer", "nadat", "sinds", "terwijl", "totdat", "voordat", "zodra",
+    # Betrekkelijk en inhoudelijk
+    "dat", "die", "waar", "wat", "wie",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "dhr.", "ds.", "dr.", "drs.", "ing.", "ir.", "mevr.", "mr.",
+    "prof.", "st.",
+    # General, academic, citations, and textual references
+    "art.", "bijv.", "blz.", "b.v.", "cf.", "d.w.z.", "dl.", "e.g.",
+    "enz.", "et al.", "etc.", "fig.", "hfdst.", "hoofdst.", "i.e.",
+    "i.p.v.", "m.a.w.", "m.b.t.", "no.", "nr.", "n.v.t.", "o.a.",
+    "p.", "pp.", "red.", "resp.", "t.a.v.", "tab.", "t.o.v.", "uitg.",
+    "v.w.b.", "zg.", "zgn.", "z.b.", "z.o.",
+    # Commercial, administrative, temporal, and metrics
+    "afd.", "ca.", "coöp.", "max.", "min.", "n.v.", "ong.", "pl.",
+    "sec.", "str.", "uur.", "v.o.f.",
+]
+conditional_end_prefixes = [
+    "enz.", "b.v.", "d.w.z.", "m.b.t.", "ca.", "jl.",
+]

@@ -1,0 +1,74 @@
+[metadata]
+language = "eu"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_final"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and case forms
+    "hura", "hark", "hari", "haren", "harentzat", "harekin", "harengatik",
+    "haiek", "haiei", "haien", "haientzat", "haiekin",
+    "bera", "berak", "berari", "beraren", "beraiek", "beraiei", "beraien",
+    # Demonstratives and spatial anaphora
+    "hau", "honek", "honi", "honen", "honekin",
+    "hauek", "hauei", "hauen", "hauekin",
+    "hori", "horrek", "horri", "horren", "horrekin",
+    "horiek", "horiei", "horien", "horiekin",
+    "hemen", "hor", "han", "hemendik", "hortik", "handik",
+    "honela", "horrela", "hala", "halako", "honelako", "horrelako",
+    # Discourse connectives and logical transitions
+    "gainera", "bestalde", "hala ere", "dena den", "ordea", "aldiz",
+    "beraz", "hortaz", "ondorioz", "horregatik", "haatik", "laburbilduz",
+    "azkenik", "egia esan", "hain zuzen ere", "izan ere", "alabaina",
+    "behintzat", "behintzat ere", "hasteko", "bestela", "oro har",
+    "azken finean",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "eta", "edo", "ala", "baina", "ordea", "aldiz", "baizik", "baizik eta",
+    "beraz", "halaber",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "zeren", "zergatik", "asmoz", "xedez",
+    # Subordinating conjunctions - concessive and conditional
+    "baldin eta", "nahiz eta", "arren",
+    # Subordinating conjunctions - temporal
+    "bitartean", "arte", "orduko", "bezain laster", "ondoren", "aurretik",
+    # Relative pronouns, comparatives, and interrogatives
+    "non", "nola", "zergatik", "nork", "zer", "zein", "bezala",
+    "moduan", "baino", "bezain",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Jn.", "And.", "Jaun.", "Andre.", "Ing.", "Liz.", "Adk.",
+    # Scholarly, textual, and editorial
+    "etab.", "eab.", "adib.", "h.da.", "or.", "orr.", "kap.", "znb.",
+    "zk.", "zenb.", "arg.", "itz.", "ik.", "ikus", "adibidez",
+    "K.a.", "K.o.", "mendea.", "eransk.", "dok.", "orld.",
+    # Corporate, administrative, spatial, and metrics
+    "S.L.", "S.A.", "tel.", "pk.", "kalea", "km.", "kg.", "m.",
+    "cm.", "seg.", "min.", "ordu", "eur.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "etab.", "eab.", "adib.", "h.da.", "etc.", "al.", "ik.", "ikus",
+]
+
+[detection]
+substring_terms = ["Kaixo", "kaixo", "egun on", "Donostia", "Donostian", "eskerrik asko"]

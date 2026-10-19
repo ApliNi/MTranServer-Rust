@@ -1,0 +1,82 @@
+[metadata]
+language = "lt"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and oblique forms
+    "jis", "Jis", "ji", "Ji", "jie", "Jie", "jos", "Jos",
+    "jį", "Jį", "ją", "Ją", "juos", "Juos", "jas", "Jas",
+    "jam", "Jam", "jai", "Jai", "jiems", "Jiems", "joms", "Joms",
+    "jo", "Jo", "jų", "Jų",
+    "juo", "Juo", "ja", "Ja", "jais", "Jais", "jomis", "Jomis",
+    # Demonstratives
+    "tai", "Tai", "šis", "Šis", "ši", "Ši", "šie", "Šie", "šios", "Šios",
+    "šito", "Šito", "šitam", "Šitam", "šituo", "Šituo",
+    "tas", "Tas", "ta", "Ta", "tie", "Tie", "tos", "Tos",
+    "to", "To", "tam", "Tam", "tuo", "Tuo",
+    "anas", "Anas", "ana", "Ana", "anie", "Anie", "anos", "Anos",
+    "toks", "Toks", "tokia", "Tokia", "tokie", "Tokie", "tokios", "Tokios",
+    "čia", "Čia", "ten", "Ten",
+    # Discourse connectives and transitions
+    "be to", "Be to", "negana to", "Negana to", "vis dėlto", "Vis dėlto",
+    "tačiau", "Tačiau", "visgi", "Visgi", "kita vertus", "Kita vertus",
+    "atvirkščiai", "Atvirkščiai", "todėl", "Todėl", "vadinasi", "Vadinasi",
+    "taigi", "Taigi", "galiausiai", "Galiausiai", "iš tiesų", "Iš tiesų",
+    "beje", "Beje", "pavyzdžiui", "Pavyzdžiui", "būtent", "Būtent",
+    "žinoma", "Žinoma", "deja", "Deja", "laimei", "Laimei",
+    "visų pirma", "Visų pirma", "pirmiausia", "Pirmiausia", "antra vertus", "Antra vertus",
+    "trumpai tariant", "Trumpai tariant", "kitaip tariant", "Kitaip tariant",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "ir", "bei", "o", "bet", "tačiau", "vis dėlto", "visgi",
+    "arba", "ar", "tad", "taigi", "todėl",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "nes", "kadangi", "kad", "jog", "tam kad", "idant",
+    # Subordinating conjunctions - concessive and conditional
+    "nors", "nors ir", "jei", "jeigu", "kuomet", "nebent",
+    # Subordinating conjunctions - temporal
+    "kai", "kada", "kol", "iki", "vos tik", "prieš tai kai", "po to kai",
+    # Comparative and modal
+    "tarytum", "lyg", "tarsi",
+    # Relative pronouns and locatives
+    "kuris", "kuri", "kurie", "kurios", "kas", "kur", "kame", "iš kur", "kaip",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "doc.", "dr.", "gen.", "habil. dr.", "inž.", "kpt.", "kun.", "mgr.",
+    "mjr.", "p.", "p-as.", "p-nė.", "pirm.", "plk.", "prof.", "šv.", "vysk.",
+    # Scholarly, textual, and editorial
+    "art.", "d.", "el.", "leid.", "lent.", "nr.", "pal.", "pav.", "psl.",
+    "pusl.", "pvz.", "red.", "sk.", "skyr.", "str.", "t.", "t. y.", "t.y.",
+    "vert.", "žr.",
+    # Administrative, spatial, and corporate
+    "aikšt.", "apskr.", "but.", "g.", "k.", "pr.", "raj.", "vlsč.",
+    # Time, metrics, currency, and quantities
+    "a.", "ct.", "m.", "m. e.", "m. e. p.", "min.", "mld.", "mln.",
+    "pr. m. e.", "sek.", "tūkst.", "val.",
+    # International Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "e.g.", "et al.", "etc.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "ir t. t.", "ir kt.", "ir pan.", "t. y.", "pvz.", "m.", "a.",
+    "pr. m. e.", "m. e.", "etc.", "al.",
+]

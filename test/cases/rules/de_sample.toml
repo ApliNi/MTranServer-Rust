@@ -1,0 +1,22 @@
+[metadata]
+language = "de"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.0
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[abbreviations]
+nonbreaking_prefixes = ["Dr.", "Prof.", "z. B.", "ca.", "d. h."]
+conditional_end_prefixes = ["usw.", "bzw.", "etc.", "al."]
+
+[conjunctions]
+clause_conjunctions = ["aber", "denn", "obwohl", "weil", "jedoch", "sondern"]
+
+[discourse]
+discourse_starters = ["er", "sie", "es", "dieser", "diese", "dieses", "deshalb", "daher"]

@@ -1,0 +1,78 @@
+[metadata]
+language = "de"
+version = "1.1.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.30
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_final"
+
+predicate_verbs = ["ist", "sind", "war", "waren", "hat", "haben", "wird", "werden", "kann", "muss", "geht", "ging"]
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (nominative, accusative, dative)
+    "er", "es", "ihm", "ihn", "ihnen", "ihr", "sie",
+    # Possessive determiners and pronouns
+    "ihre", "ihrem", "ihren", "ihrer", "ihres", "seine", "seinem",
+    "seinen", "seiner", "seines",
+    # Demonstratives
+    "das", "dies", "diese", "diesem", "diesen", "dieser", "dieses",
+    "jene", "jenem", "jenen", "jener", "jenes",
+    # Anaphoric discourse adverbs and connectives
+    "allerdings", "außerdem", "dagegen", "daher", "darüber hinaus",
+    "darum", "demnach", "dennoch", "deshalb", "folglich", "hingegen",
+    "infolgedessen", "jedoch", "nämlich", "schließlich", "somit",
+    "trotzdem", "überdies", "zudem", "zuerst",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "aber", "allein", "denn", "doch", "oder", "sondern", "und",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "da", "damit", "dass", "daß", "so dass", "sodass", "weil", "weshalb",
+    "weswegen", "zumal",
+    # Subordinating conjunctions - concessive and conditional
+    "auch wenn", "falls", "obgleich", "obschon", "obwohl", "selbst wenn",
+    "sofern", "vorausgesetzt", "wenngleich", "wenn",
+    # Subordinating conjunctions - temporal
+    "als", "bevor", "bis", "ehe", "nachdem", "seit", "seitdem", "sobald",
+    "solange", "während",
+    # Subordinating conjunctions - modal, comparative, and interrogative
+    "als ob", "als wenn", "anstatt dass", "indem", "ob", "ohne dass", "wie",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dipl.-Ing.", "Dr.", "Fr.", "Frl.", "Hr.", "Hrn.", "Ing.", "Mag.",
+    "Prof.",
+    # Academic, citations, and textual references
+    "Abb.", "Abs.", "Abschn.", "Art.", "Bd.", "Bde.", "bzgl.", "bzw.",
+    "ca.", "cf.", "d. h.", "d.h.", "e. g.", "et al.", "etc.", "evtl.", "f.",
+    "ff.", "ggf.", "i. e.", "inkl.", "exkl.", "Kap.", "Nr.", "Nrn.",
+    "Par.", "s. o.", "s. u.", "s.o.", "s.u.", "S.", "sog.", "Tab.",
+    "u. a.", "u.a.", "u. Ä.", "u.Ä.", "u. z.", "u.z.", "vgl.", "usw.",
+    "z. B.", "z.B.", "z. T.", "z.T.", "Ziff.",
+    # Corporate and legal entities
+    "AG.", "e. V.", "GbR.", "GmbH.", "KG.", "KGaA.", "Ltd.", "OHG.",
+    "Inc.",
+    # Units, dates, temporal and spatial designations
+    "Geb.", "Gbg.", "Jh.", "Jhr.", "Min.", "Mio.", "Mrd.", "Pl.",
+    "Sek.", "Std.", "Str.", "Tsd.", "Ztr.",
+]
+conditional_end_prefixes = [
+    "usw.", "bzw.", "u. a.", "z. B.", "d. h.", "etc.", "evtl.", "ca.",
+]
+
+[detection]
+distinctive_chars = ['ß', 'ẞ']

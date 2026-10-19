@@ -1,0 +1,66 @@
+[metadata]
+language = "he"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (subject, object, possessive)
+    "הוא", "היא", "הם", "הן",
+    "אותו", "אותה", "אותם", "אותן",
+    "שלו", "שלה", "שלהם", "שלהן",
+    # Demonstratives and spatial anaphora
+    "זה", "זאת", "זו", "אלה", "אלו", "הללו",
+    "כאן", "פה", "שם", "שמה",
+    # Logical, causal, and discourse connectives
+    "בנוסף לכך", "בנוסף", "יתר על כן", "כמו כן", "על כן", "לפיכך",
+    "אי לכך", "מכאן ש", "תוצאה מכך", "משום כך", "בשל כך",
+    "לעומת זאת", "מאידך גיסא", "מצד שני", "עם זאת", "למרות זאת",
+    "אף על פי כן", "בכל זאת", "אולם", "ברם", "אלא ש",
+    "למעשה", "בפועל", "לאמיתו של דבר", "במילים אחרות", "לסיכום", "בקיצור",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "אבל", "אך", "אולם", "ברם", "אלא",
+    # Subordinating conjunctions - causal and purpose
+    "כי", "מפני ש", "משום ש", "הואיל ו", "היות ש", "מאחר ש", "כיוון ש",
+    "בגלל ש", "כדי ש", "למען", "על מנת ש", "עד ש",
+    # Subordinating conjunctions - concessive and conditional
+    "אם", "אילו", "לו", "אילולא", "לולא", "אלא אם כן", "אלא אם",
+    "אף כי", "אף על פי ש", "גם אם", "אפילו", "למרות ש", "אף ש",
+    # Subordinating conjunctions - temporal
+    "כאשר", "כש", "בעת ש", "בזמן ש", "בשעה ש", "אחרי ש", "לאחר ש",
+    "לפני ש", "בטרם", "מרגע ש", "מאז ש", "כל עוד",
+    # Relative pronouns and locatives
+    "אשר", "היכן ש", "איפה ש", "לאן ש",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Honorifics, military, and professional titles
+    "ד\"ר", "פרופ'", "עו\"ד", "רו\"ח", "ח\"כ", "רב\"ס", "סג\"ן", "אל\"ם", "תא\"ל", "אלוף",
+    # Citations, administrative, and publications
+    "מס'", "עמ'", "כרך", "סעיף", "שנ'", "ת\"ד", "רח'", "טל'",
+    # Traditional Hebrew abbreviations and chronology
+    "לפה\"ס", "לספירה", "ז\"ל", "שליט\"א", "ע\"ע", "הנ\"ל",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "no.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "וכו'", "וכדו'", "וכיו\"ב", "וכדומה", "etc.", "al.",
+]

@@ -1,0 +1,175 @@
+name: 发布
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建 (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: ""
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: ".exe"
+          - name: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            suffix: ""
+          - name: macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: 构建
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target "${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/MTranServer-Rust${{ matrix.suffix }}" "mtranserver${{ matrix.suffix }}"
+
+      - name: 打包
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "mtranserver-${{ matrix.name }}.tar.gz" "mtranserver${{ matrix.suffix }}"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: mtranserver-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: 创建发布
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 读取版本并校验
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version=$(sed -nE 's/^\s*version\s*=\s*"([^"]+)".*/\1/p' Cargo.toml | head -1)
+          if [[ -z "$version" ]]; then
+            echo "无法从 Cargo.toml 读取 version" >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "version 格式不正确: $version" >&2
+            exit 1
+          fi
+
+          expected_tag="v$version"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            echo "发布必须在 tag 上触发, 手动运行时请选择与版本一致的 tag" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF_NAME}" != "$expected_tag" ]]; then
+            echo "Git tag (${GITHUB_REF_NAME}) 必须与 Cargo.toml 中的版本 ($expected_tag) 一致" >&2
+            exit 1
+          fi
+
+          echo "version=$expected_tag" >> "$GITHUB_OUTPUT"
+
+      - name: 下载产物
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成校验和
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum mtranserver-*.tar.gz > checksums.txt
+
+      - name: 生成发布内容
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          previous_tag=$(git describe --tags --abbrev=0 "${{ steps.version.outputs.version }}^" 2>/dev/null || true)
+
+          sed 's/^          //' > release-notes.md <<'EOF'
+
+          <details><summary>变更内容</summary>
+
+          EOF
+
+          if [[ -n "$previous_tag" ]]; then
+            git log --pretty=format:'- %s (%h)' "$previous_tag..${{ steps.version.outputs.version }}" >> release-notes.md
+          else
+            git log --pretty=format:'- %s (%h)' "${{ steps.version.outputs.version }}" >> release-notes.md
+          fi
+
+          cat >> release-notes.md <<'EOF'
+
+          </details>
+          EOF
+
+          if [[ ! -s release-notes.md ]]; then
+            echo "生成发布内容失败" >&2
+            exit 1
+          fi
+
+      - name: 创建或更新发布
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$VERSION" \
+              --prerelease \
+              --notes-file release-notes.md
+          else
+            gh release create "$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$VERSION" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --verify-tag
+          fi
+
+          gh release upload "$VERSION" dist/mtranserver-*.tar.gz dist/checksums.txt \
+            --clobber --repo "$GITHUB_REPOSITORY"

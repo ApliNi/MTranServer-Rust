@@ -1,0 +1,19 @@
+{
+	"name": "MTranServer-Rust",
+	"short_name": "MTranServer-Rust",
+	"description": "Translation Server powered by Mozilla Firefox Translations",
+	"start_url": "/",
+	"display": "standalone",
+	"orientation": "any",
+	"background_color": "#202124",
+	"theme_color": "#3871e0",
+	"categories": ["utilities", "productivity"],
+	"icons": [
+		{
+			"src": "./favicon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any maskable"
+		}
+	]
+}

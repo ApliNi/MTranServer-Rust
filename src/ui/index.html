@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="description" content="Free, self-hosted neural machine translation web UI built on the Mozilla Firefox Translations engine in pure Rust. Translate text between dozens of language pairs offline in your browser.">
+	<meta property="og:title" content="MTranServer-Rust">
+	<meta property="og:type" content="website">
+	<meta property="og:description" content="Free, self-hosted neural machine translation web UI built on the Mozilla Firefox Translations engine in pure Rust. Translate text between dozens of language pairs offline in your browser.">
+	<meta name="twitter:card" content="summary">
+	<meta name="color-scheme" content="light dark">
+	<meta name="theme-color" content="#3871e0">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="mobile-web-app-capable" content="yes">
+	<title>MTranServer-Rust</title>
+	<base href="/${uiVersion}/">
+	<link rel="icon" type="image/svg+xml" href="./favicon.svg">
+	<link rel="manifest" href="./manifest.json">
+	<link rel="stylesheet" href="./ui.css">
+</head>
+
+<body>
+
+	<main class="translate-page">
+		<div class="language-bar" role="toolbar" aria-label="Language selection">
+			<div class="lang-select" id="sourceLangSelect" tabindex="0" role="combobox" aria-haspopup="listbox"
+				aria-expanded="false">
+				<span class="lang-label" id="sourceLangLabel"></span>
+				<span class="lang-caret" aria-hidden="true">
+					<svg viewBox="0 0 24 24" width="18" height="18">
+						<path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+					</svg>
+				</span>
+			</div>
+
+			<button class="swap-btn" id="swapBtn" type="button" data-i18n-aria="swap" data-i18n-title="swap">
+				<svg viewBox="0 0 24 24" width="22" height="22">
+					<path fill="currentColor" d="M16.01 11H4v2h12.01v3L20 12l-3.99-4z" />
+				</svg>
+			</button>
+
+			<div class="lang-select" id="targetLangSelect" tabindex="0" role="combobox" aria-haspopup="listbox"
+				aria-expanded="false">
+				<span class="lang-label" id="targetLangLabel"></span>
+				<span class="lang-caret" aria-hidden="true">
+					<svg viewBox="0 0 24 24" width="18" height="18">
+						<path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+					</svg>
+				</span>
+			</div>
+		</div>
+
+		<div class="editor-panel">
+			<section class="editor source-editor">
+				<div class="editor-toolbar">
+					<span class="result-status" id="detectedLang" hidden></span>
+					<span class="toolbar-spacer"></span>
+					<button class="icon-btn" id="srcCopyBtn" type="button" data-i18n-aria="copy" data-i18n-title="copy"
+						hidden>
+						<svg viewBox="0 0 24 24" width="18" height="18">
+							<path fill="currentColor"
+								d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+						</svg>
+					</button>
+					<button class="icon-btn" id="srcSpeakBtn" type="button" data-i18n-aria="listen"
+						data-i18n-title="listen" hidden>
+						<svg viewBox="0 0 24 24" width="18" height="18">
+							<path fill="currentColor"
+								d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+						</svg>
+					</button>
+					<button class="icon-btn" id="clearBtn" type="button" data-i18n-aria="clear" data-i18n-title="clear"
+						hidden>
+						<svg viewBox="0 0 24 24" width="18" height="18">
+							<path fill="currentColor"
+								d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+						</svg>
+					</button>
+				</div>
+				<textarea id="sourceText" class="editor-input" placeholder="Enter text"
+					data-i18n-placeholder="placeholder" rows="1" spellcheck="false" autocomplete="off"></textarea>
+				<span class="char-count" id="charCount">0</span>
+			</section>
+
+			<section class="editor target-editor">
+				<div class="editor-toolbar">
+					<span class="result-status" id="resultStatus" hidden></span>
+					<span class="toolbar-spacer"></span>
+					<button class="icon-btn" id="copyBtn" type="button" data-i18n-aria="copy" data-i18n-title="copy"
+						hidden>
+						<svg viewBox="0 0 24 24" width="18" height="18">
+							<path fill="currentColor"
+								d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+						</svg>
+					</button>
+					<button class="icon-btn" id="speakBtn" type="button" data-i18n-aria="listen"
+						data-i18n-title="listen" hidden>
+						<svg viewBox="0 0 24 24" width="18" height="18">
+							<path fill="currentColor"
+								d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+						</svg>
+					</button>
+				</div>
+				<div class="output-text" id="outputText" role="region" aria-live="polite"></div>
+				<span class="char-count" id="outputCharCount"></span>
+			</section>
+		</div>
+	</main>
+
+	<footer class="app-footer">
+		<span>MTranServer-Rust <span id="appVersion"></span></span>
+	</footer>
+
+	<div class="dropdown" id="langDropdown" role="listbox" hidden>
+		<div class="dropdown-search">
+			<input type="text" id="langSearch" placeholder="Search languages" data-i18n-placeholder="searchPlaceholder"
+				autocomplete="off">
+		</div>
+		<div class="dropdown-list" id="langList"></div>
+	</div>
+
+	<div class="modal-overlay" id="authModal" hidden>
+		<div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+			<h2 class="modal-title" id="authTitle" data-i18n="authTitle">Authentication required</h2>
+			<p class="modal-desc" id="authDesc" data-i18n="authDesc">This server requires an API token. Enter it to
+				continue.</p>
+			<input type="password" id="authTokenInput" class="modal-input" autocomplete="off" spellcheck="false">
+			<div class="modal-actions">
+				<button class="text-btn" id="authCancelBtn" type="button" data-i18n="authCancel">Cancel</button>
+				<button class="text-btn" id="authOkBtn" type="button" data-i18n="authSave">Save</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="toast" id="toast" hidden></div>
+
+	<script type="module" src="./ui.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,70 @@
+[metadata]
+language = "ar"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns
+    "هو", "هي", "هما", "هم", "هن",
+    "إياه", "إياها", "إياهما", "إياهم", "إياهن",
+    # Demonstratives and spatial anaphora
+    "هذا", "هذه", "هذان", "هاتان", "هؤلاء",
+    "ذلك", "تلك", "ذلكم", "أولئك",
+    "هنا", "هناك", "هنالك",
+    # Logical, causal, and discourse connectives
+    "بالإضافة إلى ذلك", "علاوة على ذلك", "فضلاً عن ذلك", "فضلا عن ذلك",
+    "من ناحية أخرى", "من جهة أخرى", "على النقيض من ذلك", "وعلى العكس من ذلك",
+    "ومع ذلك", "على الرغم من ذلك", "بالرغم من ذلك", "غير أن", "بيد أن",
+    "وبالتالي", "لذلك", "وبناءً على ذلك", "وبناء على ذلك", "نتيجة لذلك",
+    "في الواقع", "في الحقيقة", "في المقابل", "والجدير بالذكر",
+    "ومن ثم", "من ثم", "وهكذا", "وبعبارة أخرى", "وخلاصة القول", "باختصار",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "و", "أو", "أم", "ثم", "بل", "لكن", "لكنّ", "لا",
+    # Subordinating conjunctions - causal and purpose
+    "لأن", "بما أن", "حيث أن", "إذ أن", "نظراً لأن", "نظرا لأن", "طالما أن",
+    "لكي", "كي", "حتى", "من أجل أن", "بحيث", "لدرجة أن",
+    # Subordinating conjunctions - concessive and conditional
+    "إذا", "لو", "إن", "لو أن", "لولا", "ما لم", "طالما",
+    "على الرغم من", "رغم أن", "مع أن", "حتى لو", "سواء",
+    # Subordinating conjunctions - temporal
+    "عندما", "حين", "حينما", "بينما", "إذ", "إذا ما",
+    "بعد أن", "قبل أن", "ريثما", "منذ أن", "مذ", "بمجرد أن", "حالما",
+    # Relative pronouns and locatives
+    "الذي", "التي", "اللذان", "اللتان", "الذين", "اللاتي", "اللواتي", "اللائي",
+    "ما", "من", "حيث", "أينما", "كيفما", "حيثما",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Honorifics and scholarly titles
+    "د.", "أ.د.", "أ.", "م.", "الشيخ",
+    # Corporate and organizational entities
+    "ش.م.م.", "ش.م.ع.",
+    # Chronology, publication, and citation
+    "ق.م.", "هـ.", "ص.", "ص.ب.", "ت.", "س.", "ج.", "ط.", "تح.",
+    # Currency units
+    "ر.س.", "ج.م.", "د.إ.", "د.ك.", "د.أ.", "ل.ل.",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "fig.", "vol.", "no.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "إلخ.", "إلخ", "etc.", "al.",
+]

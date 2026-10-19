@@ -1,0 +1,88 @@
+[metadata]
+language = "sl"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (singular, dual, plural, and oblique)
+    "on", "On", "ona", "Ona", "ono", "Ono",
+    "onadva", "Onadva", "onidve", "Onidve",
+    "oni", "Oni", "one", "One", "ona", "Ona",
+    "ga", "Ga", "njega", "Njega", "jo", "Jo", "njo", "Njo",
+    "mu", "Mu", "njemu", "Njemu", "ji", "Ji", "njej", "Njej",
+    "ju", "Ju", "njiju", "Njiju", "jima", "Jima", "njima", "Njima",
+    "jih", "Jih", "njih", "Njih", "jim", "Jim",
+    # Demonstratives
+    "to", "To", "ta", "Ta", "te", "Te", "ti", "Ti",
+    "tega", "Tega", "temu", "Temu", "tem", "Tem",
+    "tole", "Tole", "tale", "Tale", "tele", "Tele",
+    "tisti", "Tisti", "tista", "Tista", "tisto", "Tisto", "tiste", "Tiste",
+    "oni", "Oni", "tak", "Tak", "taka", "Taka", "tako", "Tako", "taki", "Taki",
+    "takšen", "Takšen", "takšna", "Takšna", "takšno", "Takšno", "takšni", "Takšni",
+    "tukaj", "Tukaj", "tu", "Tu", "tam", "Tam",
+    # Discourse connectives and transitions
+    "poleg tega", "Poleg tega", "še več", "Še več", "seveda", "Seveda",
+    "vendarle", "Vendarle", "vendar", "Vendar", "kljub temu", "Kljub temu",
+    "po drugi strani", "Po drugi strani", "nasprotno", "Nasprotno",
+    "torej", "Torej", "zato", "Zato", "zatorej", "Zatorej",
+    "vsekakor", "Vsekakor", "končno", "Končno", "na koncu", "Na koncu",
+    "pravzaprav", "Pravzaprav", "dejansko", "Dejansko", "zlasti", "Zlasti",
+    "predvsem", "Predvsem", "žal", "Žal", "na srečo", "Na srečo",
+    "na primer", "Na primer", "prvič", "Prvič", "drugič", "Drugič",
+    "z drugimi besedami", "Z drugimi besedami",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "in", "pa", "ter", "a", "ampak", "toda", "vendar", "temveč", "marveč",
+    "ali", "torej", "zato", "zatorej",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "ker", "saj", "tako da", "da", "zato da", "ne da bi",
+    # Subordinating conjunctions - concessive and conditional
+    "čeprav", "četudi", "dasi", "dasiravno", "kljub temu da",
+    "če", "v kolikor",
+    # Subordinating conjunctions - temporal
+    "ko", "kadar", "medtem ko", "brž ko", "takoj ko", "preden", "potem ko",
+    "odkar", "dokler",
+    # Comparative and modal
+    "kakor da", "kot da",
+    # Relative pronouns and locatives
+    "ki", "kateri", "katera", "katero", "kdor", "kar", "kjer", "kamor",
+    "od koder", "kako",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "dipl. inž.", "doc.", "dr.", "g.", "ga.", "gdč.", "gen.", "inž.",
+    "mag.", "polk.", "por.", "prof.", "sv.", "svet.", "univ. dipl.",
+    # Scholarly, textual, and editorial
+    "al.", "čl.", "gl.", "ipd.", "itd.", "izd.", "npr.", "odst.", "pogl.",
+    "prev.", "prim.", "r.", "sl.", "str.", "št.", "t. i.", "t. j.", "t.i.",
+    "t.j.", "tab.", "tj.", "ur.", "v.", "zal.", "zv.",
+    # Administrative, spatial, and corporate
+    "c.", "d.d.", "d.o.o.", "k.d.", "obč.", "reg.", "s.p.", "trg.", "ul.",
+    # Time, metrics, currency, and quantities
+    "h.", "l.", "let.", "mio.", "mrd.", "n. št.", "p. n. št.", "sek.",
+    "stol.", "tis.", "tisoč.",
+    # International Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "e.g.", "et al.", "etc.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "itd.", "ipd.", "npr.", "tj.", "t. i.", "t. j.", "l.", "let.", "št.",
+    "str.", "stol.", "etc.", "al.",
+]

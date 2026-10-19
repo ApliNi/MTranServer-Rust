@@ -1,0 +1,65 @@
+[metadata]
+language = "tr"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_final"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (with declined case variants)
+    "o", "onlar", "onun", "onların", "ona", "onlara", "onu", "onları", "ondan", "onlardan",
+    # Demonstratives and spatial anaphora
+    "bu", "bunun", "buna", "bunu", "bundan", "bunlar", "bunların", "bunlara", "bunları", "bunlardan",
+    "şu", "şunun", "şuna", "şunu", "şundan", "şunlar", "şunların", "şunlara", "şunları", "şunlardan",
+    "burada", "orada", "burası", "orası", "böylece", "şöylece",
+    # Logical, causal, and discourse connectives
+    "ayrıca", "bununla birlikte", "bunun yanı sıra", "öte yandan", "diğer taraftan",
+    "ancak", "fakat", "lakin", "oysa", "oysaki", "halbuki", "ne var ki", "buna rağmen", "yine de",
+    "bu nedenle", "bu yüzden", "dolayısıyla", "sonuç olarak", "binaenaleyh",
+    "aslında", "gerçekte", "doğrusu", "başka bir deyişle", "kısacası", "özetle",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "ve", "veya", "ya da", "yahut", "ama", "fakat", "ancak", "lakin", "ile",
+    # Subordinating conjunctions - causal and consecutive
+    "çünkü", "zira", "mademki", "diye", "bu yüzden ki",
+    # Subordinating conjunctions - concessive and conditional
+    "eğer", "şayet", "ise", "oysa", "oysaki", "halbuki", "her ne kadar", "rağmen",
+    # Emphatic and relative connectives
+    "ki", "çünki", "meğer", "meğerki",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Academic and professional titles
+    "Dr.", "Prof.", "Doç.", "Yrd. Doç.", "Arş. Gör.", "Uzm.", "Av.", "Müh.", "Mim.",
+    # Citations, scholarly references, and publishing
+    "vb.", "vs.", "bkz.", "ör.", "örn.", "çev.", "ed.", "yay.", "der.",
+    "s.", "sf.", "c.", "md.", "no.",
+    # Geography, administrative units, and addresses
+    "Cad.", "Sok.", "Mah.", "Apt.", "Bul.", "sk.", "cd.", "mh.",
+    # Chronology, units of measurement, and corporate entities
+    "M.Ö.", "M.S.", "İ.Ö.", "İ.S.", "dk.", "sn.", "sa.", "km.", "m.", "kg.", "gr.",
+    "Ltd.", "Şti.", "A.Ş.", "Co.", "Inc.",
+    # International Latin abbreviations
+    "et al.", "etc.", "vol.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "vb.", "vs.", "v.b.", "v.s.", "etc.", "al.",
+]
+
+[detection]
+distinctive_chars = ['ğ', 'ı', 'ş', 'Ğ', 'İ', 'Ş']

@@ -1,0 +1,17 @@
+[
+  { "input": "Bonjour", "expected": "fr" },
+  { "input": "bonjour!", "expected": "fr" },
+  { "input": "Merci beaucoup", "expected": "fr" },
+  { "input": "Danke", "expected": "de" },
+  { "input": "DANKE!", "expected": "de" },
+  { "input": "Vielen Dank", "expected": "de" },
+  { "input": "Hola", "expected": "es" },
+  { "input": "Muchas gracias", "expected": "es" },
+  { "input": "Ciao", "expected": "it" },
+  { "input": "Grazie mille", "expected": "it" },
+  { "input": "Obrigado", "expected": "pt" },
+  { "input": "Muito obrigado", "expected": "pt" },
+  { "input": "Dank je wel", "expected": "nl" },
+  { "input": "God morgon", "expected": "sv" },
+  { "input": "Thank you", "expected": "en" }
+]

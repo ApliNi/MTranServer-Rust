@@ -1,0 +1,28 @@
+[
+  {
+    "name": "academic_authors_and_stars",
+    "input": "Xin Cheng1,2,∗, Xingkai Yu2,∗, Chenze Shao2,∗, Jiashi Li2,∗, Yunfan Xiong2,∗",
+    "expected_contains": ["Cheng1,2,*", "*"],
+    "forbidden_contains": ["∗"]
+  },
+  {
+    "name": "einstein_mass_energy_equivalence",
+    "input": "E=mc²",
+    "expected": "E=mc2"
+  },
+  {
+    "name": "chemical_and_footnote_superscripts",
+    "input": "H₂O and E=mc² and note¹²³",
+    "expected": "H2O and E=mc2 and note123"
+  },
+  {
+    "name": "preserve_technical_terms_with_numbers",
+    "input": "IPv4, IPv6, x86_64, Python3, UTF8, UTF16",
+    "expected": "IPv4, IPv6, x86_64, Python3, UTF8, UTF16"
+  },
+  {
+    "name": "mixed_physics_equation",
+    "input": "The kinetic energy is Ek=½mv² where v is velocity.",
+    "expected": "The kinetic energy is Ek=½mv2 where v is velocity."
+  }
+]

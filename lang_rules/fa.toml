@@ -1,0 +1,66 @@
+[metadata]
+language = "fa"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_final"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns
+    "او", "وی", "آن‌ها", "انها", "ایشان", "آنان", "انان",
+    # Demonstratives and spatial anaphora
+    "این", "آن", "این‌ها", "اینها", "اینان",
+    "اینجا", "آنجا", "اینچنین", "آنچنان",
+    # Logical, causal, and discourse connectives
+    "علاوه بر این", "به علاوه", "افزون بر این", "از سوی دیگر", "از طرف دیگر",
+    "با این حال", "با وجود این", "اما", "ولی", "لیکن",
+    "بنابراین", "در نتیجه", "از این رو", "بدین ترتیب", "لذا",
+    "در واقع", "در حقیقت", "به عبارت دیگر", "به طور کلی", "خلاصه اینکه",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "و", "یا", "اما", "ولی", "لیکن", "بلکه", "هم",
+    # Subordinating conjunctions - causal and purpose
+    "زیرا", "چون", "چونکه", "به دلیل اینکه", "از آنجا که",
+    "برای اینکه", "تا اینکه", "به طوری که",
+    # Subordinating conjunctions - concessive and conditional
+    "اگر", "چنانچه", "در صورتی که", "مگر اینکه",
+    "اگرچه", "گرچه", "هرچند", "با اینکه", "هرچند که",
+    # Subordinating conjunctions - temporal
+    "وقتی که", "هنگامی که", "زمانی که", "پس از آنکه",
+    "بعد از اینکه", "پیش از آنکه", "قبل از اینکه", "تا زمانی که", "همین که",
+    # Relative pronouns and locatives
+    "که", "آنچه", "کسی که", "جایی که", "هر کجا که",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Honorifics, scholarly, and professional titles
+    "د.", "دکتر", "پ.", "پروفسور", "مهندس", "م.", "آقای", "خانم",
+    # Publication, citation, and administrative
+    "ش.", "شماره", "ص.", "صفحه", "ج.", "جلد", "بخش", "فصل",
+    # Chronology, locations, and contact
+    "ق.م.", "هـ.ق.", "هـ.ش.", "ت.", "تلفن", "خ.", "خیابان", "ک.", "کوچه",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "no.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "و...", "وغیره.", "و غیره.", "غیره.", "etc.", "al.",
+]
+
+[detection]
+unique_chars = ['گ', 'چ', 'ژ', 'پ', 'ی']

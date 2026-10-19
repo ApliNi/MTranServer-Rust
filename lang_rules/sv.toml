@@ -1,0 +1,78 @@
+[metadata]
+language = "sv"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and possessives
+    "han", "hon", "den", "det", "de", "honom", "henne", "dem",
+    "hans", "hennes", "dess", "deras", "sig", "sin", "sitt", "sina",
+    # Demonstratives and spatial anaphora
+    "denna", "denne", "detta", "dessa",
+    "den här", "det här", "de här", "den där", "det där", "de där",
+    "sådan", "sådant", "sådana", "slik", "här", "där",
+    # Discourse connectives and logical transitions
+    "dessutom", "därför", "därmed", "dock", "emellertid", "följaktligen",
+    "i alla fall", "istället", "lika fullt", "likväl", "således",
+    "tvärtom", "vidare", "ändå", "slutligen", "för övrigt", "tillika",
+    "egentligen", "faktiskt", "visserligen", "nämligen", "först och främst",
+    "sammanfattningsvis", "annars", "därefter",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "och", "samt", "men", "utan", "eller", "för", "så",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "eftersom", "emedan", "alldenstund", "då", "så att", "för att", "på det att",
+    # Subordinating conjunctions - concessive and conditional
+    "om", "ifall", "såvida", "förutsatt att", "fastän", "fast", "även om",
+    "ehuru", "trots att", "oaktat",
+    # Subordinating conjunctions - temporal
+    "när", "medan", "tills", "till dess att", "innan", "förrän",
+    "sedan", "efter det att", "alltsedan", "så snart som",
+    # Relative pronouns, comparatives, and interrogatives
+    "som", "vilket", "vilken", "vilketdera", "vilka", "vars", "där",
+    "dit", "varav", "varför", "huruvida", "liksom", "såsom", "än",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Doc.", "Ing.", "Civ.ing.", "Fil. dr.", "Jur. kand.",
+    "Mag.", "Leg.", "Adv.", "Herr", "Fru", "Frk.",
+    # Scholarly, textual, and editorial
+    "bl.a.", "dvs.", "d.v.s.", "e.Kr.", "f.Kr.", "ca.", "d.y.", "d.ä.",
+    "e.d.", "f.d.", "f.n.", "f.o.", "f.ö.", "fr.o.m.", "t.o.m.", "kl.",
+    "m.fl.", "m.m.", "o.d.", "o.s.v.", "osv.", "p.g.a.", "resp.", "s.k.",
+    "s.a.s.", "t.ex.", "ung.", "v.g.", "vb.", "vt.", "ht.", "sid.", "s.",
+    "st.", "kap.", "fig.", "tab.", "ref.", "vol.", "nr.", "n:o", "jfr.",
+    "ex.", "inkl.", "exkl.",
+    # Administrative, spatial, corporate, and metrics
+    "AB.", "A/S", "Gbg.", "Sthlm.", "k:a", "kv.", "lgh.", "milj.", "mrd.",
+    "kr.", "sek.", "min.", "tim.", "km.", "m.", "tel.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "osv.", "o.s.v.", "m.m.", "m.fl.", "t.ex.", "bl.a.", "etc.", "d.v.s.",
+    "dvs.", "e.d.", "o.d.", "al.",
+]
+
+[detection]
+distinctive_chars = ['ä', 'ö', 'Ä', 'Ö', 'å', 'Å']
+substring_terms = ["Sverige", "Stockholm", "varifrån"]
+whole_words = ["och", "är", "i", "jag", "det", "på"]

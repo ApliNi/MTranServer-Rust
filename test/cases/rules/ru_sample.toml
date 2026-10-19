@@ -1,0 +1,14 @@
+[metadata]
+language = "ru"
+version = "1.0.0"
+word_boundary = true
+
+[abbreviations]
+nonbreaking_prefixes = ["т. е.", "гл."]
+conditional_end_prefixes = ["т. д.", "и др."]
+
+[conjunctions]
+clause_conjunctions = ["однако", "но"]
+
+[discourse]
+discourse_starters = ["он", "это"]

@@ -1,0 +1,47 @@
+[metadata]
+language = "hi"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+pangu_spacing = false
+quote_style = "curly"
+
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_final"
+
+[discourse]
+discourse_starters = [
+    "वह", "वे", "उसने", "उन्होंने", "यह", "ये", "इसने", "इन्होंने",
+    "इसलिए", "क्योंकि", "तथापि", "इसके अलावा", "अर्थात", "वास्तव में",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    "और", "लेकिन", "किंतु", "परंतु", "या", "अथवा", "ताकि", "क्योंकि",
+    "यद्यपि", "तथापि", "जबकि", "जैसे ही",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    "डॉ.", "प्रो.", "श्री", "श्रीमती", "कु.", "पं.", "इ.", "उदा.",
+]
+conditional_end_prefixes = [
+    "आदि.", "इत्यादि.",
+]
+
+[postprocess]
+preserve_title_prefix = true
+replacements = [
+    ["रसप बर", "रास्पबेरी"],
+    ["पई पक", "पाई पिको"],
+    ["पई", "पाई"],
+    [" पक", " पिको"],
+]

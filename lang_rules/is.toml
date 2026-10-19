@@ -1,0 +1,72 @@
+[metadata]
+language = "is"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and possessives
+    "hann", "hún", "það", "þeir", "þær", "þau",
+    "honum", "henni", "því", "þeim", "hans", "hennar", "þeirra",
+    "sig", "sinn", "sitt", "sína", "sínu",
+    # Demonstratives and spatial anaphora
+    "þessi", "þetta", "þessir", "þessar",
+    "sá", "sú", "hér", "þar",
+    "svona", "slíkur", "slík", "slíkt", "þess háttar",
+    # Discourse connectives and logical transitions
+    "auk þess", "hins vegar", "þar að auki", "þess vegna", "þar af leiðandi",
+    "samt", "samt sem áður", "engu að síður", "aftur á móti", "þvert á móti",
+    "loksins", "endanlega", "í rauninni", "reyndar", "annars", "sérstaklega",
+    "til dæmis", "að vísu", "í stuttu máli", "eftir á", "aukalega",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "og", "eða", "en", "heldur", "enda", "ellegar",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "vegna þess að", "af því að", "því", "þar eð", "sakir þess að",
+    "til þess að", "svo að", "svo",
+    # Subordinating conjunctions - concessive and conditional
+    "ef", "svo framarlega sem", "nema", "þótt", "þó að", "jafnvel þótt",
+    "enda þótt", "þrátt fyrir að",
+    # Subordinating conjunctions - temporal
+    "þegar", "áður en", "eftir að", "meðan", "uns", "til þess er",
+    "jafnskjótt og", "óðar en",
+    # Relative pronouns, comparatives, and interrogatives
+    "að", "sem", "er", "hvað", "hver", "hvílíkur", "hvar", "hvert",
+    "hvaðan", "hvernig", "hvers vegna", "eins og", "heldur en",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Próf.", "Hr.", "Frú", "Séra", "Mag.", "Kand.", "Verkfr.", "Lögm.",
+    # Scholarly, textual, and editorial
+    "t.d.", "o.s.frv.", "o.fl.", "m.a.", "þ.e.", "þ.m.t.", "f.Kr.", "e.Kr.",
+    "bls.", "nr.", "kfl.", "mgr.", "gr.", "sbr.", "sambr.", "skv.",
+    "t.a.m.", "o.áfr.", "þ.á.m.", "kafli", "tafla", "mynd",
+    # Administrative, spatial, corporate, and metrics
+    "hf.", "ehf.", "sf.", "ohf.", "kr.", "mín.", "sek.", "klst.", "kl.",
+    "km.", "kg.", "m.", "sími", "Rvk.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "o.s.frv.", "t.d.", "m.a.", "þ.e.", "o.fl.", "etc.", "al.", "sbr.", "skv.",
+]
+
+[detection]
+unique_chars = ['þ', 'ð', 'Þ', 'Ð']

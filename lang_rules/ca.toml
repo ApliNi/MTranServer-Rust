@@ -1,0 +1,73 @@
+[metadata]
+language = "ca"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Pronoms personals anafòrics i clítics
+    "ell", "ella", "ells", "elles", "li", "els", "en", "hi", "hom",
+    # Pronoms i determinants demostratius
+    "aquest", "aquesta", "aquests", "aquestes", "això",
+    "aquell", "aquella", "aquells", "aquelles", "allò",
+    # Connectors discursius i conjuncions textuals
+    "a més", "a més a més", "així", "així mateix", "així doncs",
+    "per tant", "tanmateix", "no obstant", "no obstant això", "nogensmenys",
+    "en efecte", "efectivament", "en canvi", "per contra",
+    "finalment", "en conseqüència", "d'altra banda", "d'una banda",
+    "de fet", "en realitat", "en resum", "per consegüent", "altrament",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Conjuncions coordinants
+    "i", "e", "ni", "o", "o bé", "però", "emperò", "sinó", "ans",
+    # Conjuncions subordinants - causals i consecutives
+    "perquè", "car", "ja que", "puix que", "atès que", "com que", "vist que",
+    "de manera que", "de manera i forma que", "així que",
+    # Conjuncions subordinants - condicionals i concessives
+    "si", "posat que", "sempre que", "amb que", "a condició que", "llevat que", "tret que",
+    "encara que", "malgrat que", "tot i que", "baldament", "bé que",
+    # Conjuncions subordinants - finals i temporals
+    "per tal que", "a fi que",
+    "mentre", "mentre que", "abans que", "després que", "de seguida que",
+    "tan bon punt", "quan", "des que", "fins que", "tot seguit que",
+    # Relatives i modals
+    "que", "com", "segons que", "a mesura que", "on", "qui", "qual", "què",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Títols i fórmules de tractament
+    "Alm.", "Arqueb.", "Bisbe", "Card.", "Cap.", "Col.", "Comand.",
+    "D.", "Dña.", "Don", "Dra.", "Dr.", "Em.", "Exc.", "Excma.", "Excm.",
+    "Fra", "Gral.", "Il·lm.", "Il·lma.", "Mn.", "Mossèn", "Na", "N'En",
+    "Prof.", "Profa.", "Rvnd.", "Sor", "Sr.", "Sra.", "Srta.",
+    # Citacions, referències i termes textuals
+    "apènd.", "art.", "arts.", "av.", "c.", "cap.", "caps.", "cf.", "cfr.",
+    "col.", "col·l.", "comp.", "coord.", "d. C.", "a. C.", "doc.", "ed.",
+    "et al.", "etc.", "ex.", "fasc.", "fig.", "figs.", "fol.", "ibid.",
+    "íl.", "ídem", "inf.", "l.", "lín.", "líns.", "loc. cit.", "ms.", "mss.",
+    "n.", "núm.", "núms.", "no.", "op. cit.", "p.", "pàg.", "pàgs.",
+    "par.", "paràgr.", "passim", "pl.", "pp.", "p. ex.", "reg.", "sec.",
+    "secc.", "supl.", "t.", "tab.", "trad.", "v.", "vid.", "vol.", "vols.", "vs.",
+    # Adreces, mesura, administració i entitats comercials
+    "adm.", "ap.", "apdo.", "aprox.", "avda.", "bx.", "cl.", "ctra.",
+    "dept.", "entl.", "esq.", "màx.", "mín.", "pg.", "pral.", "prov.",
+    "pta.", "S.A.", "S.L.", "S.C.P.", "S.C.C.L.", "tel.", "telf.",
+]
+conditional_end_prefixes = [
+    "etc.", "p. ex.", "ex.", "núm.", "pàg.", "vol.", "c.", "art.",
+]

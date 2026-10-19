@@ -1,0 +1,79 @@
+[metadata]
+language = "ro"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Pronume anaforice de persoana a treia și pronume de politețe
+    "el", "ea", "ei", "ele", "lui", "lor",
+    "dânsul", "dânsa", "dânșii", "dânsele",
+    "dumnealui", "dumneaei", "dumnealor", "dumneavoastră",
+    # Pronume și adjective demonstrative
+    "acesta", "aceasta", "aceștia", "acestea", "acest", "această", "acești", "aceste",
+    "acela", "aceea", "aceia", "acelea", "acel", "acea", "acei", "acele",
+    "același", "aceeași", "aceiași", "aceleași",
+    # Conectori și adverbe discursive
+    "așadar", "astfel", "altfel", "de asemenea", "totuși", "prin urmare",
+    "în plus", "de altfel", "cu toate acestea", "în consecință", "în concluzie",
+    "dimpotrivă", "în schimb", "într-adevăr", "în fine", "mai mult",
+    "de fapt", "totodată", "în primul rând", "în al doilea rând",
+    "pe de altă parte", "pe de o parte",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Conjuncții coordonatoare
+    "și", "nici", "dar", "iar", "însă", "ci", "sau", "ori", "fie",
+    # Conjuncții și locuțiuni conjuncționale subordonatoare - cauzale și consecutive
+    "fiindcă", "deoarece", "pentru că", "întrucât", "din cauză că",
+    "încât", "așa încât", "astfel încât",
+    # Conjuncții subordonatoare - concesive și condiționale
+    "dacă", "deși", "măcar că", "cu toate că", "chiar dacă",
+    # Conjuncții subordonatoare - finale și completive
+    "că", "să", "ca să", "pentru ca să",
+    # Conjuncții subordonatoare - temporale
+    "când", "în timp ce", "pe când", "în vreme ce", "până ce", "până când",
+    "după ce", "îndată ce", "de îndată ce", "cum", "de cum",
+    # Relative și circumstanțiale
+    "unde", "cum", "cât", "oricât", "oricum", "cine", "ce", "care",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titluri și apelative onorifice
+    "Acad.", "Al.", "Arh.", "Av.", "Cap.", "Cmdr.", "Col.", "Conf.", "Cpt.",
+    "Dec.", "Dir.", "Dl.", "D-l", "D-lui", "Dna.", "D-na", "D-nei", "Dra.",
+    "Dr.", "Ec.", "Farm.", "Gen.", "Ing.", "Insp.", "Lect.", "Lt.",
+    "Lt.-col.", "Maj.", "Min.", "P.S.", "Patr.", "Prof.", "Rep.", "Univ.",
+    # Referințe academice, bibliografice și citări
+    "alin.", "al.", "an.", "ap.", "art.", "bibl.", "c.", "ca.", "cap.",
+    "cfr.", "cit.", "col.", "conf.", "doc.", "ed.", "e.g.", "et al.", "etc.",
+    "ex.", "fasc.", "fig.", "ib.", "ibid.", "id.", "i.e.", "il.", "lit.",
+    "loc. cit.", "ms.", "mss.", "nr.", "op. cit.", "p.", "pag.", "par.",
+    "pct.", "pp.", "ref.", "reg.", "sec.", "sq.", "ș.a.", "ș.a.m.d.", "ș.cl.",
+    "tab.", "tom.", "trad.", "v.", "vol.", "vs.",
+    # Denumiri administrative, geografice și comerciale
+    "a.c.", "a.m.", "aprox.", "b-dul.", "bd.", "bl.", "com.",
+    "d.C.", "d.Hr.", "et.", "jud.", "max.", "min.", "mun.",
+    "p.m.", "pl.", "s.a.", "s.c.", "s.r.l.", "sc.", "sos.", "str.", "tel.",
+]
+conditional_end_prefixes = [
+    "etc.", "ș.a.", "ș.a.m.d.", "ș.cl.", "ex.", "nr.", "pag.", "p.", "vol.", "art.",
+]
+
+[detection]
+distinctive_chars = ['ș', 'ț', 'Ș', 'Ț', 'ă', 'î', 'â', 'Ă', 'Î', 'Â']
+whole_words = ["și", "în", "de", "la", "cu", "sunt", "este", "prevederile"]

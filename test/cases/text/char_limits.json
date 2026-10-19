@@ -1,0 +1,38 @@
+[
+  {
+    "input": "hello",
+    "limit": 10,
+    "exceeds": false,
+    "count": 5
+  },
+  {
+    "input": "hello",
+    "limit": 5,
+    "exceeds": false,
+    "count": 5
+  },
+  {
+    "input": "hello world",
+    "limit": 5,
+    "exceeds": true,
+    "count": 11
+  },
+  {
+    "input": "你好世界",
+    "limit": 4,
+    "exceeds": false,
+    "count": 4
+  },
+  {
+    "input": "你好世界",
+    "limit": 3,
+    "exceeds": true,
+    "count": 4
+  },
+  {
+    "input": "",
+    "limit": 1,
+    "exceeds": false,
+    "count": 0
+  }
+]

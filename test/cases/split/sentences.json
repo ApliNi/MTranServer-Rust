@@ -1,0 +1,101 @@
+[
+  {
+    "name": "western_basic",
+    "text": "Hello world. How are you? I'm fine! Thank you.",
+    "expected": [
+      { "text": "Hello world.", "separator": " " },
+      { "text": "How are you?", "separator": " " },
+      { "text": "I'm fine!", "separator": " " },
+      { "text": "Thank you.", "separator": "" }
+    ]
+  },
+  {
+    "name": "cjk_punctuation",
+    "text": "第一句。第二句！第三句？第四句；第五句。",
+    "expected": [
+      { "text": "第一句。", "separator": "" },
+      { "text": "第二句！", "separator": "" },
+      { "text": "第三句？", "separator": "" },
+      { "text": "第四句；第五句。", "separator": "" }
+    ]
+  },
+  {
+    "name": "cjk_with_whitespace_and_newlines",
+    "text": "第一句。\n第二句。 第三句；\r\n第四句！",
+    "expected": [
+      { "text": "第一句。", "separator": "\n" },
+      { "text": "第二句。", "separator": " " },
+      { "text": "第三句；", "separator": "\r\n" },
+      { "text": "第四句！", "separator": "" }
+    ]
+  },
+  {
+    "name": "multiline_bare_newlines",
+    "text": "Title Line\nParagraph line 1\nParagraph line 2",
+    "expected": [
+      { "text": "Title Line", "separator": "\n" },
+      { "text": "Paragraph line 1", "separator": "\n" },
+      { "text": "Paragraph line 2", "separator": "" }
+    ]
+  },
+  {
+    "name": "protection_decimals_and_versions",
+    "text": "The product costs $49.99 today. We tested v2.0 for stability. Upgrade to 1.2.3 now.",
+    "expected": [
+      { "text": "The product costs $49.99 today.", "separator": " " },
+      { "text": "We tested v2.0 for stability.", "separator": " " },
+      { "text": "Upgrade to 1.2.3 now.", "separator": "" }
+    ]
+  },
+  {
+    "name": "protection_abbreviations",
+    "text": "See e.g. section 2 for details. The system is fast (i.e. zero latency). Contact Dr. Smith or Prof. Davis vs. others.",
+    "expected": [
+      { "text": "See e.g. section 2 for details.", "separator": " " },
+      { "text": "The system is fast (i.e. zero latency).", "separator": " " },
+      { "text": "Contact Dr. Smith or Prof. Davis vs. others.", "separator": "" }
+    ]
+  },
+  {
+    "name": "conditional_abbreviations_middle",
+    "text": "Apples, oranges, etc. are fruits. Several varieties exist.",
+    "expected": [
+      { "text": "Apples, oranges, etc. are fruits.", "separator": " " },
+      { "text": "Several varieties exist.", "separator": "" }
+    ]
+  },
+  {
+    "name": "conditional_abbreviations_end",
+    "text": "We bought apples, oranges, etc. Customers were satisfied.",
+    "expected": [
+      { "text": "We bought apples, oranges, etc.", "separator": " " },
+      { "text": "Customers were satisfied.", "separator": "" }
+    ]
+  },
+  {
+    "name": "name_initials",
+    "text": "John F. Kennedy was president. Many historians study his legacy.",
+    "expected": [
+      { "text": "John F. Kennedy was president.", "separator": " " },
+      { "text": "Many historians study his legacy.", "separator": "" }
+    ]
+  },
+  {
+    "name": "spaced_ellipsis",
+    "text": "The draft model proposes candidate tokens x1, . . . , xn. The target model verifies them.",
+    "expected": [
+      { "text": "The draft model proposes candidate tokens x1, . . . , xn.", "separator": " " },
+      { "text": "The target model verifies them.", "separator": "" }
+    ]
+  },
+  {
+    "name": "quotes_and_brackets",
+    "text": "He said: \"Wait!\" Someone stopped. (Why?) Because someone wanted to.",
+    "expected": [
+      { "text": "He said: \"Wait!\"", "separator": " " },
+      { "text": "Someone stopped.", "separator": " " },
+      { "text": "(Why?)", "separator": " " },
+      { "text": "Because someone wanted to.", "separator": "" }
+    ]
+  }
+]

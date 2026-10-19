@@ -1,0 +1,20 @@
+[
+  {
+    "input": "hello world",
+    "borrowed": true,
+    "replacements": [],
+    "hidden": "hello world"
+  },
+  {
+    "input": "hello 😊 world 🚀",
+    "borrowed": false,
+    "replacements": ["😊", "🚀"],
+    "hidden": "hello [EE0] world [EE1]"
+  },
+  {
+    "input": "keep [EE99] and [EEabc] untouched",
+    "borrowed": true,
+    "replacements": ["😊", "🚀"],
+    "hidden": "keep [EE99] and [EEabc] untouched"
+  }
+]

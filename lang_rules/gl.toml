@@ -1,0 +1,81 @@
+[metadata]
+language = "gl"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Pronomes anafóricos persoais e clíticos
+    "el", "ela", "eles", "elas", "lle", "lles",
+    # Pronomes e determinantes demostrativos
+    "este", "esta", "estes", "estas", "isto",
+    "ese", "esa", "eses", "esas", "iso",
+    "aquel", "aquela", "aqueles", "aquelas", "aquilo",
+    # Conectores discursivos e textuais
+    "ademais", "ademais diso", "así mesmo", "así", "deste xeito",
+    "polo tanto", "por conseguinte", "porén", "non obstante", "con todo",
+    "en efecto", "de feito", "en troques", "ao contrario", "pola contra",
+    "finalmente", "en conclusión", "en suma", "logo", "noutro senso",
+    "por outra banda",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Conxuncións coordinantes
+    "e", "nin", "pero", "mais", "porén", "senón", "ou", "ou ben", "xa", "ora", "quer",
+    # Conxuncións subordinantes - causais e consecutivas
+    "porque", "pois", "posto que", "xa que", "dado que", "como", "visto que",
+    "de xeito que", "de maneira que", "de modo que",
+    # Conxuncións subordinantes - condicionais e concesivas
+    "se", "con tal de que", "a non ser que", "a menos que", "sempre que",
+    "aínda que", "malia que", "se ben", "a pesar de que", "aínda cando",
+    # Conxuncións subordinantes - finais e temporais
+    "para que", "a fin de que",
+    "antes de que", "despois de que", "logo que", "axiña que", "tan pronto como",
+    "mentres", "namentres", "cando", "desde que", "ata que",
+    # Relativas, comparativas e modais
+    "que", "ca", "ca que", "como", "segundo", "conforme", "onde", "quen", "cuxo", "cuxa",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Títulos e fórmulas de tratamento
+    "Av.", "Cap.", "Com.", "Cnel.", "D.", "Dna.", "Dña.", "Don", "Doña.",
+    "Dr.", "Dra.", "Excmo.", "Excma.", "Gral.", "Ilmo.", "Ilma.", "Ing.",
+    "Lic.", "Mons.", "Pe.", "Pres.", "Prof.", "Profa.", "Rev.", "Sr.",
+    "Sra.", "Srta.", "Sta.", "Sto.", "Tte.",
+    # Citacións, termos textuais e bibliográficos
+    "al.", "apdo.", "art.", "arts.", "c.", "cap.", "caps.", "cf.", "cfr.",
+    "col.", "comp.", "coord.", "d.C.", "a.C.", "doc.", "ed.", "edn.",
+    "et al.", "etc.", "ex.", "fasc.", "fig.", "figs.", "fol.", "fte.",
+    "ibíd.", "íd.", "il.", "infra", "l.", "líñ.", "líñs.", "loc. cit.",
+    "ms.", "mss.", "n.", "núm.", "núms.", "no.", "n.º", "op. cit.",
+    "p.", "páx.", "páxs.", "par.", "paragr.", "p. ex.", "pp.", "rex.",
+    "sec.", "secc.", "supra", "t.", "tab.", "trad.", "v.", "vid.",
+    "vol.", "vols.", "vs.",
+    # Administración, comercio e xeografía
+    "admón.", "ant.", "aprox.", "asoc.", "av.", "avda.", "cl.",
+    "Cía.", "ctra.", "dto.", "esq.", "febr.", "hab.",
+    "máx.", "mín.", "nov.", "out.", "parr.", "pl.", "pobo.",
+    "prov.", "ptas.", "S.A.", "S.L.", "S.A.L.", "S.C.",
+    "tel.", "tfno.", "trib.",
+]
+conditional_end_prefixes = [
+    "etc.", "p. ex.", "ex.", "apdo.", "núm.", "páx.", "vol.", "art.",
+]
+
+[detection]
+substring_terms = ["Hoxe", "hoxe", "galego", "Galicia"]
+whole_words = ["moi", "bo"]

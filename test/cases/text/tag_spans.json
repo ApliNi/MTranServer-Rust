@@ -1,0 +1,33 @@
+[
+  {
+    "input": "hello world",
+    "spans": [
+      [false, "hello world"]
+    ]
+  },
+  {
+    "input": "<div><p>Text</p></div>",
+    "spans": [
+      [true, "<div>"],
+      [true, "<p>"],
+      [false, "Text"],
+      [true, "</p>"],
+      [true, "</div>"]
+    ]
+  },
+  {
+    "input": "<a href=\"foo-bar\" id=\"123\">link</a>",
+    "spans": [
+      [true, "<a href=\"foo-bar\" id=\"123\">"],
+      [false, "link"],
+      [true, "</a>"]
+    ]
+  },
+  {
+    "input": "before <unclosed tag content",
+    "spans": [
+      [false, "before "],
+      [true, "<unclosed tag content"]
+    ]
+  }
+]

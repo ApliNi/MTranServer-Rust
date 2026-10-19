@@ -1,0 +1,76 @@
+[metadata]
+language = "nb"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and possessives
+    "han", "hun", "den", "det", "de", "ham", "henne", "dem",
+    "hans", "hennes", "dens", "dets", "deres", "seg", "sin", "sitt", "sine",
+    # Demonstratives and spatial anaphora
+    "denne", "dette", "disse",
+    "den der", "det der", "de der", "den her", "det her", "de her",
+    "slik", "slikt", "slike", "sånn", "sånt", "sånne", "her", "der",
+    # Discourse connectives and logical transitions
+    "derimot", "dessuten", "derfor", "dermed", "likevel", "imidlertid",
+    "følgelig", "tvert imot", "videre", "endatil", "omsider", "således",
+    "tross alt", "faktisk", "egentlig", "for øvrig", "i tillegg", "nemlig",
+    "i alle fall", "til tross for dette", "først og fremst", "alt i alt",
+    "ellers", "deretter",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "og", "samt", "men", "eller", "for", "så",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "fordi", "da", "siden", "ettersom", "idet", "for at", "så at",
+    # Subordinating conjunctions - concessive and conditional
+    "hvis", "dersom", "såfremt", "om", "med mindre", "selv om",
+    "skjønt", "til tross for at", "uansett om", "enda",
+    # Subordinating conjunctions - temporal
+    "da", "når", "mens", "førend", "før", "inntil", "til", "etter at",
+    "siden", "så snart som",
+    # Relative pronouns, comparatives, and interrogatives
+    "at", "som", "hva", "hvem", "hvilken", "hvilket", "hvilke", "hvis",
+    "der", "hvor", "hvorfor", "hvordan", "likesom", "slik som", "enn",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Hr.", "Fru", "Frk.", "Cand.", "Mag.", "Lekt.",
+    "Ing.", "Siv.ing.", "Dir.", "Adv.", "Adm. dir.",
+    # Scholarly, textual, and editorial
+    "bl.a.", "dvs.", "d.v.s.", "f.eks.", "ca.", "jf.", "jfr.",
+    "mfl.", "m.fl.", "mm.", "m.m.", "mv.", "m.v.", "osv.", "o.s.v.",
+    "pga.", "p.g.a.", "e.Kr.", "f.Kr.", "eks.", "evt.", "fig.",
+    "tab.", "kap.", "nr.", "s.", "sst.", "ifm.", "ift.", "inkl.",
+    "ekskl.", "kl.", "d.m.", "d.d.", "ref.", "vol.",
+    # Administrative, spatial, corporate, and metrics
+    "AS", "A/S", "ASA", "kr.", "mill.", "mrd.", "km.", "tlf.", "min.",
+    "sek.", "dep.", "reg.", "pst.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "osv.", "o.s.v.", "m.m.", "m.v.", "mv.", "mm.", "f.eks.", "bl.a.",
+    "etc.", "al.", "dvs.", "d.v.s.",
+]
+
+[detection]
+distinctive_chars = ['æ', 'ø', 'Æ', 'Ø']
+substring_terms = ["Stortinget", "statsbudsjettet", "Oslo", "Norge", "heter", "nydelig", "vakre"]

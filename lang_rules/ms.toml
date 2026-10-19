@@ -1,0 +1,67 @@
+[metadata]
+language = "ms"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and honorifics
+    "ia", "dia", "mereka", "beliau", "baginda",
+    # Demonstratives and spatial anaphora
+    "ini", "itu", "perkara ini", "hal ini", "keadaan ini",
+    "di sini", "di situ", "di sana", "demikian", "begitu",
+    # Logical, causal, and discourse connectives
+    "selain itu", "di samping itu", "tambahan pula", "bahkan", "sebaliknya", "pada masa yang sama",
+    "namun", "walau bagaimanapun", "namun begitu", "meskipun demikian", "akan tetapi",
+    "oleh itu", "oleh hal yang demikian", "oleh sebab itu", "maka", "kesannya", "akibatnya", "dengan demikian",
+    "sebenarnya", "hakikatnya", "pada hakikatnya", "dengan kata lain", "ringkasnya", "kesimpulannya",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "dan", "serta", "atau", "tetapi", "melainkan", "padahal", "sedangkan",
+    # Subordinating conjunctions - causal and purpose
+    "kerana", "oleh sebab", "agar", "supaya", "hingga", "sehingga", "moga-moga",
+    # Subordinating conjunctions - concessive and conditional
+    "jika", "jikalau", "sekiranya", "kalau", "andai kata", "asalkan",
+    "meskipun", "walaupun", "kendatipun", "biarpun", "sungguhpun",
+    # Subordinating conjunctions - temporal
+    "apabila", "ketika", "semasa", "sewaktu", "setelah", "selepas",
+    "sebelum", "sejak", "semenjak", "selama", "sementara",
+    # Relative pronouns and locatives
+    "yang", "tempat", "di mana",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Royal, state, academic, and professional titles
+    "Dr.", "Prof.", "Ir.", "En.", "Pn.", "Cik.", "Dato'", "Datuk.", "Datin.", "Tan Sri.", "Puan Sri.", "Hj.", "Hjh.",
+    # Citations, scholarly references, and publishing
+    "ms.", "m.s.", "hlm.", "bab.", "jil.", "bil.", "no.", "sek.", "per.",
+    # Geography, administrative units, and addresses
+    "Jln.", "Lor.", "Kg.", "bt.", "km.", "m.",
+    # Corporate and organizational entities
+    "Sdn.", "Bhd.", "Co.", "Ltd.",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "dll.", "dsb.", "dst.", "dkk.", "etc.", "al.",
+]
+
+[detection]
+substring_terms = ["Kuala Lumpur", "khabar", "sihat", "kerjasama"]

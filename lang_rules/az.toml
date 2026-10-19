@@ -1,0 +1,63 @@
+[metadata]
+language = "az"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_final"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (with declined case variants)
+    "o", "onlar", "onun", "onların", "ona", "onlara", "onu", "onları", "ondan", "onlardan",
+    # Demonstratives and spatial anaphora
+    "bu", "bunun", "buna", "bunu", "bundan", "bunlar", "bunların", "bunlara", "bunları", "bunlardan",
+    "həmin", "burada", "orada", "burası", "orası", "beləliklə",
+    # Logical, causal, and discourse connectives
+    "həmçinin", "bundan əlavə", "bununla yanaşı", "digər tərəfdən",
+    "lakin", "amma", "ancaq", "halbuki", "buna baxmayaraq", "yenə də",
+    "buna görə də", "ona görə də", "nəticədə", "deməli",
+    "əslində", "doğrudan da", "başqa sözlə", "qısası", "xülasə",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "və", "ya", "və ya", "yaxud", "amma", "ancaq", "lakin", "həm", "həm də", "nə", "nə də", "ilə",
+    # Subordinating conjunctions - causal and consecutive
+    "çünki", "ona görə ki", "buna görə ki", "zira",
+    # Subordinating conjunctions - concessive and conditional
+    "əgər", "hərçənd", "baxmayaraq ki", "halbuki",
+    # Emphatic and relative connectives
+    "ki", "hər kəs ki", "o yer ki",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Academic and professional titles
+    "prof.", "dos.", "dok.", "akd.", "müh.", "akad.",
+    # Citations, scholarly references, and publishing
+    "bax.", "məs.", "şək.", "cild.", "səh.", "böl.",
+    # Geography, administrative units, and addresses
+    "küç.", "mən.", "b.", "ş.", "r-n.",
+    # Chronology, units of measurement, and entities
+    "e.ə.", "b.e.", "m.", "km.", "kq.", "q.", "№", "no.",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "və s.", "vəs.", "və b.", "və b.x.", "etc.", "al.",
+]
+
+[detection]
+unique_chars = ['ə', 'Ə']

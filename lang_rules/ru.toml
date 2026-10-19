@@ -1,0 +1,82 @@
+[metadata]
+language = "ru"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+predicate_verbs = ["есть", "был", "была", "были", "будет", "может", "идет", "идёт", "пошел", "пошла"]
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (with capitalized variants for non-ASCII safety)
+    "он", "Он", "она", "Она", "оно", "Оно", "они", "Они",
+    "его", "Его", "её", "Её", "их", "Их",
+    "ему", "Ему", "ей", "Ей", "им", "Им",
+    # Demonstratives
+    "это", "Это", "этот", "Этот", "эта", "Эта", "эти", "Эти",
+    "то", "То", "тот", "Тот", "та", "Та", "те", "Те",
+    "такой", "Такой", "такая", "Такая", "такое", "Такое", "такие", "Такие",
+    "здесь", "Здесь", "там", "Там",
+    # Discourse connectives
+    "более того", "Более того", "в итоге", "В итоге", "впрочем", "Впрочем",
+    "кстати", "Кстати", "кроме того", "Кроме того", "наконец", "Наконец",
+    "однако", "Однако", "поэтому", "Поэтому", "следовательно", "Следовательно",
+    "также", "Также", "таким образом", "Таким образом", "тем не менее", "Тем не менее",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "а", "да", "или", "и", "либо", "но",
+    # Subordinating conjunctions - explanatory, causal, and consecutive
+    "благодаря тому что", "в связи с чем", "вследствие чего", "ибо",
+    "оттого что", "поскольку", "потому что", "так как", "так что",
+    "что", "чтобы",
+    # Subordinating conjunctions - concessive and conditional
+    "даром что", "если", "если бы", "коли", "несмотря на то что",
+    "пусть", "раз", "хотя",
+    # Subordinating conjunctions - temporal
+    "до того как", "едва", "как", "как только", "когда", "лишь",
+    "пока", "после того как", "прежде чем",
+    # Relative pronouns and locatives
+    "где", "которая", "которое", "которые", "который", "куда",
+    "откуда",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Common everyday and academic abbreviations
+    "т. е.", "т.е.", "и т. д.", "и т.д.", "и т. п.", "и т.п.",
+    "и др.", "и пр.", "т. к.", "т.к.", "т. о.", "т.о.",
+    # International academic Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "et al.", "etc.", "vs.",
+    # Academic, scholarly titles, and editorial citations
+    "акад.", "вып.", "г-жа.", "г-н.", "гл.", "д-р.", "доц.", "изд.",
+    "канд.", "напр.", "п.", "пп.", "подпункт.", "проф.", "разд.",
+    "ред.", "рис.", "с.", "см.", "ср.", "стр.", "табл.", "т.", "ч.",
+    # Geography, administrative units, and addresses
+    "бул.", "в.", "вв.", "г.", "гг.", "дер.", "д.", "кв.", "корп.",
+    "наб.", "обл.", "пер.", "пл.", "пос.", "пр.", "просп.", "р-н.",
+    "ул.",
+    # Metrics, currency, time, and quantities
+    "до н. э.", "н. э.", "коп.", "млн.", "млрд.", "руб.", "тыс.",
+    "чел.", "экз.",
+]
+conditional_end_prefixes = [
+    "т. д.", "т. п.", "и др.", "и пр.", "руб.", "коп.", "г.",
+]
+
+[detection]
+distinctive_chars = ['ы', 'э', 'ё', 'Ы', 'Э', 'Ё']

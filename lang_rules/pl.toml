@@ -1,0 +1,89 @@
+[metadata]
+language = "pl"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and oblique forms
+    "on", "On", "ona", "Ona", "ono", "Ono", "oni", "Oni", "one", "One",
+    "go", "Go", "jego", "Jego", "niego", "Niego", "ją", "Ją", "jej", "Jej",
+    "nią", "Nią", "jemu", "Jemu", "mu", "Mu", "im", "Im", "ich", "Ich",
+    "nich", "Nich", "nimi", "Nimi", "niej", "Niej",
+    # Demonstratives
+    "to", "To", "ten", "Ten", "ta", "Ta", "ci", "Ci", "te", "Te",
+    "tego", "Tego", "temu", "Temu", "tym", "Tym",
+    "tamten", "Tamten", "tamta", "Tamta", "tamto", "Tamto", "tamci", "Tamci", "tamte", "Tamte",
+    "taki", "Taki", "taka", "Taka", "takie", "Takie", "tacy", "Tacy",
+    "tu", "Tu", "tutaj", "Tutaj", "tam", "Tam",
+    # Discourse adverbs and transitions
+    "ponadto", "Ponadto", "co więcej", "Co więcej", "jednak", "Jednak", "jednakże", "Jednakże",
+    "niemniej", "Niemniej", "niemniej jednak", "Niemniej jednak", "tymczasem", "Tymczasem",
+    "wreszcie", "Wreszcie", "w końcu", "W końcu", "dlatego", "Dlatego", "zatem", "Zatem",
+    "wobec tego", "Wobec tego", "przeto", "Przeto", "oprócz tego", "Oprócz tego",
+    "w dodatku", "W dodatku", "z kolei", "Z kolei", "w efekcie", "W efekcie",
+    "w rezultacie", "W rezultacie", "w konsekwencji", "W konsekwencji",
+    "oczywiście", "Oczywiście", "niestety", "Niestety", "na szczęście", "Na szczęście",
+    "w istocie", "W istocie", "faktycznie", "Faktycznie", "rzeczywiście", "Rzeczywiście",
+    "innymi słowy", "Innymi słowy", "przede wszystkim", "Przede wszystkim",
+    "po pierwsze", "Po pierwsze", "po drugie", "Po drugie", "na przykład", "Na przykład",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "i", "oraz", "tudzież", "ani", "ni", "a", "ale", "lecz", "jednak", "wszakże",
+    "natomiast", "zaś", "za to", "albo", "lub", "czy", "bądź", "bądź też",
+    "więc", "zatem", "toteż", "przeto",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "bo", "ponieważ", "gdyż", "albowiem", "jako że", "skoro", "dlatego że",
+    "ze względu na to że", "tak że", "aż", "że", "żeby", "ażeby", "iż", "aby", "by",
+    # Subordinating conjunctions - concessive and conditional
+    "chociaż", "choć", "aczkolwiek", "chociażby", "mimo że", "pomimo że",
+    "jeśli", "jeżeli", "gdyby", "o ile", "byleby", "pod warunkiem że",
+    # Subordinating conjunctions - temporal
+    "gdy", "kiedy", "podczas gdy", "dopóki", "zanim", "odkąd", "jak tylko",
+    "skoro tylko", "po czym", "zaledwie",
+    # Relative pronouns and locatives
+    "kto", "co", "jakoby", "jaki", "jaka", "jakie", "który", "która", "które",
+    "którzy", "gdzie", "dokąd", "skąd",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "abp.", "bp.", "doc.", "dr.", "dr hab.", "gen.", "hab.", "inż.", "kpt.",
+    "ks.", "maj.", "mgr.", "mgr inż.", "mjr.", "o.", "p.", "pan.", "pani.",
+    "płk.", "ppor.", "por.", "prof.", "szer.", "św.",
+    # Scholarly, textual, and editorial
+    "art.", "ca.", "cyt.", "cz.", "dz.", "fot.", "jw.", "kol.", "lit.",
+    "m.in.", "nakł.", "np.", "nr.", "odc.", "op. cit.", "par.", "pkt.",
+    "por.", "pot.", "poz.", "przyp.", "pt.", "pw.", "red.", "rozdz.",
+    "ryc.", "rys.", "s.", "st.", "str.", "sygn.", "tab.", "tj.", "tłum.",
+    "tom.", "tzn.", "ust.", "vol.", "v.", "wyd.", "zał.", "zob.",
+    # Administrative, geographical, and measurement
+    "al.", "bl.", "c.", "dn.", "gm.", "godz.", "mld.", "mln.", "n.e.",
+    "ok.", "os.", "p.n.e.", "pl.", "pn.", "poł.", "pow.", "pr.", "r.",
+    "sek.", "sp.", "tel.", "tys.", "ul.", "w.", "w.n.e.", "woj.", "zł.",
+    # International Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "e.g.", "et al.", "etc.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "itd.", "itp.", "etc.", "m.in.", "tzn.", "tj.", "r.", "w.", "zł.",
+    "cdn.", "np.", "al.",
+]
+
+[detection]
+distinctive_chars = ['ł', 'ą', 'ę', 'ś', 'ć', 'ź', 'ż', 'ń', 'Ł', 'Ą', 'Ę', 'Ś', 'Ć', 'Ź', 'Ż', 'Ń']

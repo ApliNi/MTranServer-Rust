@@ -1,0 +1,77 @@
+[metadata]
+language = "nn"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and possessives
+    "han", "ho", "det", "dei", "henne",
+    "hans", "hennar", "deira", "seg", "sin", "sitt", "sine",
+    # Demonstratives and spatial anaphora
+    "denne", "dette", "desse",
+    "den der", "det der", "dei der", "den her", "det her", "dei her",
+    "slik", "slikt", "slike", "såleis", "her", "der",
+    # Discourse connectives and logical transitions
+    "derimot", "dessutan", "difor", "dermed", "likevel", "imot",
+    "følgjeleg", "tvert imot", "vidare", "endeleg", "omsider", "såleis",
+    "trass alt", "faktisk", "eigenleg", "for øvrig", "i tillegg", "nemleg",
+    "i alle fall", "til trass for dette", "fyrst og fremst", "alt i alt",
+    "elles", "deretter",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "og", "samt", "men", "eller", "for", "så",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "fordi", "av di", "sidan", "ettersom", "idet", "med di", "for at", "så at",
+    # Subordinating conjunctions - concessive and conditional
+    "om", "dersom", "såframt", "så framt", "med mindre", "sjølv om",
+    "endå om", "trass i at", "jamvel om", "uansett om",
+    # Subordinating conjunctions - temporal
+    "då", "når", "medan", "før", "inntil", "til", "etter at", "sidan",
+    "så snart som",
+    # Relative pronouns, comparatives, and interrogatives
+    "at", "som", "kva", "kven", "kva for ein", "kva for eit", "kva for nokre",
+    "kva tid", "der", "kor", "kvifor", "korleis", "likesom", "slik som", "enn",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Hr.", "Fru", "Frk.", "Cand.", "Mag.", "Lekt.",
+    "Ing.", "Siv.ing.", "Dir.", "Adv.",
+    # Scholarly, textual, and editorial
+    "bl.a.", "dvs.", "d.v.s.", "f.eks.", "ca.", "jf.", "jfr.",
+    "mfl.", "m.fl.", "mm.", "m.m.", "mv.", "m.v.", "osv.", "o.s.v.",
+    "pga.", "p.g.a.", "e.Kr.", "f.Kr.", "eks.", "evt.", "fig.",
+    "tab.", "kap.", "nr.", "s.", "ifm.", "ift.", "inkl.", "ekskl.",
+    "kl.", "d.m.", "d.d.", "ref.", "vol.",
+    # Administrative, spatial, corporate, and metrics
+    "AS", "A/S", "ASA", "kr.", "mill.", "mrd.", "km.", "tlf.", "min.",
+    "sek.", "dep.", "reg.", "pst.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "osv.", "o.s.v.", "m.m.", "m.v.", "mv.", "mm.", "f.eks.", "bl.a.",
+    "etc.", "al.", "dvs.", "d.v.s.",
+]
+
+[detection]
+distinctive_chars = ['æ', 'ø', 'Æ', 'Ø']
+substring_terms = ["Noreg"]
+whole_words = ["Kva", "kva", "Korleis", "korleis", "ifrå", "ikkje", "kjem"]

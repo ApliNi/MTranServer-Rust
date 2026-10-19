@@ -1,0 +1,67 @@
+[metadata]
+language = "it"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Pronomi anaforici (soggetto e complemento)
+    "egli", "ella", "esse", "essi", "lei", "li", "loro", "lui",
+    # Dimostrativi
+    "ciò", "Ciò", "costei", "costoro", "costui", "queste", "questi",
+    "questa", "questo", "quelle", "quelli", "quella", "quello",
+    # Connettivi discorsivi e varianti
+    "altresì", "Altresì", "d'altronde", "d'altra parte", "difatti",
+    "dunque", "eppure", "infatti", "infine", "insomma", "inoltre",
+    "invero", "nondimeno", "perciò", "per esempio", "pertanto",
+    "però", "Però", "quindi", "tuttavia",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Congiunzioni coordinative
+    "bensì", "ed", "e", "ma", "od", "oppure", "o", "però", "tuttavia",
+    # Congiunzioni subordinative - causali e consecutive
+    "cosicché", "dato che", "giacché", "in modo che", "perché", "poiché",
+    "sicché", "siccome", "visto che",
+    # Congiunzioni subordinative - concessive e condizionali
+    "a condizione che", "a patto che", "benché", "malgrado", "nonostante",
+    "purché", "qualora", "quantunque", "se", "sebbene",
+    # Congiunzioni subordinative - temporali
+    "allorché", "appena", "dopo che", "finché", "mentre", "prima che",
+    "quando",
+    # Congiunzioni subordinative - finali e relative
+    "affinché", "che", "chi", "cui", "dove",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "arch.", "avv.", "dott.", "dott.ssa.", "geom.", "ing.", "mons.",
+    "prof.", "prof.ssa.", "rag.", "rev.", "san.", "santo.", "sig.",
+    "sig.na.", "sig.ra.", "sta.",
+    # Academic, legal, and citations
+    "all.", "art.", "artt.", "cap.", "capp.", "cfr.", "cit.", "ed.",
+    "es.", "et al.", "etc.", "ecc.", "fasc.", "fig.", "ibid.", "loc. cit.",
+    "n.", "nn.", "num.", "op. cit.", "p.", "pag.", "pagg.", "par.",
+    "p. es.", "pp.", "sez.", "tab.", "v.", "vol.", "voll.",
+    # Commercial, administrative, and geographic
+    "ca.", "coord.", "c.so.", "loc.", "max.", "min.", "prov.", "p.za.",
+    "s.a.s.", "s.n.c.", "soc.", "s.p.a.", "s.r.l.", "tel.", "v.le.",
+]
+conditional_end_prefixes = [
+    "ecc.", "es.", "art.", "all.", "dott.", "sig.",
+]

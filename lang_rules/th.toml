@@ -1,0 +1,62 @@
+[metadata]
+language = "th"
+version = "1.0.0"
+word_boundary = false
+
+[generation]
+token_density_ratio = 1.80
+repetition_penalty = 1.15
+no_repeat_ngram_size = 4
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and honorifics
+    "เขา", "เธอ", "มัน", "พวกเขา", "พวกมัน", "พระองค์", "ท่าน",
+    # Demonstratives and spatial anaphora
+    "นี้", "นั้น", "โน้น", "สิ่งนี้", "สิ่งนั้น", "เรื่องนี้", "เหล่านี้", "เหล่านั้น",
+    "ที่นี่", "ที่นั่น", "ที่โน่น", "เช่นนี้", "เช่นนั้น", "ดังนี้", "ดังนั้น",
+    # Logical, causal, and discourse connectives
+    "นอกจากนี้", "ยิ่งไปกว่านั้น", "อีกทั้ง", "ในทางกลับกัน", "ในทางตรงกันข้าม",
+    "อย่างไรก็ตาม", "แต่ทว่า", "ทั้งนี้", "ถึงกระนั้น", "แม้กระนั้น",
+    "ดังนั้น", "เพราะฉะนั้น", "ด้วยเหตุนี้", "ส่งผลให้", "เป็นผลให้",
+    "ในความเป็นจริง", "แท้จริงแล้ว", "อันที่จริง", "กล่าวคือ", "สรุปได้ว่า", "โดยสรุป",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "และ", "หรือ", "แต่", "ทว่า", "มิฉะนั้น", "หรือไม่ก็",
+    # Subordinating conjunctions - causal and purpose
+    "เพราะ", "เพราะว่า", "เนื่องจาก", "ด้วยเหตุที่", "เพื่อ", "เพื่อให้", "เพื่อว่า", "จนกระทั่ง",
+    # Subordinating conjunctions - concessive and conditional
+    "ถ้า", "หาก", "ถ้าหาก", "หากว่า", "แม้ว่า", "ถึงแม้ว่า", "ทั้งๆ ที่", "ทั้งที่", "เว้นแต่", "นอกจากว่า",
+    # Subordinating conjunctions - temporal
+    "เมื่อ", "ขณะที่", "ในขณะที่", "หลังจากที่", "ก่อนที่", "ตั้งแต่", "ตราบใดที่", "ทันทีที่",
+    # Relative pronouns and locatives
+    "ที่", "ซึ่ง", "อัน", "ผู้ซึ่ง",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Royal, governmental, military, and academic titles
+    "ดร.", "ศ.", "รศ.", "ผศ.", "อ.", "นพ.", "พญ.", "ทพ.", "ภก.", "ส.ส.", "ส.ว.",
+    "พล.อ.", "พล.ท.", "พล.ต.", "พ.อ.", "พ.ท.", "พ.ต.", "ร.อ.", "ร.ท.", "ร.ต.",
+    "พ.ต.อ.", "พ.ต.ท.", "พ.ต.ต.", "ร.ต.อ.", "ร.ต.ท.", "ร.ต.ต.",
+    # Geography, administrative units, and calendar
+    "พ.ศ.", "ค.ศ.", "จ.", "อ.", "ต.", "ถ.", "ซ.", "ม.",
+    # Units of measurement and commercial entities
+    "กม.", "กก.", "ซม.", "มม.", "บจก.", "บมจ.", "หจก.",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "no.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "ฯลฯ", "ฯลฯ.", "etc.", "al.",
+]

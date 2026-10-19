@@ -1,0 +1,81 @@
+[metadata]
+language = "bs"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and oblique forms
+    "on", "On", "ona", "Ona", "ono", "Ono", "oni", "Oni", "one", "One",
+    "ga", "Ga", "njega", "Njega", "je", "Je", "nju", "Nju", "ju", "Ju",
+    "nje", "Nje", "mu", "Mu", "njemu", "Njemu", "joj", "Joj", "njoj", "Njoj",
+    "ih", "Ih", "njih", "Njih", "im", "Im", "njima", "Njima",
+    # Demonstratives
+    "to", "To", "taj", "Taj", "ta", "Ta", "ti", "Ti", "te", "Te",
+    "toga", "Toga", "tome", "Tome", "tim", "Tim",
+    "ovaj", "Ovaj", "ova", "Ova", "ovo", "Ovo", "ovi", "Ovi", "ove", "Ove",
+    "onaj", "Onaj", "ona", "Ona", "ono", "Ono", "oni", "Oni", "one", "One",
+    "takav", "Takav", "takva", "Takva", "takvo", "Takvo", "takvi", "Takvi",
+    "ovdje", "Ovdje", "tu", "Tu", "tamo", "Tamo", "ondje", "Ondje",
+    # Discourse connectives and transitions
+    "štaviše", "Štaviše", "naime", "Naime", "osim toga", "Osim toga",
+    "međutim", "Međutim", "ipak", "Ipak", "s druge strane", "S druge strane",
+    "naprotiv", "Naprotiv", "dakle", "Dakle", "stoga", "Stoga",
+    "prema tome", "Prema tome", "napokon", "Napokon", "na kraju", "Na kraju",
+    "uistinu", "Uistinu", "doista", "Doista", "zapravo", "Zapravo",
+    "uostalom", "Uostalom", "naravno", "Naravno", "nažalost", "Nažalost",
+    "srećom", "Srećom", "prije svega", "Prije svega", "na primjer", "Na primjer",
+    "prvo", "Prvo", "drugo", "Drugo", "drugim riječima", "Drugim riječima",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "i", "pa", "te", "ni", "niti", "a", "ali", "nego", "no", "već", "ili",
+    "dakle", "zato", "stoga",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "jer", "budući da", "pošto", "kako", "stoga što", "tako da", "da",
+    # Subordinating conjunctions - concessive and conditional
+    "iako", "premda", "mada", "makar", "ako", "ukoliko", "kad", "li",
+    # Subordinating conjunctions - temporal
+    "kada", "čim", "dok", "prije nego", "prije nego što", "otkako", "tek što",
+    # Comparative and modal
+    "kao da", "poput",
+    # Relative pronouns and locatives
+    "koji", "koja", "koje", "ko", "šta", "gdje", "kamo", "kuda", "odakle",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "bacc.", "boj.", "dipl. ing.", "doc.", "dr.", "dr. sc.", "g.", "gđa.",
+    "gđica.", "gen.", "ing.", "mag.", "mr.", "mr. sc.", "por.", "prof.",
+    "puk.", "sat.",
+    # Scholarly, textual, and editorial
+    "br.", "čl.", "izd.", "npr.", "odl.", "odlom.", "op.", "prev.", "r.",
+    "s.", "sl.", "st.", "str.", "sv.", "tab.", "tač.", "tis.", "tj.",
+    "toč.", "tzv.", "ur.", "usp.", "v.", "vidi.",
+    # Administrative, spatial, and corporate
+    "bb.", "d.d.", "d.o.o.", "kt.", "opć.", "trg.", "ul.",
+    # Time, metrics, currency, and quantities
+    "god.", "h.", "KM.", "mil.", "min.", "mlrd.", "n. e.", "p. n. e.",
+    "sek.", "stol.",
+    # International Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "e.g.", "et al.", "etc.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "itd.", "i sl.", "i dr.", "npr.", "tj.", "tzv.", "g.", "god.", "KM.",
+    "KM", "etc.", "al.",
+]

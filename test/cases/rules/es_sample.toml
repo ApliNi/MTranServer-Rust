@@ -1,0 +1,32 @@
+[metadata]
+language = "es"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+spanish_inverted = true
+quote_style = "curly"
+inverted_compounds = ["por qué", "para qué", "de dónde", "a quién"]
+interrogatives = ["qué", "cómo", "cuándo", "dónde", "quién"]
+exclamatories = ["qué", "cómo", "cuánto", "vaya", "ojalá"]
+introductory_words = ["hola", "oye", "mira", "por favor"]
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+predicate_verbs = ["es", "son", "era", "fue", "tiene", "está", "hay"]
+
+[abbreviations]
+nonbreaking_prefixes = ["Dr.", "Dra.", "Prof.", "Sr.", "Sra.", "p. ej."]
+conditional_end_prefixes = ["etc.", "al.", "núm.", "pág."]
+
+[conjunctions]
+clause_conjunctions = ["pero", "aunque", "porque", "sin embargo", "por lo tanto"]
+
+[discourse]
+discourse_starters = ["él", "ella", "ellos", "este", "esta", "estos", "además"]

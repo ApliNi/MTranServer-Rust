@@ -1,0 +1,4 @@
+# Kept under .github/ because the repository root may not gain new top-level
+# config files; CI passes it to rustfmt via --config-path.
+# The codebase is tab-indented, which differs from the rustfmt default.
+hard_tabs = true

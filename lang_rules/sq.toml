@@ -1,0 +1,76 @@
+[metadata]
+language = "sq"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and case forms
+    "ai", "ajo", "ata", "ato", "atë", "atij", "asaj", "atyre",
+    "e tij", "e saj", "të tyre", "me të", "prej tij", "prej saj",
+    "vetë", "vete",
+    # Demonstratives and spatial anaphora
+    "ky", "kjo", "këta", "këto", "këtij", "kësaj", "këtyre", "këtë",
+    "këtu", "atje", "aty", "andej", "këndej",
+    "i tillë", "e tillë", "të tillë", "të tilla", "kështu", "ashtu",
+    # Discourse connectives and logical transitions
+    "përveç kësaj", "veç kësaj", "gjithashtu", "madje", "megjithatë",
+    "mirëpo", "kurse", "përkundrazi", "si pasojë", "prandaj",
+    "kësisoj", "rrjedhimisht", "në të vërtetë", "faktikisht", "në fakt",
+    "përfundimisht", "së fundi", "me fjalë të tjera", "natyrisht",
+    "së pari", "së dyti", "gjithsesi", "padyshim",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "dhe", "edhe", "por", "kurse", "mirëpo", "megjithatë",
+    "ose", "apo", "prandaj",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "sepse", "pasi", "meqë", "meqenëse", "ngaqë", "me qëllim që",
+    "që", "në mënyrë që",
+    # Subordinating conjunctions - concessive and conditional
+    "nëse", "në qoftë se", "sikur", "me kusht që", "megjithëse",
+    "ndonëse", "sado që", "edhe pse", "edhe po",
+    # Subordinating conjunctions - temporal
+    "kur", "sapo", "posa", "ndërsa", "teksa", "gjersa", "derisa",
+    "para se", "pasi që", "qysh se",
+    # Relative pronouns, comparatives, and interrogatives
+    "i cili", "e cila", "të cilët", "të cilat", "se", "si", "sikur",
+    "aq sa", "kudo", "ngado", "ku", "nga", "siç",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Doc.", "Ing.", "Ark.", "Av.", "Z.", "Zra.", "Zsh.",
+    "Shk.", "Mjek.",
+    # Scholarly, textual, and editorial
+    "etj.", "d.m.th.", "dmth.", "p.sh.", "psh.", "fq.", "kreu",
+    "kap.", "vëll.", "nr.", "kr.", "shih", "krahas.", "krah.", "shemb.",
+    "d.v.", "viti", "shek.", "p.e.s.", "e.s.",
+    # Corporate, administrative, spatial, and metrics
+    "Sh.p.k.", "shpk.", "Sh.a.", "sha.", "tel.", "cel.", "blv.",
+    "rrug.", "rr.", "lagj.", "km.", "m.", "kg.", "lek.", "euro.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "etj.", "d.m.th.", "dmth.", "p.sh.", "psh.", "etc.", "al.",
+    "shih", "krah.",
+]
+
+[detection]
+substring_terms = ["Përshëndetje", "përshëndetje", "Tiranë", "Faleminderit"]

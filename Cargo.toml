@@ -1,0 +1,91 @@
+[workspace]
+members = ["test"]
+resolver = "2"
+
+[package]
+name = "MTranServer-Rust"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.80"
+description = "Translation Server"
+
+[lib]
+name = "mtranserver_lib"
+path = "src/lib.rs"
+
+[dependencies]
+# HTTP server
+axum = { version = "0.8", features = ["macros"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors"] }
+hyper = "1"
+tokio = { version = "1", features = [
+	"rt-multi-thread",
+	"net",
+	"signal",
+	"time",
+	"fs",
+	"io-util",
+	"sync",
+	"macros",
+] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["socks", "rustls-tls"] }
+
+# Compression
+zstd = "0.13"
+
+# Language detection
+whatlang = "0.16"
+whichlang = "0.1"
+
+# Cache
+lru = "0.12"
+
+# Synchronization
+parking_lot = "0.12"
+
+# Async
+futures = "0.3"
+
+# Unicode segmentation (sentence splitting, aligned to Intl.Segmenter)
+unicode-segmentation = "1.12"
+
+# Embedded web UI assets
+rust-embed = "8"
+
+# Random
+rand = "0.8"
+
+# Parallelism
+rayon = "1"
+
+# SHA256
+sha2 = "0.10"
+
+
+# Base64
+base64 = "0.22"
+
+# Memory Allocator
+mimalloc = { version = "0.1", default-features = false }
+memmap2 = "0.9"
+[profile.release]
+opt-level = 3
+panic = "abort"
+lto = "fat"
+codegen-units = 1
+strip = true

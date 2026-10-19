@@ -1,0 +1,8 @@
+[
+  { "input": "你好世界", "expected": "zh" },
+  { "input": "中華民國", "expected": "zh" },
+  { "input": "こんにちは", "expected": "ja" },
+  { "input": "Hello world", "expected": "en" },
+  { "input": "Привет мир", "expected": "ru" },
+  { "input": "Міністерство освіти оголосило про початок реформи", "expected": "uk" }
+]

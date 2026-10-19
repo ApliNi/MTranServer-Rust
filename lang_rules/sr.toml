@@ -1,0 +1,102 @@
+[metadata]
+language = "sr"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "guillemets"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (Cyrillic and Latin)
+    "он", "Он", "она", "Она", "оно", "Оно", "они", "Они", "оне", "Оне",
+    "њега", "Њега", "га", "Га", "њу", "Њу", "је", "Је", "њих", "Њих", "их", "Их",
+    "њему", "Њему", "му", "Му", "њој", "Њој", "јој", "Јој", "њима", "Њима", "им", "Им",
+    "on", "On", "ona", "Ona", "ono", "Ono", "oni", "Oni", "one", "One",
+    "njega", "Njega", "ga", "Ga", "nju", "Nju", "njih", "Njih", "ih", "Ih",
+    "njemu", "Njemu", "mu", "Mu", "njoj", "Njoj", "joj", "Joj", "njima", "Njima", "im", "Im",
+    # Demonstratives
+    "то", "То", "тај", "Тај", "та", "Та", "ти", "Ти", "те", "Те", "тога", "Тога", "томе", "Томе",
+    "ово", "Ово", "овај", "Овај", "ова", "Ова", "ови", "Ови", "ове", "Ове",
+    "онај", "Онај", "такав", "Такав", "таква", "Таква", "такво", "Такво", "такви", "Такви",
+    "овде", "Овде", "ту", "Ту", "тамо", "Тамо",
+    "to", "To", "taj", "Taj", "ta", "Ta", "ti", "Ti", "te", "Te", "toga", "Toga", "tome", "Tome",
+    "ovo", "Ovo", "ovaj", "Ovaj", "ova", "Ova", "ovi", "Ovi", "ove", "Ove",
+    "onaj", "Onaj", "takav", "Takav", "takva", "Takva", "takvo", "Takvo", "takvi", "Takvi",
+    "ovde", "Ovde", "tamo", "Tamo",
+    # Discourse connectives and transitions
+    "штавише", "Штавише", "наиме", "Наиме", "осим тога", "Осим тога",
+    "међутим", "Међутим", "ипак", "Ипак", "с друге стране", "С друге стране",
+    "напротив", "Напротив", "дакле", "Дакле", "стога", "Стога",
+    "према томе", "Према томе", "напослетку", "Напослетку", "на крају", "На крају",
+    "уистину", "Уистину", "доиста", "Доиста", "заправо", "Заправо",
+    "наравно", "Наравно", "нажалост", "Нажалост", "пре свега", "Пре свега",
+    "на пример", "На пример", "прво", "Прво", "друго", "Друго",
+    "štaviše", "Štaviše", "naime", "Naime", "osim toga", "Osim toga",
+    "međutim", "Međutim", "ipak", "Ipak", "s druge strane", "S druge strane",
+    "naprotiv", "Naprotiv", "dakle", "Dakle", "stoga", "Stoga",
+    "prema tome", "Prema tome", "zapravo", "Zapravo", "uistinu", "Uistinu",
+    "naravno", "Naravno", "na primer", "Na primer",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions (Cyrillic and Latin)
+    "и", "па", "те", "ни", "нити", "а", "али", "него", "но", "већ", "или",
+    "дакле", "зато", "стога",
+    "i", "pa", "te", "ni", "niti", "a", "ali", "nego", "no", "već", "ili",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "јер", "будући да", "пошто", "како", "стога што", "тако да", "да",
+    "jer", "budući da", "pošto", "tako da",
+    # Subordinating conjunctions - concessive and conditional
+    "иако", "премда", "мада", "макар", "ако", "уколико", "кад", "ли",
+    "iako", "premda", "mada", "makar", "ako", "ukoliko",
+    # Subordinating conjunctions - temporal
+    "када", "чим", "док", "пре него што", "откако", "тек што",
+    "kada", "čim", "dok", "pre nego što",
+    # Comparative and modal
+    "као да", "попут",
+    # Relative pronouns and locatives
+    "који", "која", "које", "ко", "шта", "где", "куда", "камо", "одакле",
+    "koji", "koja", "koje", "ko", "šta", "gde", "kuda", "odakle",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics (Cyrillic and Latin)
+    "акад.", "г.", "г-ђа.", "г-ђица.", "г-н.", "ген.", "дипл.", "доц.", "др.",
+    "инг.", "инж.", "кап.", "мај.", "мр.", "проф.", "пук.",
+    "akad.", "dipl.", "doc.", "dr.", "g.", "gđa.", "gđica.", "gen.",
+    "ing.", "inž.", "kap.", "maj.", "mr.", "prof.", "puk.",
+    # Scholarly, textual, and editorial
+    "бр.", "в.", "види.", "исп.", "књ.", "нпр.", "одељ.", "одл.", "па.",
+    "прев.", "р.", "с.", "св.", "сл.", "срв.", "ст.", "став.", "стр.", "т.",
+    "таб.", "тач.", "тзв.", "тј.", "ур.", "чл.",
+    "br.", "knj.", "npr.", "odelj.", "prev.", "str.", "tab.", "tač.",
+    "tzv.", "tj.", "ur.",
+    # Administrative, spatial, and corporate
+    "ул.", "трг.",
+    # Time, metrics, currency, and quantities
+    "гг.", "год.", "дин.", "мил.", "мин.", "млрд.", "н. е.", "посл. Хр.",
+    "пр. н. е.", "пр. Хр.", "сек.", "стол.", "тис.", "хиљ.", "ч.",
+    "din.", "god.", "hilj.", "mil.", "mlrd.",
+    # International Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "e.g.", "et al.", "etc.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "итд.", "и сл.", "и др.", "нпр.", "тј.", "тзв.", "г.", "год.", "дин.",
+    "в.", "itd.", "i sl.", "i dr.", "npr.", "tj.", "tzv.", "din.", "etc.", "al.",
+]
+
+[detection]
+unique_chars = ['ђ', 'ћ', 'ј', 'љ', 'њ', 'џ', 'Ђ', 'Ћ', 'Ј', 'Љ', 'Њ', 'Џ']
+substring_terms = ["Србија", "данас", "хвала"]

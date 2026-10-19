@@ -1,0 +1,72 @@
+[metadata]
+language = "af"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and possessives
+    "hy", "sy", "dit", "hulle", "hom", "haar", "hul",
+    "syne", "hare", "homself", "haarself", "hulself",
+    # Demonstratives and spatial anaphora
+    "hierdie", "daardie", "dít",
+    "sulke", "sulkeen", "sulks", "hier", "daar", "toe", "so",
+    # Discourse connectives and logical transitions
+    "bowendien", "buitendien", "daarom", "derhalwe", "nietemin",
+    "nogtans", "tog", "ewenwel", "inteendeel", "gevolglik",
+    "trouens", "immers", "verder", "uiteindelik", "inderdaad",
+    "eintlik", "boonop", "kortom", "ten slotte", "andersins",
+    "daarna", "terselfdertyd",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "en", "maar", "of", "want", "dog",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "omdat", "aangesien", "sodat", "opdat", "deurdat", "nademaal",
+    # Subordinating conjunctions - concessive and conditional
+    "as", "indien", "mits", "tensy", "alhoewel", "hoewel", "ofskoon",
+    "al", "selfs al", "op voorwaarde dat",
+    # Subordinating conjunctions - temporal
+    "terwyl", "nadat", "vandat", "sedert", "totdat", "voordat",
+    "toe", "wanneer", "sodra",
+    # Relative pronouns, comparatives, and interrogatives
+    "dat", "wat", "wie", "waar", "waarom", "hoe", "soos",
+    "as wat", "asof", "of",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Mnr.", "Mev.", "Mej.", "Ds.", "Adv.", "Genl.",
+    "Kol.", "Kapt.", "Luit.", "Sen.",
+    # Scholarly, textual, and editorial
+    "bv.", "b.v.", "d.w.s.", "dws.", "ens.", "o.a.", "nl.", "vgl.",
+    "vlg.", "bl.", "blz.", "hfst.", "par.", "art.", "no.", "nr.",
+    "nrs.", "ca.", "i.p.v.", "t.o.v.", "m.b.t.", "t.s.v.", "vm.", "nm.",
+    "kol.", "fig.", "tab.",
+    # Corporate, administrative, spatial, and metrics
+    "Bpk.", "Edms.", "Mpy.", "Afd.", "Tel.", "Str.", "Pl.", "km.",
+    "kg.", "m.", "sek.", "min.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "ens.", "d.w.s.", "b.v.", "bv.", "o.a.", "nl.", "etc.", "al.", "vgl.",
+]
+
+[detection]
+substring_terms = ["Goeiemôre", "hoe gaan dit", "vandag", "hierdie"]

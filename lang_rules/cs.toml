@@ -1,0 +1,88 @@
+[metadata]
+language = "cs"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and oblique forms
+    "on", "On", "ona", "Ona", "ono", "Ono", "oni", "Oni", "ony", "Ony",
+    "ho", "Ho", "jeho", "Jeho", "něho", "Něho", "jej", "Jej", "ji", "Ji",
+    "jí", "Jí", "ní", "Ní", "něj", "Něj", "jemu", "Jemu", "mu", "Mu",
+    "jim", "Jim", "nich", "Nich", "nimi", "Nimi", "jich", "Jich", "je", "Je",
+    # Demonstratives
+    "to", "To", "ten", "Ten", "ta", "Ta", "ti", "Ti", "ty", "Ty",
+    "toho", "Toho", "tomu", "Tomu", "tím", "Tím",
+    "tento", "Tento", "tato", "Tato", "toto", "Toto", "tito", "Tito", "tyto", "Tyto",
+    "tamten", "Tamten", "tamta", "Tamta", "tamto", "Tamto",
+    "takový", "Takový", "taková", "Taková", "takové", "Takové", "takoví", "Takoví",
+    "zde", "Zde", "tady", "Tady", "tam", "Tam",
+    # Discourse connectives and transitions
+    "navíc", "Navíc", "kromě toho", "Kromě toho", "mimoto", "Mimoto",
+    "avšak", "Avšak", "nicméně", "Nicméně", "přesto", "Přesto",
+    "naopak", "Naopak", "naproti tomu", "Naproti tomu",
+    "tudíž", "Tudíž", "proto", "Proto", "následně", "Následně",
+    "nakonec", "Nakonec", "ve skutečnosti", "Ve skutečnosti",
+    "ovšem", "Ovšem", "tedy", "Tedy", "totiž", "Totiž",
+    "zkrátka", "Zkrátka", "samozřejmě", "Samozřejmě", "bohužel", "Bohužel",
+    "naštěstí", "Naštěstí", "především", "Především", "například", "Například",
+    "zaprvé", "Zaprvé", "zadruhé", "Zadruhé", "jinými slovy", "Jinými slovy",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "a", "i", "ani", "ale", "však", "avšak", "leč", "nýbrž", "naopak", "nebo", "anebo",
+    "proto", "a proto", "tedy", "tudíž", "pročež",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "protože", "poněvadž", "jelikož", "ježto", "takže", "aby",
+    # Subordinating conjunctions - concessive and conditional
+    "ačkoli", "ačkoliv", "přestože", "třebaže", "i když", "byť",
+    "když", "jestliže", "kdyby", "pokud", "pakliže", "ledaže",
+    # Subordinating conjunctions - temporal
+    "jakmile", "sotvaže", "zatímco", "dokud", "až", "dříve než", "poté co",
+    # Comparative and modal
+    "jakoby", "jako",
+    # Relative pronouns and locatives
+    "že", "kdo", "co", "jaký", "jaká", "jaké", "který", "která", "které", "kteří",
+    "jenž", "jež", "kde", "kam", "odkud", "kdy",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Academic and professional titles
+    "Bc.", "doc.", "dr.", "Dr.", "gen.", "Ing.", "JUDr.", "kpt.", "Mgr.",
+    "mjr.", "MUDr.", "MVDr.", "p.", "PhDr.", "pí.", "plk.", "por.", "prof.",
+    "RNDr.",
+    # Scholarly, textual, and editorial
+    "č.", "čís.", "fot.", "kap.", "kol.", "např.", "odd.", "odst.", "obr.",
+    "par.", "písm.", "pol.", "popř.", "pozn.", "př.", "přel.", "red.", "roč.",
+    "s.", "sl.", "srov.", "srv.", "str.", "sv.", "tab.", "tj.", "tzn.", "tzv.",
+    "vč.", "ved.", "viz.", "vyd.", "zvl.",
+    # Administrative, spatial, and corporate
+    "a.s.", "nám.", "okr.", "s.r.o.", "spol.", "tř.", "ul.",
+    # Time, metrics, currency, and quantities
+    "hod.", "mil.", "min.", "mld.", "n. l.", "př. n. l.", "r.", "sek.",
+    "stol.", "tis.",
+    # International Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "e.g.", "et al.", "etc.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "atd.", "apod.", "atp.", "např.", "tj.", "tzn.", "tzv.", "r.", "vč.",
+    "etc.", "al.",
+]
+
+[detection]
+unique_chars = ['ř', 'ě', 'ů', 'Ř', 'Ě', 'Ů']

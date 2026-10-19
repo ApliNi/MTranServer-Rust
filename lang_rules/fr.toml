@@ -1,0 +1,68 @@
+[metadata]
+language = "fr"
+version = "1.1.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+french_spacing = true
+quote_style = "guillemets"
+
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+predicate_verbs = ["est", "sont", "était", "étaient", "a", "ont", "sera", "fait", "peut", "va"]
+
+[discourse]
+discourse_starters = [
+    # Pronoms personnels sujets et objets anaphoriques
+    "c'", "ce", "ceci", "cela", "ça", "Ça", "elle", "elles", "il", "ils",
+    "leur", "lui",
+    # Pronoms démonstratifs composés
+    "celle-ci", "celle-là", "celles-ci", "celles-là", "celui-ci",
+    "celui-là", "ceux-ci", "ceux-là",
+    # Connecteurs logiques et discursifs
+    "ainsi", "bref", "cependant", "d'ailleurs", "de plus", "donc",
+    "en conséquence", "en effet", "en fait", "enfin", "en outre",
+    "néanmoins", "par ailleurs", "par conséquent", "pourtant",
+    "toutefois",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Conjonctions de coordination
+    "car", "donc", "et", "mais", "ni", "or", "ou",
+    # Conjonctions de subordination - cause et conséquence
+    "comme", "de manière que", "de sorte que", "étant donné que",
+    "parce que", "puisque", "si bien que", "vu que",
+    # Conjonctions de subordination - concession et condition
+    "à condition que", "à moins que", "au cas où", "bien que", "encore que",
+    "même si", "pourvu que", "quoique", "si",
+    # Conjonctions de subordination - temps
+    "après que", "alors que", "aussitôt que", "avant que", "depuis que",
+    "dès que", "lorsque", "pendant que", "quand", "tandis que",
+    # Conjonctions de subordination - but et relatives
+    "afin que", "dont", "où", "pour que", "que", "qui", "quoi",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Me.", "Mgr.", "M.", "Mlle.", "Mme.", "Prof.", "St.", "Ste.",
+    # Academic, citations, and textual references
+    "al.", "apr.", "art.", "av.", "c.-à-d.", "cf.", "chap.", "coll.",
+    "éd.", "env.", "et al.", "etc.", "fasc.", "ibid.", "loc. cit.",
+    "op. cit.", "p.", "p. ex.", "paragr.", "pp.", "suppl.", "t.", "vol.",
+    # Time, measurement, addresses, and corporate entities
+    "apr. J.-C.", "av. J.-C.", "bd.", "boul.", "cie.", "max.",
+    "min.", "rue.", "sa.", "sarl.", "sec.", "soc.", "ste.",
+]
+conditional_end_prefixes = [
+    "etc.", "p. ex.", "ex.", "éd.", "vol.",
+]

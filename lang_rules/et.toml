@@ -1,0 +1,75 @@
+[metadata]
+language = "et"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and case forms
+    "tema", "ta", "nad", "teda", "neid", "temale", "talle", "neile",
+    "temas", "neis", "temast", "neist", "temasse", "neisse",
+    "temal", "tal", "neil", "temalt", "talt", "neilt",
+    "temaga", "nendega", "temata", "nendeta", "ise", "enda", "enese",
+    # Demonstratives and spatial anaphora
+    "see", "need", "seda", "selle", "nende", "sellele", "nendele",
+    "selles", "nendes", "sellest", "nendest", "sellesse", "nendesse",
+    "sellel", "nendel", "too", "nood", "tolle", "tollele",
+    "niisugune", "seesugune", "selline", "sellised",
+    "siin", "seal", "siia", "sinna", "siit", "sealt",
+    # Discourse connectives and logical transitions
+    "lisaks", "peale selle", "kusjuures", "samas", "teiselt poolt",
+    "samal ajal", "seega", "järelikult", "seetõttu", "sellepärast",
+    "seepärast", "ometi", "siiski", "see-eest", "vastupidi",
+    "tegelikult", "nimelt", "lõppude lõpuks", "viimaks", "ühtlasi",
+    "kindlasti", "loomulikult", "lühidalt", "esiteks", "teiseks",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "ja", "ning", "ega", "või", "ehk", "ent", "kuid", "aga", "vaid",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "sest", "kuna", "sellepärast et", "seetõttu et", "et", "selleks et",
+    # Subordinating conjunctions - concessive and conditional
+    "kui", "juhul kui", "tingimusel et", "kuigi", "ehkki", "olgugi et",
+    "vaatamata sellele et",
+    # Subordinating conjunctions - temporal
+    "enne kui", "pärast seda kui", "sedamaid kui", "niipea kui",
+    "samal ajal kui", "seni kuni",
+    # Relative pronouns, comparatives, and interrogatives
+    "mis", "kes", "mille", "kelle", "mida", "keda", "milles",
+    "kelles", "millest", "kellest", "millele", "kellele", "kus",
+    "kuhu", "kust", "kuidas", "nagu", "otsekui", "justkui",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Dots.", "Mag.", "Kand.", "Dir.", "Ins.", "Pr.",
+    "Prl.", "Hr.",
+    # Scholarly, textual, and editorial
+    "jne.", "jms.", "jt.", "jpm.", "nt.", "e.m.a.", "m.a.j.", "lk.",
+    "kd.", "vrd.", "vt.", "ptk.", "nr.", "n-ö.", "nn.", "s.t.", "s.o.",
+    "st.", "sth.", "v.a.", "sh.", "k.a.", "jrk.", "nim.", "trk.", "tõlk.",
+    # Corporate, administrative, spatial, and metrics
+    "AS.", "OÜ.", "MTÜ.", "TÜ.", "UÜ.", "tel.", "pst.", "mnt.", "tn.",
+    "raj.", "linn.", "kr.", "eur.", "sek.", "min.", "h.", "km.", "kg.", "m.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "jne.", "jms.", "jt.", "jpm.", "nt.", "s.o.", "s.t.", "sh.",
+    "k.a.", "v.a.", "etc.", "al.", "vrd.", "vt.",
+]

@@ -1,0 +1,148 @@
+[metadata]
+language = "en"
+version = "1.1.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.0
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+pangu_spacing = false
+quote_style = "curly"
+
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+predicate_verbs = [
+    "is", "are", "was", "were", "am", "be", "been", "being", "has", "have", "had", "having",
+    "do", "does", "did", "done", "will", "would", "shall", "should", "can", "could", "may",
+    "might", "must", "say", "says", "said", "go", "goes", "went", "gone", "make", "makes",
+    "made", "get", "gets", "got", "gotten", "know", "knows", "knew", "known", "take",
+    "takes", "took", "taken", "see", "sees", "saw", "seen", "come", "comes", "came",
+    "think", "thinks", "thought", "look", "looks", "looked", "want", "wants", "wanted",
+    "give", "gives", "gave", "given", "use", "uses", "used", "find", "finds", "found",
+    "tell", "tells", "told", "ask", "asks", "asked", "work", "works", "worked", "seem",
+    "seems", "seemed", "feel", "feels", "felt", "try", "tries", "tried", "leave", "leaves",
+    "left", "call", "calls", "called", "keep", "keeps", "kept", "hold", "holds", "held",
+    "bring", "brings", "brought", "begin", "begins", "began", "begun", "show", "shows",
+    "showed", "shown", "hear", "hears", "heard", "play", "plays", "played", "run", "runs",
+    "ran", "move", "moves", "moved", "like", "likes", "liked", "live", "lives", "lived",
+    "believe", "believes", "believed", "receive", "receives", "received", "establish",
+    "establishes", "established", "process", "processes", "processed", "defeat", "defeats",
+    "defeated", "provide", "provides", "provided", "include", "includes", "included",
+    "continue", "continues", "continued", "set", "sets", "learn", "learns", "learned",
+    "learnt", "change", "changes", "changed", "lead", "leads", "led", "understand",
+    "understands", "understood", "watch", "watches", "watched", "follow", "follows",
+    "followed", "stop", "stops", "stopped", "create", "creates", "created", "speak",
+    "speaks", "spoke", "spoken", "read", "reads", "allow", "allows", "allowed", "add",
+    "adds", "added", "spend", "spends", "spent", "grow", "grows", "grew", "grown", "open",
+    "opens", "opened", "walk", "walks", "walked", "win", "wins", "won", "offer", "offers",
+    "offered", "buy", "buys", "bought", "wait", "waits", "waited", "sell", "sells", "sold",
+    "build", "builds", "built", "send", "sends", "sent", "stay", "stays", "stayed", "fall",
+    "falls", "fell", "fallen", "cut", "cuts",
+]
+non_verb_ed = [
+    "naked", "sacred", "hundred", "wicked", "tired", "bed", "red", "sled", "shed",
+]
+non_verb_ing = [
+    "morning", "evening", "something", "nothing", "anything", "everything",
+    "building", "ceiling", "feeling", "meeting", "meaning", "painting",
+    "training", "wedding", "string", "spring", "king", "ring", "wing", "thing",
+]
+
+[hyphenation]
+prefixes = [
+    "e", "a", "x", "pre", "post", "re", "co", "non", "sub", "anti", "self", "real", "cross",
+    "multi", "auto", "semi", "inter", "intra", "well", "high", "low", "full", "half", "open",
+    "built", "end", "out", "in", "on", "off", "up", "all", "ill", "over", "under", "micro",
+    "macro", "neo", "pseudo", "ultra", "cyber", "bio", "ex", "mid", "quasi",
+]
+suffixes = [
+    "like", "free", "proof", "based", "driven", "related", "bound", "oriented", "friendly",
+    "ready", "rich", "wide", "wise", "able", "only", "time", "up", "in", "off", "out", "down",
+    "known",
+]
+connectors = [
+    "to", "of", "the", "by", "and", "in", "for", "a",
+]
+
+[detection]
+greetings = [
+    "good afternoon", "good evening", "good morning", "good night", "hello",
+    "see you later", "thank you", "thanks",
+]
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns (subject, object, possessive, reflexive)
+    "he", "her", "hers", "herself", "him", "himself", "his", "it",
+    "its", "itself", "she", "their", "theirs", "them", "themselves",
+    "they",
+    # Demonstratives and indefinite anaphora
+    "here", "one", "oneself", "such", "that", "the former", "the latter",
+    "there", "these", "this", "those",
+    # Logical, causal, and sequential connectives
+    "accordingly", "additionally", "also", "and", "besides", "but",
+    "consequently", "furthermore", "hence", "however", "in addition",
+    "in contrast", "indeed", "in fact", "instead", "likewise", "meanwhile",
+    "moreover", "nevertheless", "nonetheless", "on the contrary",
+    "on the other hand", "otherwise", "overall", "similarly", "so",
+    "subsequently", "then", "therefore", "thus", "yet",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "and", "but", "for", "nor", "or", "so", "yet",
+    # Subordinating conjunctions - causal and result
+    "as", "because", "inasmuch as", "in order that", "insofar as", "lest",
+    "since", "so that",
+    # Subordinating conjunctions - concessive and adversative
+    "although", "even if", "even though", "much as", "rather than", "though",
+    "whereas", "while",
+    # Subordinating conjunctions - conditional
+    "as long as", "if", "in case", "on condition that", "provided that",
+    "providing that", "so long as", "unless", "whether",
+    # Subordinating conjunctions - temporal
+    "after", "as soon as", "before", "once", "till", "until", "when",
+    "whenever",
+    # Relative pronouns and locatives
+    "that", "where", "wherever", "which", "who", "whom", "whose",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Honorifics and titles
+    "Adm.", "Atty.", "Capt.", "Cmdr.", "Col.", "Dr.", "Esq.", "Fr.",
+    "Gen.", "Gov.", "Hon.", "Insp.", "Jr.", "Lt.", "Maj.", "Messrs.",
+    "Miss.", "Mr.", "Mrs.", "Ms.", "Mt.", "Pres.", "Prof.", "Rep.",
+    "Rev.", "Sec.", "Sen.", "Sgt.", "Sr.", "St.", "Supt.", "Treas.",
+    # Academic, citations, and scholarly publications
+    "acad.", "approx.", "c.", "ca.", "cf.", "ch.", "chap.", "cl.",
+    "coll.", "dept.", "diss.", "div.", "ed.", "edn.", "eds.", "eq.",
+    "eqs.", "est.", "et al.", "etc.", "e.g.", "fig.", "figs.", "ibid.",
+    "id.", "i.e.", "inst.", "loc. cit.", "no.", "nos.", "op. cit.", "p.",
+    "para.", "pp.", "proc.", "ref.", "refs.", "rev.", "sc.", "sec.",
+    "subpara.", "suppl.", "tab.", "trans.", "univ.", "v.", "viz.", "vol.",
+    "vols.", "vs.",
+    # Business, corporate, and institutional entities
+    "Assoc.", "Bros.", "Co.", "Corp.", "Inc.", "LLC.", "LLP.", "Ltd.",
+    "Mfg.", "PLC.",
+    # Units of measurement, dates, and time
+    "avg.", "dia.", "ft.", "gal.", "ht.", "in.", "lb.", "lbs.", "max.",
+    "mi.", "min.", "mph.", "oz.", "pt.", "qt.", "rpm.", "temp.",
+    "wt.", "yd.",
+    "A.D.", "B.C.", "B.C.E.", "C.E.", "a.m.", "p.m.",
+    "Jan.", "Feb.", "Mar.", "Apr.", "Jun.", "Jul.", "Aug.", "Sep.",
+    "Sept.", "Oct.", "Nov.", "Dec.",
+    "Mon.", "Tue.", "Wed.", "Thu.", "Fri.", "Sat.", "Sun.",
+    # Address, location, and administrative divisions
+    "Apt.", "Ave.", "Bldg.", "Blvd.", "Ct.", "Hwy.", "Ln.",
+    "Pl.", "Rd.", "Rm.", "Sq.", "Ste.",
+]
+conditional_end_prefixes = [
+    "etc.", "al.", "inc.", "ltd.", "co.", "corp.", "vs.",
+]

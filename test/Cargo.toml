@@ -1,0 +1,22 @@
+[package]
+name = "mtranserver-test"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mtranserver_test"
+path = "src/lib.rs"
+
+[dependencies]
+mtranserver_lib = { package = "MTranServer-Rust", path = ".." }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "sync",
+    "fs",
+] }
+parking_lot = "0.12"

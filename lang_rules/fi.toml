@@ -1,0 +1,75 @@
+[metadata]
+language = "fi"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and case variants
+    "hän", "se", "he", "ne",
+    "hänet", "häntä", "hänen", "hänessä", "hänestä", "häneen", "hänellä", "hänelle",
+    "sen", "sitä", "siinä", "siitä", "siihen", "sillä", "sille",
+    "heidät", "heitä", "heidän", "heillä", "heille",
+    "niitä", "niiden", "niissä", "niistä", "niihin", "niillä", "niille",
+    # Demonstratives and spatial anaphora
+    "tämä", "tämän", "tätä", "tässä", "tästä", "tähän", "tällä", "tälle",
+    "nämä", "näiden", "näitä", "näissä", "näistä", "näihin", "näillä",
+    "tuo", "tuon", "tuota", "tuossa", "tuosta", "nuo", "noiden", "noita",
+    "tällainen", "tuollainen", "sellainen", "sellaiset",
+    "täällä", "tuolla", "siellä", "tänne", "tuonne", "sinne",
+    # Discourse connectives and logical transitions
+    "lisäksi", "kuitenkin", "sen sijaan", "siksi", "sen vuoksi", "sen tähden",
+    "toisaalta", "puolestaan", "näin ollen", "sikäli", "siten", "päinvastoin",
+    "tosin", "nimittäin", "varsinkin", "erityisesti", "loppujen lopuksi",
+    "itse asiassa", "vihdoin", "edelleen", "samalla", "yleensä",
+    "kaiken kaikkiaan", "muuten",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "ja", "sekä", "mutta", "vaan", "tai", "vai", "eli", "sillä",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "koska", "kun", "jotta", "siksi että", "niin että",
+    # Subordinating conjunctions - concessive and conditional
+    "jos", "mikäli", "joskaan", "vaikka", "vaikkakin", "joskin",
+    "sikäli kuin", "ellei",
+    # Subordinating conjunctions - temporal
+    "jahka", "samalla kun", "ennen kuin", "kunnes", "sitten kun",
+    # Relative pronouns, comparatives, and interrogatives
+    "että", "joka", "mikä", "joiden", "joita", "joissa", "joista",
+    "johon", "jolla", "jolta", "jolle", "kuin", "ikään kuin", "ikäänkuin",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Tri", "Prof.", "Dos.", "Maist.", "Kand.", "Leht.", "Ins.",
+    "Evl.", "Kapt.", "Maj.", "Tj.", "Past.", "Herra", "Rva", "Nti",
+    # Scholarly, textual, and editorial
+    "esim.", "jne.", "ym.", "yms.", "ts.", "mm.", "ns.", "vrt.",
+    "ks.", "s.", "kpl.", "luku", "lk.", "nro", "n:o", "v.", "puh.",
+    "pj.", "vpj.", "ml.", "pl.", "tark.", "ao.", "ko.", "em.", "yo.",
+    "toht.", "julk.", "toim.", "pain.", "kuv.", "taul.",
+    # Corporate, administrative, spatial, and metrics
+    "Oy", "Oyj", "Ry", "Ay", "Ky", "klo", "mrd.", "milj.", "mk",
+    "eKr.", "jKr.", "p.", "km.", "kg.", "m.", "sek.", "min.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "jne.", "ym.", "yms.", "esim.", "ts.", "mm.", "ns.", "etc.",
+    "al.", "vrt.", "ks.",
+]

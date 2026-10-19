@@ -1,0 +1,23 @@
+[
+  { "input": "Hội nghị quốc tế về phát triển bền vững đã khai mạc sáng nay tại Hà Nội.", "expected": "vi" },
+  { "input": "Parlamentul a adoptat noua lege privind protecția mediului înconjurător.", "expected": "ro" },
+  { "input": "Bună ziua, cum vă simțiți astăzi și ce noutăți aveți la birou?", "expected": "ro" },
+  { "input": "A preservação da floresta amazônica é fundamental para a regulação do clima global.", "expected": "pt" },
+  { "input": "Die Transformation der europäischen Energieversorgung erfordert zuverlässig gewährleistet werden.", "expected": "de" },
+  { "input": "Sverige är känt för sin vackra natur och sina djupa skogar.", "expected": "sv" },
+  { "input": "Stortinget vedtok i går det nye statsbudsjettet etter lange forhandlinger.", "expected": "nb" },
+  { "input": "Kva heiter du, og kor kjem du ifrå? Korleis går det med deg?", "expected": "nn" },
+  { "input": "Regeringen fremlægger i dag sit udspil til den kommende sundhedsreform.", "expected": "da" },
+  { "input": "Hoxe imos á praia porque fai un día moi bo e quente.", "expected": "gl" },
+  { "input": "Kaixo lagun, egun on! Nola zaude gaur Donostian? Oso pozik nago zu ikusteaz.", "expected": "eu" },
+  { "input": "Përshëndetje, si jeni sot në Tiranë? Shpresoj që gjithçka po shkon mirë me punën tuaj.", "expected": "sq" },
+  { "input": "Bu gün hava çox gözəldir, parkda gəzintiyə çıxmaq istəyirsinizmi? Sabahınız xeyir.", "expected": "az" },
+  { "input": "Goeiemôre, hoe gaan dit vandag met jou in hierdie pragtige weer?", "expected": "af" },
+  { "input": "Selamat pagi, apa khabar anda hari ini di Kuala Lumpur? Semoga sihat selalu.", "expected": "ms" },
+  { "input": "Selamat pagi, bagaimana kabar Anda hari ini di Jakarta? Semoga semuanya baik.", "expected": "id" },
+  { "input": "Das Haus ist alt und schön, aber wir wohnen hier.", "expected": "de" },
+  { "input": "Une maison avec un grand jardin pour elle.", "expected": "fr" },
+  { "input": "Le bâtiment moderne a été conçu grâce aux modèles industriels.", "expected": "fr" },
+  { "input": "Los libros y las cartas pero no todos los días.", "expected": "es" },
+  { "input": "The dog and the cat were playing with that toy.", "expected": "en" }
+]

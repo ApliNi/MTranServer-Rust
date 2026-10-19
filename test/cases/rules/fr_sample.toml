@@ -1,0 +1,23 @@
+[metadata]
+language = "fr"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+french_spacing = true
+quote_style = "guillemets"
+
+[abbreviations]
+nonbreaking_prefixes = ["M.", "Mme.", "Mlle.", "Dr.", "Prof.", "p. ex.", "c.-à-d."]
+conditional_end_prefixes = ["etc.", "al.", "cf.", "chap."]
+
+[conjunctions]
+clause_conjunctions = ["mais", "donc", "or", "parce que", "puisque", "quoique"]
+
+[discourse]
+discourse_starters = ["il", "elle", "ils", "elles", "ce", "cela", "ainsi"]

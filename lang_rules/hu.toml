@@ -1,0 +1,83 @@
+[metadata]
+language = "hu"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and case variants
+    "ő", "ők", "őt", "őket", "neki", "nekik", "vele", "velük",
+    "nála", "náluk", "tőle", "tőlük", "hozzá", "hozzájuk",
+    "benne", "bennük", "belőle", "belőlük", "belé", "beléjük",
+    "rajta", "rajtuk", "róla", "róluk", "rá", "rájuk",
+    "maga", "maguk", "magát", "saját",
+    # Demonstratives and spatial anaphora
+    "ez", "az", "ezek", "azok", "ezt", "azt", "ezeket", "azokat",
+    "ennek", "annak", "ezeknek", "azoknak", "ezzel", "azzal",
+    "ezekkel", "azokkal", "ebben", "abban", "ezekben", "azokban",
+    "ebből", "abból", "ezekből", "azokból", "ezen", "azon",
+    "erre", "arra", "erről", "arról", "ennél", "annál",
+    "ilyen", "olyan", "ilyenek", "olyanok", "így", "úgy",
+    "itt", "ott", "innen", "onnan",
+    # Discourse connectives and logical transitions
+    "továbbá", "ezenkívül", "azonkívül", "ráadásul", "azonban",
+    "viszont", "mégis", "mindazonáltal", "ennek ellenére",
+    "ennek következtében", "következésképpen", "ezért", "emiatt",
+    "tehát", "úgyhogy", "valójában", "voltaképpen", "egyszóval",
+    "végeredményben", "különben", "egyrészt", "másrészt",
+    "mindenesetre", "végül",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "és", "s", "meg", "vagy", "de", "viszont", "pedig", "ám",
+    "ámde", "azonban", "sőt", "vagyis", "azaz", "tudniillik", "se", "sem",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "mert", "mivel", "minthogy", "úgyhogy", "azért hogy", "nehogy",
+    # Subordinating conjunctions - concessive and conditional
+    "ha", "amennyiben", "hacsak nem", "bár", "ámbár", "noha",
+    "jóllehet", "még ha", "annak ellenére hogy",
+    # Subordinating conjunctions - temporal
+    "amikor", "mikor", "miközben", "mialatt", "amióta", "mielőtt",
+    "miután", "amíg", "míg", "mihelyt", "alighogy",
+    # Relative pronouns, comparatives, and interrogatives
+    "hogy", "aki", "ami", "amely", "amelyik", "amilyen", "amekkora",
+    "amennyi", "ahol", "ahová", "ahonnan", "ahogy", "mint", "mintha",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "Dr.", "Prof.", "Id.", "Ifj.", "Özv.", "Kht.", "Bcs.", "Okl.",
+    "Ny.", "Nyá.", "V.",
+    # Scholarly, textual, and editorial
+    "stb.", "pl.", "úgym.", "ill.", "vö.", "uo.", "uaz.", "ti.",
+    "tkp.", "l.", "ld.", "kül.", "bek.", "köt.", "fej.", "lap.",
+    "sk.", "sz.", "tsz.", "fsz.", "fszt.", "km.", "m.k.", "ker.", "em.",
+    # Corporate, administrative, spatial, and metrics
+    "Kft.", "Bt.", "Zrt.", "Nyrt.", "Kkt.", "Kht.", "Rt.", "u.",
+    "krt.", "tér", "út.", "fsz.", "fszla.", "tel.", "fax", "db.",
+    "min.", "mp.", "óra", "Ft.", "HUF.",
+    # International Latin abbreviations
+    "etc.", "et al.", "e.g.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "stb.", "pl.", "úgym.", "ill.", "vö.", "ti.", "uo.", "etc.",
+    "al.", "ld.",
+]
+
+[detection]
+unique_chars = ['ő', 'ű', 'Ő', 'Ű']

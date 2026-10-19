@@ -1,0 +1,22 @@
+[
+  {
+    "sep": ". ",
+    "lang": "zh",
+    "expected": "。"
+  },
+  {
+    "sep": ". ",
+    "lang": "en",
+    "expected": ". "
+  },
+  {
+    "sep": " - ",
+    "lang": "ja",
+    "expected": " - "
+  },
+  {
+    "sep": "custom",
+    "lang": "zh",
+    "expected": "custom"
+  }
+]

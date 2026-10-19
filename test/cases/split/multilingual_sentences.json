@@ -1,0 +1,94 @@
+[
+  {
+    "name": "german_abbreviations_and_sentences",
+    "lang": "de",
+    "text": "Herr Dr. Schmidt reist nach Berlin, z. B. mit dem Zug. Die Konferenz in München beginnt morgen früh.",
+    "expected": [
+      { "text": "Herr Dr. Schmidt reist nach Berlin, z. B. mit dem Zug.", "separator": " " },
+      { "text": "Die Konferenz in München beginnt morgen früh.", "separator": "" }
+    ]
+  },
+  {
+    "name": "french_abbreviations_and_guillemets",
+    "lang": "fr",
+    "text": "M. Dupont et Mme. Martin sont arrivés à Paris. « Bonjour tout le monde !» ont-ils dit. Comment allez-vous ?",
+    "expected": [
+      { "text": "M. Dupont et Mme. Martin sont arrivés à Paris.", "separator": " " },
+      { "text": "« Bonjour tout le monde !»", "separator": " " },
+      { "text": "ont-ils dit.", "separator": " " },
+      { "text": "Comment allez-vous ?", "separator": "" }
+    ]
+  },
+  {
+    "name": "russian_abbreviations_and_initials",
+    "lang": "ru",
+    "text": "А. С. Пушкин родился в Москве. Читайте гл. 5 и т. д. для подробностей. «Прекрасно!» — воскликнул он.",
+    "expected": [
+      { "text": "А. С. Пушкин родился в Москве.", "separator": " " },
+      { "text": "Читайте гл. 5 и т. д. для подробностей.", "separator": " " },
+      { "text": "«Прекрасно!»", "separator": " " },
+      { "text": "— воскликнул он.", "separator": "" }
+    ]
+  },
+  {
+    "name": "spanish_inverted_punctuation_and_honorifics",
+    "lang": "es",
+    "text": "El Dr. García llegó temprano hoy. ¿Cómo está usted? ¡Muy bien, muchas gracias! ¿Y su familia?",
+    "expected": [
+      { "text": "El Dr. García llegó temprano hoy.", "separator": " " },
+      { "text": "¿Cómo está usted?", "separator": " " },
+      { "text": "¡Muy bien, muchas gracias!", "separator": " " },
+      { "text": "¿Y su familia?", "separator": "" }
+    ]
+  },
+  {
+    "name": "japanese_brackets_and_punctuation",
+    "lang": "ja",
+    "text": "「本日の会議は終了しました」と議長が告げた。明日は十時から開始します！質問はありますか？",
+    "expected": [
+      { "text": "「本日の会議は終了しました」と議長が告げた。", "separator": "" },
+      { "text": "明日は十時から開始します！", "separator": "" },
+      { "text": "質問はありますか？", "separator": "" }
+    ]
+  },
+  {
+    "name": "chinese_quotes_and_brackets",
+    "lang": "zh",
+    "text": "总监说：“大家请看大屏幕！”现场顿时安静下来。（真的吗？）确实如此。",
+    "expected": [
+      { "text": "总监说：“大家请看大屏幕！”", "separator": "" },
+      { "text": "现场顿时安静下来。", "separator": "" },
+      { "text": "（真的吗？）", "separator": "" },
+      { "text": "确实如此。", "separator": "" }
+    ]
+  },
+  {
+    "name": "arabic_rtl_question_and_period",
+    "lang": "ar",
+    "text": "كيف حالك اليوم؟ أنا بخير والحمد لله! شكراً جزيلاً لك.",
+    "expected": [
+      { "text": "كيف حالك اليوم؟", "separator": " " },
+      { "text": "أنا بخير والحمد لله!", "separator": " " },
+      { "text": "شكراً جزيلاً لك.", "separator": "" }
+    ]
+  },
+  {
+    "name": "urdu_rtl_full_stop",
+    "lang": "ur",
+    "text": "یہ ایک بہت خوبصورت دن ہے۔ کیا آپ ہمارے ساتھ چلیں گے؟ جی ہاں، ضرور۔",
+    "expected": [
+      { "text": "یہ ایک بہت خوبصورت دن ہے۔", "separator": " " },
+      { "text": "کیا آپ ہمارے ساتھ چلیں گے؟", "separator": " " },
+      { "text": "جی ہاں، ضرور۔", "separator": "" }
+    ]
+  },
+  {
+    "name": "english_figures_and_acronyms",
+    "lang": "en",
+    "text": "Please see Fig. 1 and Eq. 4 for full mathematical details. The experiment was successfully verified yesterday.",
+    "expected": [
+      { "text": "Please see Fig. 1 and Eq. 4 for full mathematical details.", "separator": " " },
+      { "text": "The experiment was successfully verified yesterday.", "separator": "" }
+    ]
+  }
+]

@@ -1,0 +1,67 @@
+[metadata]
+language = "id"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and honorifics
+    "ia", "dia", "mereka", "beliau",
+    # Demonstratives and spatial anaphora
+    "ini", "itu", "hal ini", "hal itu", "perkara ini",
+    "di sini", "di situ", "di sana", "begitu", "demikian",
+    # Logical, causal, and discourse connectives
+    "selain itu", "lebih lanjut", "bahkan", "di samping itu", "sebaliknya", "di sisi lain",
+    "namun", "akan tetapi", "meskipun demikian", "walaupun demikian", "kendati demikian",
+    "oleh karena itu", "oleh sebab itu", "maka dari itu", "akibatnya", "dengan demikian",
+    "sebenarnya", "pada kenyataannya", "sesungguhnya", "dengan kata lain", "singkatnya", "kesimpulannya",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "dan", "serta", "atau", "tetapi", "tapi", "melainkan", "padahal", "sedangkan",
+    # Subordinating conjunctions - causal and purpose
+    "karena", "sebab", "oleh karena", "oleh sebab", "agar", "supaya", "hingga", "sehingga", "sampai",
+    # Subordinating conjunctions - concessive and conditional
+    "jika", "kalau", "jikalau", "bila", "apabila", "asalkan",
+    "meskipun", "walaupun", "kendati", "biarpun", "sekalipun",
+    # Subordinating conjunctions - temporal
+    "ketika", "saat", "sewaktu", "tatkala", "setelah", "sesudah",
+    "sebelum", "sejak", "semenjak", "selama", "sementara",
+    # Relative pronouns and locatives
+    "yang", "tempat", "di mana",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Academic, religious, and honorific titles
+    "Dr.", "Drs.", "Dra.", "Prof.", "Ir.", "H.", "Hj.", "Tn.", "Ny.", "Nn.",
+    # Citations, scholarly references, and publishing
+    "hlm.", "hal.", "bab.", "jil.", "no.", "nom.", "pas.", "ayt.",
+    # Geography, administrative units, and addresses
+    "Jl.", "Jln.", "Gg.", "rt.", "rw.", "kel.", "kec.", "kab.", "prov.",
+    # Corporate and organizational entities
+    "PT.", "CV.", "UD.", "Tbk.",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "dll.", "dsb.", "dst.", "dkk.", "etc.", "al.",
+]
+
+[detection]
+substring_terms = ["Jakarta", "kerja sama", "kabar"]

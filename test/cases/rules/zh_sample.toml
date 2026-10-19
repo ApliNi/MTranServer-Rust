@@ -1,0 +1,22 @@
+[metadata]
+language = "zh"
+version = "1.0.0"
+word_boundary = false
+
+[generation]
+token_density_ratio = 0.65
+no_repeat_ngram_size = 5
+
+[typography]
+pangu = true
+quote = "curly"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[conjunctions]
+clause_conjunctions = ["但是", "然而", "尽管如此", "因此", "此外"]
+
+[discourse]
+discourse_starters = ["他", "她", "它", "他们", "这", "那", "总之"]

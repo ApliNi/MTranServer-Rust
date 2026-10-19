@@ -1,0 +1,72 @@
+[metadata]
+language = "pt"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.15
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Pronomes anafóricos (sujeito e objeto)
+    "ela", "elas", "ele", "eles", "lhe", "lhes",
+    # Demonstrativos
+    "aquela", "aquelas", "aquele", "aqueles", "aquilo",
+    "essa", "essas", "esse", "esses", "isso",
+    "esta", "estas", "este", "estes", "isto",
+    # Conectores discursivos e varianti
+    "ademais", "além disso", "Além disso", "assim", "com efeito",
+    "contudo", "de fato", "em suma", "entretanto", "finalmente",
+    "no entanto", "outrossim", "por conseguinte", "por isso",
+    "portanto", "todavia",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Conjunções coordenativas
+    "contudo", "entretanto", "e", "mas", "ou", "porém", "todavia",
+    # Conjunções subordinativas - causais e consecutivas
+    "como", "dado que", "de forma que", "de modo que", "de sorte que",
+    "já que", "pois", "porque", "porquanto", "visto que",
+    # Conjunções subordinativas - concessivas e condicionais
+    "a menos que", "a não ser que", "ainda que", "apesar de que",
+    "caso", "conquanto", "contanto que", "embora", "mesmo que",
+    "posto que", "salvo se", "se", "se bem que",
+    # Conjunções subordinativas - temporais
+    "antes que", "assim que", "até que", "depois que", "desde que",
+    "enquanto", "logo que", "quando",
+    # Conjunções subordinativas - finais e relativas
+    "a fim de que", "cuja", "cujo", "onde", "para que", "quem", "que",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "adv.", "arq.", "d.", "dr.", "dra.", "eng.", "enga.", "pe.",
+    "prof.", "profa.", "sr.", "sra.", "srta.", "sta.", "sto.",
+    # Academic, citations, and textual references
+    "art.", "artt.", "cap.", "cáp.", "cf.", "cfr.", "ed.", "et al.",
+    "etc.", "ex.", "fasc.", "fig.", "ibid.", "loc. cit.", "n.", "n.º.",
+    "núm.", "op. cit.", "p.", "pág.", "págs.", "par.", "paragr.",
+    "p. ex.", "pp.", "sec.", "seç.", "tab.", "v.", "vol.", "vols.",
+    # Commercial, administrative, metrics, and addresses
+    "al.", "ap.", "apt.", "aprox.", "av.", "bl.", "cia.", "cx.",
+    "lda.", "ltda.", "máx.", "mín.", "r.", "s.a.", "tel.",
+]
+conditional_end_prefixes = [
+    "etc.", "ex.", "p. ex.", "coord.", "prof.",
+]
+
+[detection]
+distinctive_chars = ['ã', 'õ', 'Ã', 'Õ']
+substring_terms = ["ção", "ções", "não", "ão"]

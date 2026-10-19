@@ -1,0 +1,79 @@
+[metadata]
+language = "lv"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.20
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "german"
+
+[syntax]
+clustering_gap_threshold = 3
+head_direction = "head_initial"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns and oblique forms
+    "viņš", "Viņš", "viņa", "Viņa", "viņi", "Viņi", "viņas", "Viņas",
+    "viņu", "Viņu", "viņam", "Viņam", "viņai", "Viņai", "viņiem", "Viņiem", "viņām", "Viņām",
+    # Demonstratives
+    "tas", "Tas", "tā", "Tā", "tie", "Tie", "tās", "Tās",
+    "tam", "Tam", "to", "To", "tajā", "Tajā", "tiem", "Tiem",
+    "šis", "Šis", "šī", "Šī", "šie", "Šie", "šīs", "Šīs",
+    "šim", "Šim", "šo", "Šo", "šajā", "Šajā", "šiem", "Šiem",
+    "tāds", "Tāds", "tāda", "Tāda", "tādi", "Tādi", "tādas", "Tādas",
+    "šeit", "Šeit", "te", "Te", "tur", "Tur",
+    # Discourse connectives and transitions
+    "turklāt", "Turklāt", "bez tam", "Bez tam", "vēl jo vairāk", "Vēl jo vairāk",
+    "tomēr", "Tomēr", "neskatoties uz to", "Neskatoties uz to",
+    "no otras puses", "No otras puses", "gluži pretēji", "Gluži pretēji",
+    "tādēļ", "Tādēļ", "tāpēc", "Tāpēc", "tātad", "Tātad",
+    "līdz ar to", "Līdz ar to", "visbeidzot", "Visbeidzot",
+    "galu galā", "Galu galā", "patiesībā", "Patiesībā",
+    "protams", "Protams", "diemžēl", "Diemžēl", "par laimi", "Par laimi",
+    "proti", "Proti", "piemēram", "Piemēram", "vispirms", "Vispirms",
+    "pirmkārt", "Pirmkārt", "otrkārt", "Otrkārt", "īsi sakot", "Īsi sakot",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "un", "arī", "kā arī", "nedz", "bet", "tomēr", "taču", "turpretī", "turpretim",
+    "vai", "jeb", "tātad", "tāpēc", "tādēļ",
+    # Subordinating conjunctions - causal, consecutive, and final
+    "jo", "tāpēc ka", "tādēļ ka", "tā kā", "tādējādi", "lai",
+    # Subordinating conjunctions - concessive and conditional
+    "lai gan", "kaut gan", "kaut", "kaut arī", "ja", "ja vien", "gadījumā ja",
+    # Subordinating conjunctions - temporal
+    "kad", "kamēr", "tikko", "līdzko", "pirms", "pēc tam kad", "kopš",
+    # Comparative and modal
+    "it kā", "it kā arī", "gluži kā",
+    # Relative pronouns and locatives
+    "ka", "kurš", "kura", "kuri", "kuras", "kas", "kur", "no kurienes", "kā",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Titles and honorifics
+    "doc.", "dr.", "gen.", "habil. dr.", "inž.", "kapt.", "kundz.", "kungs.",
+    "māc.", "mag.", "mg.", "prof.", "pulkv.", "sv.",
+    # Scholarly, textual, and editorial
+    "att.", "lpp.", "nod.", "nr.", "p.", "piem.", "punkt.", "red.", "sēj.",
+    "sk.", "t. i.", "t.i.", "tab.", "tulk.", "utt.", "utml.", "zīm.",
+    # Administrative, spatial, and corporate
+    "biedr.", "bulv.", "c.", "iel.", "iela.", "lauk.", "nov.", "pag.",
+    "pr.", "raj.",
+    # Time, metrics, currency, and quantities
+    "eiro.", "eur.", "g.", "gs.", "m.ē.", "milj.", "min.", "mlrd.",
+    "pr. Kr.", "sek.", "st.", "stund.", "tūkst.",
+    # International Latin abbreviations
+    "Dr.", "Fig.", "Prof.", "e.g.", "et al.", "etc.", "i.e.", "vs.",
+]
+conditional_end_prefixes = [
+    "utt.", "utml.", "u.c.", "t. i.", "t.i.", "piem.", "g.", "gs.",
+    "m.ē.", "etc.", "al.",
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "src": "DSpark: Confidence-Scheduled Speculative Decoding",
+    "raw": "DSparks: 与半自动退行型进行自信期推测解码",
+    "src_lang": "en",
+    "trg_lang": "zh",
+    "expected": "DSpark: 与半自动退行型进行自信期推测解码"
+  },
+  {
+    "src": "Raspberry Pi Pico",
+    "raw": "रसप बर पई पक",
+    "src_lang": "en",
+    "trg_lang": "hi",
+    "expected": "रास्पबेरी पाई पिको"
+  },
+  {
+    "src": "Raspberry Pi Ltd",
+    "raw": "Frambuesa Pi Ltd",
+    "src_lang": "en",
+    "trg_lang": "es",
+    "expected": "Raspberry Pi Ltd"
+  }
+]

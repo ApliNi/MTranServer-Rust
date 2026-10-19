@@ -1,0 +1,15 @@
+[
+  { "input": "こんにちは世界", "expected": "ja" },
+  { "input": "新しい iPhone のカメラ機能と battery life は本当に素晴らしいですね。", "expected": "ja" },
+  { "input": "안녕하세요 세계", "expected": "ko" },
+  { "input": "이번 sprint 의 backend API refactoring 작업이 잘 마무리되었습니다.", "expected": "ko" },
+  { "input": "東京都現代美術館企画展開催案内", "expected": "ja" },
+  { "input": "緊急地震速報発令中警戒", "expected": "ja" },
+  { "input": "新幹線運行管理情報", "expected": "ja" },
+  { "input": "東京大学大学院理学系研究科物理学専攻", "expected": "ja" },
+  { "input": "日本国憲法前文", "expected": "ja" },
+  { "input": "这个 PR 已经 merged 了，CI/CD pipeline 测试全部 pass", "expected": "zh-Hans" },
+  { "input": "這份 financial report 已經發給 CFO 和 audit team 了", "expected": "zh-Hant" },
+  { "input": "中华人民共和国", "expected": "zh-Hans" },
+  { "input": "中華民國憲法", "expected": "zh-Hant" }
+]

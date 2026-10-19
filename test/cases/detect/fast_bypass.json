@@ -1,0 +1,8 @@
+[
+  { "input": "", "expected": "en" },
+  { "input": "   \t\n  ", "expected": "en" },
+  { "input": "curl -s https://api.example.com/v1/health", "expected": "en" },
+  { "input": "git checkout -b feature/auth", "expected": "en" },
+  { "input": "docker run -d -p 8080:80 nginx:alpine", "expected": "en" },
+  { "input": "### [ALERT] High memory usage detected on node-04", "expected": "en" }
+]

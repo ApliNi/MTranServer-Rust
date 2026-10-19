@@ -1,0 +1,60 @@
+[metadata]
+language = "ur"
+version = "1.0.0"
+word_boundary = true
+
+[generation]
+token_density_ratio = 1.25
+repetition_penalty = 1.15
+no_repeat_ngram_size = 3
+
+[typography]
+quote_style = "curly"
+
+[syntax]
+clustering_gap_threshold = 4
+head_direction = "head_final"
+
+[discourse]
+discourse_starters = [
+    # Third-person anaphoric pronouns
+    "وہ", "اس", "ان", "اس نے", "انہوں نے", "انہیں", "اسے", "اس کا", "ان کا",
+    # Demonstratives and spatial anaphora
+    "یہ", "ان", "یہاں", "وہاں", "ایسا", "ویسا", "یوں",
+    # Logical, causal, and discourse connectives
+    "اس کے علاوہ", "مزید برآں", "علاوہ ازیں", "دوسری طرف", "دوسری جانب",
+    "تاہم", "اس کے باوجود", "لیکن", "مگر", "بلکہ",
+    "اس لیے", "چنانچہ", "لہٰذا", "لہذا", "نتیجتاً", "پس",
+    "درحقیقت", "دراصل", "واقعی", "دوسرے لفظوں میں", "مختصراً", "الغرض",
+]
+
+[conjunctions]
+clause_conjunctions = [
+    # Coordinating conjunctions
+    "اور", "یا", "لیکن", "مگر", "بلکہ", "پر", "سو",
+    # Subordinating conjunctions - causal and purpose
+    "کیونکہ", "چونکہ", "اس لیے کہ", "تاکہ", "جس سے کہ", "یہاں تک کہ",
+    # Subordinating conjunctions - concessive and conditional
+    "اگر", "گر", "اگرچہ", "گو کہ", "حالانکہ", "بشرطیکہ", "جب تک کہ",
+    # Subordinating conjunctions - temporal
+    "جب", "جبکہ", "جس وقت", "جونہی", "جیسے ہی", "تب", "پھر",
+    # Relative pronouns and locatives
+    "کہ", "جو", "جس", "جن", "جس نے", "جہاں", "جدھر",
+]
+
+[abbreviations]
+nonbreaking_prefixes = [
+    # Honorifics, scholarly, and professional titles
+    "ڈاکٹر", "ڈاکٹر.", "پروفیسر", "پروفیسر.", "مولانا", "علامہ", "انجینئر", "محترم", "محترمہ",
+    # Publication, citation, and chronology
+    "ص.", "صفحہ", "جلد", "نمبر", "شمارہ", "ق۔م", "ء.", "؁", "ت۔",
+    # International Latin abbreviations in technical contexts
+    "Dr.", "Prof.", "Mr.", "Mrs.", "Ms.", "etc.", "vs.", "al.",
+    "vol.", "no.", "p.", "pp.",
+]
+conditional_end_prefixes = [
+    "وغیرہ.", "وغیرہ", "الخ.", "الخ", "etc.", "al.",
+]
+
+[detection]
+unique_chars = ['ٹ', 'ڈ', 'ڑ', 'ں', 'ھ', 'ہ', 'ے']
