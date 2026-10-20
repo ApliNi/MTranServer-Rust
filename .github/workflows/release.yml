@@ -159,6 +159,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --title "$VERSION" \
               --prerelease \
+              --draft=false \
               --notes-file release-notes.md
           else
             gh release create "$VERSION" \
