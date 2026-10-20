@@ -140,7 +140,25 @@ data/
 
 若开启鉴权, 可通过在 URL 中添加 `?token=MT_API_TOKEN` 进行授权, 也可通过各翻译客户端提供的鉴权方式填写密钥.
 
-## 性能优化
+## 性能基准
+
+使用 `--bench-qps` 运行内置基准测试.
+
+默认通过 `en_zh-Hans` 模型对 128 字符随机文本翻译进行 10 秒满负荷压测.
+
+> 测试平台: Intel(R) Core(TM) Ultra X7 358H
+```text
+==== QPS Benchmark Result ====
+pair            : en -> zh-Hans
+input length    : 128 chars
+workers         : 16
+duration        : 10.03s
+requests        : 12385 ok, 0 failed
+QPS             : 1235.3
+latency p50     : 12.70 ms
+latency p95     : 23.96 ms
+latency p99     : 26.96 ms
+```
 
 ## 相关项目
 
