@@ -57,19 +57,13 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --release --target "${{ matrix.target }}"
-          cp "target/${{ matrix.target }}/release/MTranServer-Rust${{ matrix.suffix }}" "mtranserver${{ matrix.suffix }}"
-
-      - name: 打包
-        shell: bash
-        run: |
-          set -euo pipefail
-          tar -czf "mtranserver-${{ matrix.name }}.tar.gz" "mtranserver${{ matrix.suffix }}"
+          cp "target/${{ matrix.target }}/release/MTranServer-Rust${{ matrix.suffix }}" "mtranserver-${{ matrix.name }}${{ matrix.suffix }}"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: mtranserver-${{ matrix.name }}.tar.gz
+          path: mtranserver-${{ matrix.name }}${{ matrix.suffix }}
           if-no-files-found: error
 
   release:
@@ -121,7 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sha256sum mtranserver-*.tar.gz > checksums.txt
+          sha256sum mtranserver-* > checksums.txt
 
       - name: 生成发布内容
         shell: bash
@@ -175,5 +169,12 @@ jobs:
               --verify-tag
           fi
 
-          gh release upload "$VERSION" dist/mtranserver-*.tar.gz dist/checksums.txt \
+          # 清理旧的 .tar.gz 产物 (若存在)
+          for old_asset in $(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' 2>/dev/null || true); do
+            if [[ "$old_asset" == *.tar.gz ]]; then
+              gh release delete-asset "$VERSION" "$old_asset" --repo "$GITHUB_REPOSITORY" --yes || true
+            fi
+          done
+
+          gh release upload "$VERSION" dist/mtranserver-* dist/checksums.txt \
             --clobber --repo "$GITHUB_REPOSITORY"

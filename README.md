@@ -1,15 +1,14 @@
 # MTranServer-Rust
 
-这是 [Mozilla Firefox Translations](https://github.com/mozilla/translations) 引擎的纯 Rust 实现! 参考 [MTranServer](https://github.com/xxnuo/MTranServer) 项目, 并提供了兼容的 API.
+这是 [Mozilla Firefox Translations](https://github.com/mozilla/translations) 推理引擎的纯 Rust 实现! 参考 [MTranServer](https://github.com/xxnuo/MTranServer) 项目, 并提供了兼容的 API.
 
-> **在线试用**
-> - https://translate.ipacel.cc/
+> **在线试用**  
+> https://translate.ipacel.cc/
 
 **主要特性**
 - 原生 Rust 实现完整 Transformer 编解码器推理, 并进行了大量性能优化
 - 支持 HTML、Markdown 等多行富文本格式直接翻译
 - 通过语言规则改进翻译质量和识别准确性
-- [whatlang](https://github.com/greyblake/whatlang-rs) + [whichlang](https://github.com/quickwit-oss/whichlang) 双语言识别模型配合内置规则互补
 
 ## 使用
 
