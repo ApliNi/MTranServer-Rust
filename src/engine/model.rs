@@ -131,7 +131,7 @@ impl Model {
         };
         if let Ok(mmap) = unsafe { memmap2::Mmap::map(&file) } {
             let mmap = Arc::new(mmap);
-            Self::parse_buffer(&mmap, Some(mmap.clone()))
+            Self::parse_buffer(&mmap, Some(mmap.clone()), None)
         } else {
             let data = std::fs::read(path)
                 .map_err(|e| EngineError::Io(format!("Failed to read model file: {e}")))?;
@@ -139,14 +139,20 @@ impl Model {
         }
     }
 
-    /// Parse a model from an in-memory byte slice (owned fallback for tests).
+    /// Parse a model from an in-memory byte slice.
     pub fn from_bytes(buf: &[u8]) -> Result<Self, EngineError> {
-        Self::parse_buffer(buf, None)
+        Self::from_shared_bytes(Arc::from(buf))
+    }
+
+    /// Parse a model from shared bytes using zero-copy tensor slicing on any platform.
+    pub fn from_shared_bytes(data: Arc<[u8]>) -> Result<Self, EngineError> {
+        Self::parse_buffer(&data, None, Some(data.clone()))
     }
 
     fn parse_buffer(
         buf: &[u8],
         mmap_source: Option<Arc<memmap2::Mmap>>,
+        shared_source: Option<Arc<[u8]>>,
     ) -> Result<Self, EngineError> {
         let mut pos: usize = 0;
 
@@ -377,10 +383,15 @@ impl Model {
                             offset: data_start,
                             len: num_elements,
                         }
+                    } else if let Some(shared) = &shared_source {
+                        Quant8Data::Shared {
+                            data: Arc::clone(shared),
+                            offset: data_start,
+                            len: num_elements,
+                        }
                     } else {
                         Quant8Data::Owned(int8_slice.to_vec())
                     };
-
                     // Wemb matrices are stored WITHOUT transposition in the binary.
                     // Their f32 form is only consumed row-by-row (embedding lookup
                     // / decoder step input), so like every other intgemm8 tensor
@@ -837,6 +848,12 @@ mod tests {
         assert_eq!(row, vec![5.0, 10.0]);
         assert!(model.dequant_row_into("Wemb", 1, &mut row));
         assert_eq!(row, vec![15.0, 20.0]);
+
+        // Explicit zero-copy shared bytes loading test
+        let shared: std::sync::Arc<[u8]> = std::sync::Arc::from(buf.as_slice());
+        let shared_model = Model::from_shared_bytes(shared).expect("load from shared bytes");
+        let shared_q = shared_model.quant8.get("Wemb").expect("has Wemb");
+        assert_eq!(&shared_q.data[..], &[10, 20, 30, 40]);
     }
 
     #[test]

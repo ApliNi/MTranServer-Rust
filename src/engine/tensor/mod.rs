@@ -31,6 +31,11 @@ pub enum Quant8Data {
         offset: usize,
         len: usize,
     },
+    Shared {
+        data: Arc<[u8]>,
+        offset: usize,
+        len: usize,
+    },
 }
 
 impl std::ops::Deref for Quant8Data {
@@ -42,6 +47,11 @@ impl std::ops::Deref for Quant8Data {
             Quant8Data::Owned(v) => v.as_slice(),
             Quant8Data::Mmap { mmap, offset, len } => {
                 let bytes = &mmap[*offset..*offset + *len];
+                // Safety: i8 and u8 have identical layout (1 byte size and alignment).
+                unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const i8, *len) }
+            }
+            Quant8Data::Shared { data, offset, len } => {
+                let bytes = &data[*offset..*offset + *len];
                 // Safety: i8 and u8 have identical layout (1 byte size and alignment).
                 unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const i8, *len) }
             }

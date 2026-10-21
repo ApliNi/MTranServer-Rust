@@ -28,10 +28,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::utils::profiling;
-use model::Model;
-use sentencepiece::{DecodeScratch, EncodeScratch, SentencePiece};
-use shortlist::Shortlist;
-pub use shortlist::ShortlistPolicy;
+pub use model::Model;
+pub use sentencepiece::SentencePiece;
+use sentencepiece::{DecodeScratch, EncodeScratch};
+pub use shortlist::{Shortlist, ShortlistPolicy};
 use transformer::ForwardConfig;
 pub use transformer::PreparedEngineWeights;
 
@@ -55,6 +55,9 @@ thread_local! {
     static SCRATCH: std::cell::RefCell<TranslationScratch> =
         std::cell::RefCell::new(TranslationScratch::new());
 }
+/// Re-export parse formats for direct engine consumption.
+pub use crate::config::ParseFormats;
+
 /// Configuration for the translation engine.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EngineConfig {
@@ -73,6 +76,10 @@ pub struct EngineConfig {
     pub min_length_factor: Option<f32>,
     #[serde(default)]
     pub max_length_factor: Option<f32>,
+    #[serde(default)]
+    pub parse_formats: ParseFormats,
+    #[serde(default)]
+    pub preprocess_symbols: bool,
 }
 
 impl Default for EngineConfig {
@@ -89,6 +96,8 @@ impl Default for EngineConfig {
             expansion_ratio: None,
             min_length_factor: None,
             max_length_factor: None,
+            parse_formats: ParseFormats::default(),
+            preprocess_symbols: false,
         }
     }
 }
@@ -108,6 +117,8 @@ impl EngineConfig {
             expansion_ratio: None,
             min_length_factor: None,
             max_length_factor: None,
+            parse_formats: config.parse_formats,
+            preprocess_symbols: config.preprocess_symbols,
         }
     }
 }
@@ -198,6 +209,8 @@ pub struct TranslationEngine {
     // Text processing state
     max_sentence_length: usize,
     shortlist_policy: ShortlistPolicy,
+    parse_formats: ParseFormats,
+    preprocess_symbols: bool,
     usage: Arc<EngineUsage>,
 }
 
@@ -214,6 +227,8 @@ impl TranslationEngine {
     ) -> Result<Self, EngineError> {
         let max_sentence_length = config.max_sentence_length;
         let shortlist_policy = config.shortlist_policy;
+        let parse_formats = config.parse_formats;
+        let preprocess_symbols = config.preprocess_symbols;
         // Model, shortlist and vocab files are independent inputs (each parse
         // produces an owned value), so they load concurrently on scoped
         // threads — the cold start is bounded by the slowest file instead of
@@ -273,6 +288,8 @@ impl TranslationEngine {
             target_lang: target_lang.to_string(),
             max_sentence_length,
             shortlist_policy,
+            parse_formats,
+            preprocess_symbols,
             usage: Arc::new(EngineUsage::new()),
         })
     }
@@ -323,16 +340,34 @@ impl TranslationEngine {
         &self.target_lang
     }
 
-    /// Translate a single text using global configured parse formats.
+    /// Translate a single text using configured parse formats.
     pub fn translate(&self, text: &str) -> String {
-        let parse_formats = if crate::config::is_initialized() {
-            crate::config::get().parse_formats
-        } else {
-            crate::config::ParseFormats::default()
-        };
-        self.translate_with_formats(text, parse_formats)
+        self.translate_with_formats(text, self.parse_formats)
     }
 
+    /// Returns the currently configured parse formats.
+    #[inline]
+    pub fn parse_formats(&self) -> ParseFormats {
+        self.parse_formats
+    }
+
+    /// Update parse formats for subsequent translations.
+    #[inline]
+    pub fn set_parse_formats(&mut self, parse_formats: ParseFormats) {
+        self.parse_formats = parse_formats;
+    }
+
+    /// Whether symbol preprocessing is enabled.
+    #[inline]
+    pub fn preprocess_symbols(&self) -> bool {
+        self.preprocess_symbols
+    }
+
+    /// Enable or disable symbol preprocessing.
+    #[inline]
+    pub fn set_preprocess_symbols(&mut self, enable: bool) {
+        self.preprocess_symbols = enable;
+    }
     /// Translate a single text with caller-specified parse formats.
     pub fn translate_with_formats(
         &self,
@@ -359,12 +394,7 @@ impl TranslationEngine {
         let normalized = text::normalize_academic_and_special_symbols(text);
         let (clean, emoji_repls) = text::hide_emojis(normalized.as_ref());
 
-        // Symbol preprocessing is opt-in (disabled by default): identifier-shaped
-        // tokens (mixed hyphens/camelCase/snake_case) are rewritten to plain words
-        // before translation when enabled.
-        let preprocess =
-            crate::config::is_initialized() && crate::config::get().preprocess_symbols;
-        let clean = if preprocess {
+        let clean = if self.preprocess_symbols {
             text::preprocess_symbols(clean.as_ref())
         } else {
             clean
@@ -399,10 +429,7 @@ impl TranslationEngine {
     ) -> markup::document::AlignmentOutput {
         let normalized = text::normalize_academic_and_special_symbols(text);
         let (clean, emoji_repls) = text::hide_emojis(normalized.as_ref());
-
-        let preprocess =
-            crate::config::is_initialized() && crate::config::get().preprocess_symbols;
-        let clean = if preprocess {
+        let clean = if self.preprocess_symbols {
             text::preprocess_symbols(clean.as_ref())
         } else {
             clean

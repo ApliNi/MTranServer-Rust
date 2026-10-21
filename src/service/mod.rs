@@ -790,6 +790,16 @@ fn supported_or_en(lang: &str) -> String {
     }
 }
 
+/// Convenience alias for single-text translation with automatic pivot routing.
+#[inline]
+pub async fn translate(
+    from_lang: &str,
+    to_lang: &str,
+    text: &str,
+) -> Result<String, ServiceError> {
+    translate_with_pivot(from_lang, to_lang, text).await
+}
+
 /// Translate a single text with pivot routing, returning the translated text.
 pub async fn translate_with_pivot(
     from_lang: &str,
@@ -1161,6 +1171,16 @@ async fn translate_batch_item_auto(
         return Ok((String::new(), String::new()));
     }
     translate_with_pivot_detected_formats("auto", to_lang, text, parse_formats).await
+}
+
+/// Convenience alias for batch translation with automatic pivot routing.
+#[inline]
+pub async fn translate_batch(
+    from_lang: &str,
+    to_lang: &str,
+    texts: &[String],
+) -> Result<Vec<(String, String)>, ServiceError> {
+    translate_batch_with_pivot(from_lang, to_lang, texts).await
 }
 
 /// Translate a batch of texts with pivot routing.

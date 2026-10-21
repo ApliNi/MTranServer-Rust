@@ -693,9 +693,13 @@ impl SentencePiece {
     pub fn load(path: &Path) -> Result<Self, EngineError> {
         let data = std::fs::read(path)
             .map_err(|e| EngineError::Io(format!("Failed to read SPM file: {}", e)))?;
+        Self::from_bytes(&data)
+    }
 
+    /// Load a SentencePiece model from in-memory protobuf bytes.
+    pub fn from_bytes(data: &[u8]) -> Result<Self, EngineError> {
         // Parse protobuf: sentencepiece_model.ProtoSentencePieceProcessor
-        let model = parse_spm_model(&data)?;
+        let model = parse_spm_model(data)?;
         let pieces = model.pieces;
         let vocab_size = pieces.len();
 
@@ -2891,5 +2895,16 @@ mod tests {
         assert!(decoded.contains("Md"));
         assert!(decoded.contains("γ"));
         assert!(decoded.contains("x1"));
+    }
+
+    #[test]
+    fn test_sentencepiece_from_bytes() {
+        let path = std::path::Path::new("data/models/en_zh-Hans/srcvocab.enzh.spm");
+        if !path.exists() {
+            return;
+        }
+        let data = std::fs::read(path).unwrap();
+        let sp = SentencePiece::from_bytes(&data).unwrap();
+        assert_eq!(sp.decode(&[sp.bos_id]), "");
     }
 }
