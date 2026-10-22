@@ -44,41 +44,38 @@ pub unsafe fn hsum_8x_i32_avx2(
     acc: &[std::arch::x86_64::__m256i; 8],
 ) -> std::arch::x86_64::__m256i {
     use std::arch::x86_64::*;
-    let fold = |v: __m256i| -> __m128i {
-        let lo = _mm256_castsi256_si128(v);
-        let hi = _mm256_extracti128_si256(v, 1);
-        _mm_add_epi32(lo, hi)
-    };
-    let s0 = fold(acc[0]);
-    let s1 = fold(acc[1]);
-    let s2 = fold(acc[2]);
-    let s3 = fold(acc[3]);
-    let s4 = fold(acc[4]);
-    let s5 = fold(acc[5]);
-    let s6 = fold(acc[6]);
-    let s7 = fold(acc[7]);
 
-    let t0 = _mm_unpacklo_epi32(s0, s1);
-    let t1 = _mm_unpackhi_epi32(s0, s1);
-    let t2 = _mm_unpacklo_epi32(s2, s3);
-    let t3 = _mm_unpackhi_epi32(s2, s3);
-    let v01 = _mm_add_epi32(t0, t1);
-    let v23 = _mm_add_epi32(t2, t3);
-    let w_lo_0123 = _mm_unpacklo_epi64(v01, v23);
-    let w_hi_0123 = _mm_unpackhi_epi64(v01, v23);
-    let res0123 = _mm_add_epi32(w_lo_0123, w_hi_0123);
+    // Step 1: Pairwise 32-bit unpacks within each 128-bit lane
+    let t0 = _mm256_unpacklo_epi32(acc[0], acc[1]);
+    let t1 = _mm256_unpackhi_epi32(acc[0], acc[1]);
+    let v01 = _mm256_add_epi32(t0, t1);
 
-    let t4 = _mm_unpacklo_epi32(s4, s5);
-    let t5 = _mm_unpackhi_epi32(s4, s5);
-    let t6 = _mm_unpacklo_epi32(s6, s7);
-    let t7 = _mm_unpackhi_epi32(s6, s7);
-    let v45 = _mm_add_epi32(t4, t5);
-    let v67 = _mm_add_epi32(t6, t7);
-    let w_lo_4567 = _mm_unpacklo_epi64(v45, v67);
-    let w_hi_4567 = _mm_unpackhi_epi64(v45, v67);
-    let res4567 = _mm_add_epi32(w_lo_4567, w_hi_4567);
+    let t2 = _mm256_unpacklo_epi32(acc[2], acc[3]);
+    let t3 = _mm256_unpackhi_epi32(acc[2], acc[3]);
+    let v23 = _mm256_add_epi32(t2, t3);
 
-    _mm256_set_m128i(res4567, res0123)
+    let t4 = _mm256_unpacklo_epi32(acc[4], acc[5]);
+    let t5 = _mm256_unpackhi_epi32(acc[4], acc[5]);
+    let v45 = _mm256_add_epi32(t4, t5);
+
+    let t6 = _mm256_unpacklo_epi32(acc[6], acc[7]);
+    let t7 = _mm256_unpackhi_epi32(acc[6], acc[7]);
+    let v67 = _mm256_add_epi32(t6, t7);
+
+    // Step 2: 64-bit unpacks within each 128-bit lane
+    let w_lo_0123 = _mm256_unpacklo_epi64(v01, v23);
+    let w_hi_0123 = _mm256_unpackhi_epi64(v01, v23);
+    let sum0123 = _mm256_add_epi32(w_lo_0123, w_hi_0123);
+
+    let w_lo_4567 = _mm256_unpacklo_epi64(v45, v67);
+    let w_hi_4567 = _mm256_unpackhi_epi64(v45, v67);
+    let sum4567 = _mm256_add_epi32(w_lo_4567, w_hi_4567);
+
+    // Step 3: Cross-lane permutation to assemble low 128-bit halves (lane 0) and high 128-bit halves (lane 1)
+    let sum_lo = _mm256_permute2x128_si256(sum0123, sum4567, 0x20);
+    let sum_hi = _mm256_permute2x128_si256(sum0123, sum4567, 0x31);
+
+    _mm256_add_epi32(sum_lo, sum_hi)
 }
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -87,25 +84,21 @@ pub unsafe fn hsum_4x_i32_avx2(
     acc: &[std::arch::x86_64::__m256i; 4],
 ) -> std::arch::x86_64::__m128i {
     use std::arch::x86_64::*;
-    let fold = |v: __m256i| -> __m128i {
-        let hi = _mm256_extracti128_si256(v, 1);
-        let lo = _mm256_castsi256_si128(v);
-        _mm_add_epi32(lo, hi)
-    };
-    let s0 = fold(acc[0]);
-    let s1 = fold(acc[1]);
-    let s2 = fold(acc[2]);
-    let s3 = fold(acc[3]);
+    let t0 = _mm256_unpacklo_epi32(acc[0], acc[1]);
+    let t1 = _mm256_unpackhi_epi32(acc[0], acc[1]);
+    let v01 = _mm256_add_epi32(t0, t1);
 
-    let t0 = _mm_unpacklo_epi32(s0, s1);
-    let t1 = _mm_unpackhi_epi32(s0, s1);
-    let t2 = _mm_unpacklo_epi32(s2, s3);
-    let t3 = _mm_unpackhi_epi32(s2, s3);
-    let v01 = _mm_add_epi32(t0, t1);
-    let v23 = _mm_add_epi32(t2, t3);
-    let w_lo = _mm_unpacklo_epi64(v01, v23);
-    let w_hi = _mm_unpackhi_epi64(v01, v23);
-    _mm_add_epi32(w_lo, w_hi)
+    let t2 = _mm256_unpacklo_epi32(acc[2], acc[3]);
+    let t3 = _mm256_unpackhi_epi32(acc[2], acc[3]);
+    let v23 = _mm256_add_epi32(t2, t3);
+
+    let w_lo = _mm256_unpacklo_epi64(v01, v23);
+    let w_hi = _mm256_unpackhi_epi64(v01, v23);
+    let sum0123 = _mm256_add_epi32(w_lo, w_hi);
+
+    let lo128 = _mm256_castsi256_si128(sum0123);
+    let hi128 = _mm256_extracti128_si256(sum0123, 1);
+    _mm_add_epi32(lo128, hi128)
 }
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]

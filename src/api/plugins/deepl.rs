@@ -1,11 +1,11 @@
+use std::borrow::Cow;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::api::plugins::OneOrMany;
+use crate::api::plugins::{parse_source_lang, parse_target_lang, OneOrMany};
 use crate::api::translate::validate_batch;
 use crate::api::ApiError;
 use crate::service;
-use crate::utils::lang::normalize_language_code;
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct DeeplRequest {
@@ -17,7 +17,7 @@ pub struct DeeplRequest {
 
 #[derive(Serialize)]
 pub struct DeeplTranslation {
-    pub detected_source_language: String,
+    pub detected_source_language: Cow<'static, str>,
     pub text: String,
 }
 
@@ -28,25 +28,8 @@ pub struct DeeplResponse {
 
 pub async fn translate(Json(body): Json<DeeplRequest>) -> Result<Json<DeeplResponse>, ApiError> {
     validate_batch(body.text.as_slice())?;
-    let source_lang = body
-        .source_lang
-        .as_deref()
-        .map(|s| {
-            let trimmed = s.trim();
-            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
-                "auto".to_string()
-            } else {
-                normalize_language_code(trimmed)
-            }
-        })
-        .unwrap_or_else(|| "auto".to_string());
-    // An empty target language would build a meaningless engine key.
-    let target_lang = normalize_language_code(&body.target_lang);
-    if target_lang.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Missing 'target_lang' language".to_string(),
-        ));
-    }
+    let source_lang = parse_source_lang(body.source_lang.as_deref());
+    let target_lang = parse_target_lang(&body.target_lang, "target_lang")?;
 
     let parse_formats = body.tag_handling.as_deref().and_then(|th| {
         if th.eq_ignore_ascii_case("html") || th.eq_ignore_ascii_case("xml") {
@@ -79,14 +62,54 @@ pub async fn translate(Json(body): Json<DeeplRequest>) -> Result<Json<DeeplRespo
     Ok(Json(DeeplResponse { translations }))
 }
 
-pub(crate) fn convert_bcp47_to_deepl(lang: &str) -> String {
+pub(crate) fn convert_bcp47_to_deepl(lang: &str) -> Cow<'static, str> {
     match lang {
-        "no" | "nb" => "NB".to_string(),
-        "nn" => "NN".to_string(),
-        "zh-CN" => "ZH-CN".to_string(),
-        "zh-Hans" | "zh" => "ZH".to_string(),
-        "zh-Hant" | "zh-TW" | "zh-HK" => "ZH-TW".to_string(),
-        _ => lang.to_uppercase(),
+        "no" | "nb" => Cow::Borrowed("NB"),
+        "nn" => Cow::Borrowed("NN"),
+        "zh-CN" => Cow::Borrowed("ZH-CN"),
+        "zh-Hans" | "zh" => Cow::Borrowed("ZH"),
+        "zh-Hant" | "zh-TW" | "zh-HK" => Cow::Borrowed("ZH-TW"),
+        "en" => Cow::Borrowed("EN"),
+        "ja" => Cow::Borrowed("JA"),
+        "de" => Cow::Borrowed("DE"),
+        "fr" => Cow::Borrowed("FR"),
+        "es" => Cow::Borrowed("ES"),
+        "it" => Cow::Borrowed("IT"),
+        "pt" => Cow::Borrowed("PT"),
+        "ru" => Cow::Borrowed("RU"),
+        "ko" => Cow::Borrowed("KO"),
+        "ar" => Cow::Borrowed("AR"),
+        "tr" => Cow::Borrowed("TR"),
+        "vi" => Cow::Borrowed("VI"),
+        "pl" => Cow::Borrowed("PL"),
+        "nl" => Cow::Borrowed("NL"),
+        "el" => Cow::Borrowed("EL"),
+        "th" => Cow::Borrowed("TH"),
+        "hi" => Cow::Borrowed("HI"),
+        "id" => Cow::Borrowed("ID"),
+        "uk" => Cow::Borrowed("UK"),
+        "ro" => Cow::Borrowed("RO"),
+        "cs" => Cow::Borrowed("CS"),
+        "sv" => Cow::Borrowed("SV"),
+        "hu" => Cow::Borrowed("HU"),
+        "fi" => Cow::Borrowed("FI"),
+        "da" => Cow::Borrowed("DA"),
+        "bg" => Cow::Borrowed("BG"),
+        "he" => Cow::Borrowed("HE"),
+        "hr" => Cow::Borrowed("HR"),
+        "sr" => Cow::Borrowed("SR"),
+        "sk" => Cow::Borrowed("SK"),
+        "sl" => Cow::Borrowed("SL"),
+        "lt" => Cow::Borrowed("LT"),
+        "lv" => Cow::Borrowed("LV"),
+        "et" => Cow::Borrowed("ET"),
+        "ca" => Cow::Borrowed("CA"),
+        "gl" => Cow::Borrowed("GL"),
+        "eu" => Cow::Borrowed("EU"),
+        "fa" => Cow::Borrowed("FA"),
+        "bn" => Cow::Borrowed("BN"),
+        "auto" => Cow::Borrowed("AUTO"),
+        _ => Cow::Owned(lang.to_uppercase()),
     }
 }
 
@@ -109,7 +132,7 @@ mod tests {
     fn test_deepl_response_serialization() {
         let resp = DeeplResponse {
             translations: vec![DeeplTranslation {
-                detected_source_language: "EN".to_string(),
+                detected_source_language: Cow::Borrowed("EN"),
                 text: "Hallo".to_string(),
             }],
         };

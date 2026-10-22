@@ -9,6 +9,7 @@ use axum::middleware;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::Serialize;
 
 /// Unified API error type. Handlers return faithful status codes; the error
 /// formatter middleware only decorates the body with the request ID.
@@ -21,15 +22,24 @@ pub enum ApiError {
     /// 500 — unexpected failure in the translation pipeline.
     Internal(String),
 }
+#[derive(Serialize)]
+struct ApiErrorBody<'a> {
+    error: &'a str,
+}
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-            ApiError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, std::borrow::Cow::Owned(msg)),
+            ApiError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                std::borrow::Cow::Borrowed("Unauthorized"),
+            ),
+            ApiError::Internal(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, std::borrow::Cow::Owned(msg))
+            }
         };
-        (status, Json(serde_json::json!({ "error": message }))).into_response()
+        (status, Json(ApiErrorBody { error: message.as_ref() })).into_response()
     }
 }
 

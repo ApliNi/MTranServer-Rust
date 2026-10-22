@@ -156,40 +156,28 @@ pub async fn translate(Json(mut body): Json<HcfyRequest>) -> Result<Json<HcfyRes
         }
     }
 
-    let paragraphs: Vec<String> = body.text.split('\n').map(|p| p.trim_end_matches('\r').to_string()).collect();
-    let max_threads = if crate::config::is_initialized() {
-        crate::config::get().max_threads
-    } else {
-        0
-    };
-    let concurrency = if max_threads > 0 {
-        max_threads
-    } else {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4)
-            .max(1)
-    };
-
-    use futures::StreamExt;
-    let stream_results: Vec<Result<String, service::ServiceError>> = futures::stream::iter(paragraphs.into_iter().map(|paragraph| {
-        let detected_source = detected_source.clone();
-        let target_lang = target_lang.clone();
-        async move {
-            if paragraph.trim().is_empty() {
-                return Ok(String::new());
+    let paragraphs: Vec<String> = body
+        .text
+        .split('\n')
+        .map(|p| {
+            let line = p.trim_end_matches('\r');
+            if line.trim().is_empty() {
+                String::new()
+            } else {
+                line.to_string()
             }
-            service::translate_with_pivot(&detected_source, &target_lang, &paragraph).await
-        }
-    }))
-    .buffered(concurrency)
-    .collect()
-    .await;
+        })
+        .collect();
 
-    let results: Vec<String> = stream_results
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(ApiError::from)?;
+    let raw_results = service::translate_batch_with_pivot_formats(
+        &detected_source,
+        &target_lang,
+        &paragraphs,
+        None,
+    )
+    .await?;
+
+    let results: Vec<String> = raw_results.into_iter().map(|(res, _)| res).collect();
     Ok(Json(HcfyResponse {
         text: body.text,
         from: bcp47_to_hcfy

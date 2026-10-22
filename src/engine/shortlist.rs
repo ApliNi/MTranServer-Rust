@@ -17,9 +17,9 @@
 //! wordToOffset has one entry per source word plus a sentinel entry at the end
 //! equal to shortListsSize. For source word i, the shortlist entries are in
 //! range `shortLists[wordToOffset[i] .. wordToOffset[i+1]]`.
-
 use std::cell::RefCell;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use super::error::EngineError;
@@ -90,15 +90,94 @@ impl Shortlist {
         self.best_num
     }
 
-    /// Load a `.s2t.bin` shortlist file.
+    /// Load a `.s2t.bin` shortlist file directly streaming into memory structures.
     ///
     /// Validates the magic number — returns `Err` on mismatch or read failure.
     pub fn load(path: &Path) -> Result<Self, EngineError> {
-        let data = fs::read(path)
-            .map_err(|e| EngineError::Io(format!("Failed to read shortlist file: {}", e)))?;
-        Self::from_bytes(&data)
-    }
+        let mut file = fs::File::open(path)
+            .map_err(|e| EngineError::Io(format!("Failed to open shortlist file: {}", e)))?;
+        let mut header = [0u8; 48];
+        file.read_exact(&mut header)
+            .map_err(|e| EngineError::Io(format!("Failed to read shortlist header: {}", e)))?;
 
+        let magic = u64::from_le_bytes(header[0..8].try_into().unwrap());
+        if magic != BINARY_SHORTLIST_MAGIC {
+            return Err(EngineError::Format(format!(
+                "Invalid shortlist magic: {:#018x}",
+                magic
+            )));
+        }
+        let first_num = u64::from_le_bytes(header[16..24].try_into().unwrap());
+        let best_num = u64::from_le_bytes(header[24..32].try_into().unwrap());
+        let word_to_offset_size = u64::from_le_bytes(header[32..40].try_into().unwrap()) as usize;
+        let short_lists_size = u64::from_le_bytes(header[40..48].try_into().unwrap()) as usize;
+
+        let word_to_offset_bytes = word_to_offset_size
+            .checked_mul(8)
+            .ok_or_else(|| EngineError::Format("wordToOffsetSize overflow".to_string()))?;
+        let short_lists_bytes = short_lists_size
+            .checked_mul(4)
+            .ok_or_else(|| EngineError::Format("shortListsSize overflow".to_string()))?;
+
+        let mut word_to_offset = Vec::with_capacity(word_to_offset_size);
+        #[cfg(target_endian = "little")]
+        {
+            unsafe {
+                let slice = std::slice::from_raw_parts_mut(
+                    word_to_offset.as_mut_ptr() as *mut u8,
+                    word_to_offset_bytes,
+                );
+                file.read_exact(slice).map_err(|e| {
+                    EngineError::Io(format!("Failed to read word_to_offset: {}", e))
+                })?;
+                word_to_offset.set_len(word_to_offset_size);
+            }
+        }
+        #[cfg(not(target_endian = "little"))]
+        {
+            let mut buf = vec![0u8; word_to_offset_bytes];
+            file.read_exact(&mut buf).map_err(|e| {
+                EngineError::Io(format!("Failed to read word_to_offset: {}", e))
+            })?;
+            word_to_offset.extend(
+                buf.chunks_exact(8)
+                    .map(|c| u64::from_le_bytes(c.try_into().unwrap())),
+            );
+        }
+
+        let mut short_lists = Vec::with_capacity(short_lists_size);
+        #[cfg(target_endian = "little")]
+        {
+            unsafe {
+                let slice = std::slice::from_raw_parts_mut(
+                    short_lists.as_mut_ptr() as *mut u8,
+                    short_lists_bytes,
+                );
+                file.read_exact(slice).map_err(|e| {
+                    EngineError::Io(format!("Failed to read short_lists: {}", e))
+                })?;
+                short_lists.set_len(short_lists_size);
+            }
+        }
+        #[cfg(not(target_endian = "little"))]
+        {
+            let mut buf = vec![0u8; short_lists_bytes];
+            file.read_exact(&mut buf).map_err(|e| {
+                EngineError::Io(format!("Failed to read short_lists: {}", e))
+            })?;
+            short_lists.extend(
+                buf.chunks_exact(4)
+                    .map(|c| u32::from_le_bytes(c.try_into().unwrap())),
+            );
+        }
+
+        Ok(Self {
+            first_num,
+            best_num,
+            word_to_offset,
+            short_lists,
+        })
+    }
     /// Parse a shortlist from an in-memory byte slice.
     pub fn from_bytes(data: &[u8]) -> Result<Self, EngineError> {
         let (first_num, best_num, word_to_offset_size, short_lists_size, header_size) =
@@ -429,27 +508,31 @@ impl Shortlist {
                     }
                 }
             }
+
             if min_word_idx <= max_word_idx {
-                for (offset, entry) in seen[min_word_idx..=max_word_idx].iter_mut().enumerate() {
-                    let word = *entry;
-                    if word == 0 {
-                        continue;
-                    }
-                    *entry = 0;
-                    let w_idx = min_word_idx + offset;
-                    let base = (first_n + w_idx * 64) as u32;
-                    let mut bits = word;
-                    let ones = bits.count_ones() as usize;
-                    if out.len() + ones > out.capacity() {
-                        out.reserve(ones.max(256));
-                    }
-                    while bits != 0 {
-                        let t = bits.trailing_zeros();
-                        let token_id = base + t;
-                        if (token_id as usize) < trg_vocab_size {
-                            out.push(token_id);
+                // Exact single reservation for all candidate words
+                let total_new_words: usize = seen[min_word_idx..=max_word_idx]
+                    .iter()
+                    .map(|&w| w.count_ones() as usize)
+                    .sum();
+                if out.capacity() < out.len() + total_new_words {
+                    out.reserve(total_new_words);
+                }
+
+                for w_idx in min_word_idx..=max_word_idx {
+                    let word = seen[w_idx];
+                    if word != 0 {
+                        seen[w_idx] = 0;
+                        let base = (first_n + w_idx * 64) as u32;
+                        let mut bits = word;
+                        while bits != 0 {
+                            let t = bits.trailing_zeros();
+                            let token_id = base + t;
+                            if (token_id as usize) < trg_vocab_size {
+                                out.push(token_id);
+                            }
+                            bits &= bits - 1;
                         }
-                        bits &= bits - 1;
                     }
                 }
             }
@@ -658,6 +741,26 @@ mod tests {
         // Reusing seen buffer on a second call must not leak previous bits
         let mut out2 = Vec::new();
         shortlist.generate_into(&[2], 100, &mut seen, &mut out2, ShortlistPolicy::Strict);
+        assert!(seen.iter().all(|&w| w == 0));
+    }
+
+    #[test]
+    fn test_shortlist_large_dirty_dense_fallback() {
+        // Generate > 512 candidate words in distinct 64-word buckets to trigger dense fast path
+        let mut cands = Vec::new();
+        for i in 0..600 {
+            cands.push(100 + i * 64);
+        }
+        let shortlist = Shortlist::from_vecs(50, 1000, vec![0, cands.len() as u64], cands);
+        let mut seen = Vec::new();
+        let mut out = Vec::new();
+        let trg_vocab = 50000;
+        shortlist.generate_into(&[0], trg_vocab, &mut seen, &mut out, ShortlistPolicy::Strict);
+
+        assert_eq!(out.len(), 50 + 600);
+        for i in 1..out.len() {
+            assert!(out[i - 1] < out[i]);
+        }
         assert!(seen.iter().all(|&w| w == 0));
     }
 }

@@ -1,20 +1,10 @@
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
+use crate::api::plugins::{deserialize_null_default, parse_source_lang, parse_target_lang};
 use crate::api::translate::validate_batch;
 use crate::api::ApiError;
 use crate::service;
-use crate::utils::lang::normalize_language_code_cow;
-
-fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Default + Deserialize<'de>,
-{
-    let opt = Option::deserialize(deserializer)?;
-    Ok(opt.unwrap_or_default())
-}
-
 #[derive(Deserialize)]
 pub struct KissRequest {
     #[serde(default, deserialize_with = "deserialize_null_default")]
@@ -42,17 +32,13 @@ pub struct KissResponse {
 
 pub async fn translate(Json(body): Json<KissRequest>) -> Result<Json<KissResponse>, ApiError> {
     let raw_from = body.from.trim();
-    let from = if raw_from.is_empty() || raw_from.eq_ignore_ascii_case("auto") {
-        std::borrow::Cow::Borrowed("auto")
+    let from = parse_source_lang(Some(&body.from));
+    let to = parse_target_lang(&body.to, "to")?;
+    let fallback_src = if !raw_from.is_empty() {
+        body.from.as_str()
     } else {
-        normalize_language_code_cow(raw_from)
+        "auto"
     };
-    // An empty target language would build a meaningless engine key.
-    let to = normalize_language_code_cow(&body.to);
-    if to.is_empty() {
-        return Err(ApiError::BadRequest("Missing 'to' language".to_string()));
-    }
-
     // TS only enters the texts branch when `texts` is a non-empty array.
     let texts = body.texts.as_deref().filter(|t| !t.is_empty());
 
@@ -65,10 +51,8 @@ pub async fn translate(Json(body): Json<KissRequest>) -> Result<Json<KissRespons
             .map(|(translated, detected)| {
                 let src = if from == "auto" && !detected.is_empty() {
                     detected
-                } else if !raw_from.is_empty() {
-                    body.from.clone()
                 } else {
-                    "auto".to_string()
+                    fallback_src.to_string()
                 };
                 KissTranslation {
                     text: translated,
@@ -94,10 +78,8 @@ pub async fn translate(Json(body): Json<KissRequest>) -> Result<Json<KissRespons
         let (translated, detected) = results.into_iter().next().unwrap_or_default();
         let src = if from == "auto" && !detected.is_empty() {
             detected
-        } else if !raw_from.is_empty() {
-            body.from.clone()
         } else {
-            "auto".to_string()
+            fallback_src.to_string()
         };
         Ok(Json(KissResponse {
             text: Some(translated),

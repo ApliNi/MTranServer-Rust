@@ -19,9 +19,108 @@ const DETECT_CACHE_SHARDS: usize = 16;
 /// Per-shard capacity so the aggregate bound stays at the old total.
 const DETECT_CACHE_CAPACITY_PER_SHARD: usize = 32;
 
-#[derive(Clone)]
+/// Compact stack-allocated language tag (up to 15 UTF-8 bytes) without heap allocation.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct InlineLang {
+    bytes: [u8; 15],
+    len: u8,
+}
+
+impl InlineLang {
+    #[inline]
+    pub const fn empty() -> Self {
+        Self {
+            bytes: [0; 15],
+            len: 0,
+        }
+    }
+
+    #[inline]
+    pub fn new(s: &str) -> Self {
+        let mut len = s.len().min(15);
+        while !s.is_char_boundary(len) {
+            len -= 1;
+        }
+        let b = s.as_bytes();
+        let mut bytes = [0u8; 15];
+        bytes[..len].copy_from_slice(&b[..len]);
+        Self {
+            bytes,
+            len: len as u8,
+        }
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(&self.bytes[..self.len as usize]) }
+    }
+}
+
+impl std::ops::Deref for InlineLang {
+    type Target = str;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for InlineLang {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for InlineLang {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::fmt::Debug for InlineLang {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.as_str())
+    }
+}
+
+impl From<&str> for InlineLang {
+    #[inline]
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<&String> for InlineLang {
+    #[inline]
+    fn from(s: &String) -> Self {
+        Self::new(s.as_str())
+    }
+}
+
+impl From<InlineLang> for String {
+    #[inline]
+    fn from(lang: InlineLang) -> Self {
+        lang.as_str().to_string()
+    }
+}
+
+impl PartialEq<str> for InlineLang {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for InlineLang {
+    #[inline]
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 struct CachedDetection {
-    language: String,
+    language: InlineLang,
     confidence: f32,
 }
 
@@ -93,14 +192,14 @@ pub async fn detect_language(text: &str) -> String {
 async fn detect_language_with_max_bytes(text: &str, max_bytes: usize) -> String {
     let cache_key = detect_cache_key('W', max_bytes, text);
     if let Some(cached) = detect_cache_get(cache_key) {
-        return cached.language;
+        return cached.language.to_string();
     }
 
     let result = detect_language_with_max_bytes_uncached(text, max_bytes).await;
     detect_cache_put(
         cache_key,
         CachedDetection {
-            language: result.clone(),
+            language: InlineLang::new(&result),
             confidence: 1.0,
         },
     );
@@ -109,7 +208,7 @@ async fn detect_language_with_max_bytes(text: &str, max_bytes: usize) -> String 
 
 fn detect_cache_get(key: u64) -> Option<CachedDetection> {
     let shard = &mut *detect_cache_shard(key).lock();
-    shard.as_mut()?.get(&key).cloned()
+    shard.as_mut()?.get(&key).copied()
 }
 
 fn detect_cache_put(key: u64, value: CachedDetection) {
@@ -130,8 +229,9 @@ async fn detect_language_with_max_bytes_uncached(text: &str, max_bytes: usize) -
     if text.is_empty() {
         return String::new();
     }
-
-    let text = sanitize_input(text);
+    let sample_limit = max_bytes.max(MAX_HEURISTIC_SAMPLE_BYTES);
+    let bounded = truncate_by_utf8_bytes(text, sample_limit * 2);
+    let text = sanitize_input(bounded);
     let start_index = get_valid_content_start_index(&text);
     if start_index >= text.len() {
         return "en".to_string();
@@ -147,10 +247,7 @@ async fn detect_language_with_max_bytes_uncached(text: &str, max_bytes: usize) -
         &text[b..]
     };
 
-    let sample = truncate_by_utf8_bytes(
-        safe_slice,
-        max_bytes.max(MAX_HEURISTIC_SAMPLE_BYTES),
-    );
+    let sample = truncate_by_utf8_bytes(safe_slice, sample_limit);
     let (code, _) = crate::engine::rules::detect::detect_text_language_with_confidence(sample);
     code.to_string()
 }
@@ -160,8 +257,8 @@ pub async fn detect_language_with_confidence(text: &str, min_confidence: f32) ->
     if text.is_empty() {
         return (String::new(), 0.0);
     }
-
-    let text = sanitize_input(text);
+    let bounded = truncate_by_utf8_bytes(text, MAX_DETECTION_BYTES * 2);
+    let text = sanitize_input(bounded);
     let start_index = get_valid_content_start_index(&text);
     if start_index >= text.len() {
         return ("en".to_string(), 0.0);
@@ -176,7 +273,6 @@ pub async fn detect_language_with_confidence(text: &str, min_confidence: f32) ->
         }
         &text[b..]
     };
-
     let (code, confidence) = detect_language_from(safe_slice, MAX_DETECTION_BYTES).await;
     if confidence < min_confidence {
         return (String::new(), confidence);
@@ -274,14 +370,14 @@ pub async fn detect_multiple_languages(text: &str) -> Vec<TextSegment> {
 async fn detect_language_from(text: &str, max_bytes: usize) -> (String, f32) {
     let cache_key = detect_cache_key('F', max_bytes, text);
     if let Some(cached) = detect_cache_get(cache_key) {
-        return (cached.language, cached.confidence);
+        return (cached.language.to_string(), cached.confidence);
     }
 
     let (lang, conf) = detect_language_from_uncached(text, max_bytes).await;
     detect_cache_put(
         cache_key,
         CachedDetection {
-            language: lang.clone(),
+            language: InlineLang::new(&lang),
             confidence: conf,
         },
     );
@@ -289,268 +385,11 @@ async fn detect_language_from(text: &str, max_bytes: usize) -> (String, f32) {
 }
 
 async fn detect_language_from_uncached(text: &str, max_bytes: usize) -> (String, f32) {
-    let text = sanitize_input(text);
-    let sample = truncate_by_utf8_bytes(&text, max_bytes.max(MAX_HEURISTIC_SAMPLE_BYTES));
-    let (code, conf) = crate::engine::rules::detect::detect_text_language_with_confidence(sample);
+    let limit = max_bytes.max(MAX_HEURISTIC_SAMPLE_BYTES);
+    let bounded = truncate_by_utf8_bytes(text, limit);
+    let sanitized = sanitize_input(bounded);
+    let (code, conf) = crate::engine::rules::detect::detect_text_language_with_confidence(&sanitized);
     (code.to_string(), conf)
-}
-
-/// Detect languages whose script maps unambiguously to a single model language,
-/// before falling back to n-gram engines. For these scripts there is no
-/// classification ambiguity, so the result is exact and cheaper than the engines.
-#[allow(dead_code)]
-fn detect_language_by_script(text: &str, start_index: usize) -> Option<&'static str> {
-    let scan_text = if start_index > 0 && text.is_char_boundary(start_index) {
-        &text[start_index..]
-    } else if start_index > 0 {
-        let mut b = start_index;
-        while b > 0 && !text.is_char_boundary(b) {
-            b -= 1;
-        }
-        &text[b..]
-    } else {
-        text
-    };
-    let mut has_arabic = false;
-    let mut has_persian = false;
-    let mut has_urdu = false;
-    let mut greek_count = 0usize;
-    let mut latin_count = 0usize;
-
-    for c in scan_text.chars() {
-        let v = c as u32;
-        if (0x0370..=0x03FF).contains(&v) || (0x1F00..=0x1FFF).contains(&v) {
-            greek_count += 1;
-            continue;
-        }
-        if c.is_ascii_alphabetic() {
-            latin_count += 1;
-            continue;
-        }
-        match v {
-            0x10A0..=0x10FF | 0x2D00..=0x2D2F => return Some("ka"),
-            0x0590..=0x05FF => return Some("he"),
-            0x0E00..=0x0E7F => return Some("th"),
-            0x0980..=0x09FF => return Some("bn"),
-            0x0A80..=0x0AFF => return Some("gu"),
-            0x0900..=0x097F => return Some("hi"),
-            0x0B80..=0x0BFF => return Some("ta"),
-            0x0C00..=0x0C7F => return Some("te"),
-            0x0C80..=0x0CFF => return Some("kn"),
-            0x0D00..=0x0D7F => return Some("ml"),
-            // Urdu-specific letters: Tteh, Ddal, Rreh, Noon Ghunna, Heh Doachashmee, Choti Heh, Yeh Barree
-            0x0679 | 0x0688 | 0x0691 | 0x06BA | 0x06BE | 0x06C1 | 0x06D2 => {
-                has_urdu = true;
-            }
-            // Persian-specific letters (gaf, che, zhe, pe, farsi yeh) — MUST precede the
-            // broad Arabic range below so they are not swallowed by it.
-            0x06AF | 0x0686 | 0x0698 | 0x067E | 0x06CC => {
-                has_persian = true;
-            }
-            // Arabic script (including Persian/Urdu extensions).
-            0x0600..=0x06FF
-            | 0x0750..=0x077F
-            | 0x08A0..=0x08FF
-            | 0xFB50..=0xFDFF
-            | 0xFE70..=0xFEFF => {
-                has_arabic = true;
-            }
-            _ => {}
-        }
-    }
-
-    if has_urdu {
-        return Some("ur");
-    }
-    if has_persian {
-        return Some("fa");
-    }
-    if has_arabic {
-        return Some("ar");
-    }
-    if (greek_count >= 2 && greek_count > latin_count)
-        || (greek_count > 0 && latin_count == 0)
-    {
-        return Some("el");
-    }
-
-    None
-}
-
-/// Detect a language from its uniquely-identifying letters/diacritics, before
-/// running n-gram engines. Several model languages use specific characters not
-/// shared with their nearest neighbours (Albanian ë, Icelandic þ/ð, Hungarian
-/// ő/ű, Romanian ș/ț, Czech ř/ě/ů, Slovak ľ/ŕ). When one of these appears, the
-/// language is certain, so we return it with full confidence — cheaper and more
-#[allow(dead_code)]
-fn detect_language_by_chars(text: &str, start_index: usize) -> Option<&'static str> {
-    // Single pass: collect the is/az flags (position-independent) and, for
-    // every other language, the earliest byte offset of any of its markers.
-    // Marker code points are disjoint across languages, so "first hit in
-    // left-to-right order" is exactly "smallest offset wins".
-    let mut has_ith = false;
-    let mut has_az = false;
-    let mut first_marker: Option<(usize, &'static str)> = None;
-
-    for (i, c) in text.char_indices().skip_while(|&(i, _)| i < start_index) {
-        let v = c as u32;
-        // Strongest markers first — scan the whole text, because single-char
-        // early-return would mis-fire when a shorter Turkish/Azerbaijani word
-        // contains an overlapping letter (e.g. Azerbaijani `Sabahınız` ı before `ə`).
-        if v == 0x00DE || v == 0x00FE || v == 0x00D0 || v == 0x00F0 {
-            has_ith = true;
-        }
-        if v == 0x0259 {
-            has_az = true;
-        }
-
-        let lang = match v {
-            0x011F | 0x0131 => Some("tr"),
-            0x0150 | 0x0170 | 0x0151 | 0x0171 => Some("hu"),
-            0x0219 | 0x021B => Some("ro"),
-            0x0158 | 0x0159 | 0x011A | 0x011B | 0x016E | 0x016F => Some("cs"),
-            0x013D | 0x013E | 0x0154 | 0x0155 => Some("sk"),
-            0x0141 | 0x0142 | 0x0104 | 0x0105 | 0x0118 | 0x0119 => Some("pl"),
-            0x0116 | 0x0117 | 0x012E | 0x012F | 0x0172 | 0x0173 => Some("lt"),
-            0x013C | 0x0146 | 0x0122 | 0x0123 | 0x0136 | 0x0137 => Some("lv"),
-            _ => None,
-        };
-        if let Some(lang) = lang {
-            if first_marker.map_or(true, |(pos, _)| i < pos) {
-                first_marker = Some((i, lang));
-            }
-        }
-    }
-
-    if has_ith {
-        return Some("is");
-    }
-    if has_az {
-        return Some("az");
-    }
-    first_marker.map(|(_, lang)| lang)
-}
-/// Detect a language from rare, highly-distinctive function/content words,
-/// consulted before the n-gram engines. Unlike the character heuristic this
-/// targets languages whatlang models poorly or confuses with neighbours, using
-/// a handful of high-precision tokens per language (kept deliberately small).
-/// Whole-word matching prevents false positives from accidental substrings.
-#[allow(dead_code)]
-fn detect_language_by_words(text: &str) -> Option<&'static str> {
-    // (distinctive word, language). Normalized lowercase; matched as whole words.
-    const WORDTABLE: &[(&str, &str)] = &[
-        // Galician — "hoxe" (today) is unambiguous.
-        ("hoxe", "gl"),
-        // Albanian hello vs Afrikaans.
-        ("përshëndetje", "sq"),
-        // Basque.
-        ("kaixo", "eu"),
-        ("egun on", "eu"),
-        // Malay vs Indonesian.
-        ("khabar", "ms"),
-        // Indonesian.
-        ("selamat", "id"),
-        // Nynorsk vs Bokmål/Danish.
-        ("korleis", "nn"),
-        ("ikkje", "nn"),
-        // Croatian vs Slovenian ("danas" = today).
-        ("danas", "hr"),
-        // Slovenian.
-        ("danes", "sl"),
-        // Icelandic (no þ/ð in this text).
-        ("hvernig", "is"),
-        // Serbian Cyrillic дvs Macedonian (денес).
-        ("данас", "sr"),
-        ("хвала", "sr"),
-        // Ukrainian vs Russian generic.
-        ("з вами", "uk"),
-        ("справи", "uk"),
-        // Belarusian.
-        ("добры дзень", "be"),
-        // Bulgarian — "днес" (today), "здравейте" (hello), "благодаря" (thanks).
-        ("днес", "bg"),
-        ("здравейте", "bg"),
-        // Spanish vs Portuguese short-word tie-breaker.
-        ("hola", "es"),
-        // Italian vs Portuguese short-word tie-breaker.
-        ("ciao", "it"),
-        // Danish vs Norwegian Bokmål (near-identical orthography, so use the
-        // couple of distinguishing interrogatives). Icelandic already caught by ð.
-        ("hvad", "da"),
-        ("hedder", "da"),
-        ("hva", "nb"),
-        ("heter", "nb"),
-    ];
-    let lower = to_lowercase_borrowed(text);
-    for (word, lang) in WORDTABLE {
-        // Multi-word phrases never survive token splitting; match them against
-        // the raw lowercased text with word boundaries so "egun on" still hits.
-        let hit = if word.contains(' ') {
-            contains_word_phrase(&lower, word)
-        } else {
-            find_whole_word(&lower, word, 0).is_some()
-        };
-        if hit {
-            return Some(*lang);
-        }
-    }
-    None
-}
-
-/// Lowercase `text`; borrows when it contains no uppercase characters.
-#[allow(dead_code)]
-fn to_lowercase_borrowed(text: &str) -> Cow<'_, str> {
-    if text.chars().any(|c| c.is_uppercase()) {
-        Cow::Owned(text.to_lowercase())
-    } else {
-        Cow::Borrowed(text)
-    }
-}
-
-/// True if all tokens of `phrase` appear in order as whole words in `lower`.
-#[allow(dead_code)]
-fn contains_word_phrase(lower: &str, phrase: &str) -> bool {
-    let mut search_from = 0usize;
-    for tok in phrase.split(' ') {
-        let Some((pos, len)) = find_whole_word(lower, tok, search_from) else {
-            return false;
-        };
-        search_from = pos + len;
-    }
-    true
-}
-
-/// Find `needle` as a whole word in `lower` starting at or after `from`.
-#[allow(dead_code)]
-fn find_whole_word(lower: &str, needle: &str, from: usize) -> Option<(usize, usize)> {
-    if from >= lower.len() || !lower.is_char_boundary(from) {
-        return None;
-    }
-    let mut i = from;
-    while i < lower.len() {
-        let rel = lower[i..].find(needle)?;
-        let pos = i + rel;
-        let before_ok = pos == 0
-            || lower[..pos]
-                .chars()
-                .next_back()
-                .map_or(true, |c| !c.is_alphanumeric());
-        let after = pos + needle.len();
-        let after_ok = after >= lower.len()
-            || lower[after..]
-                .chars()
-                .next()
-                .map_or(true, |c| !c.is_alphanumeric());
-        if before_ok && after_ok {
-            return Some((pos, needle.len()));
-        }
-        if let Some(ch) = lower[pos..].chars().next() {
-            i = pos + ch.len_utf8();
-        } else {
-            break;
-        }
-    }
-    None
 }
 
 /// Remove null bytes and control characters from input text.
@@ -843,31 +682,6 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_language_by_script() {
-        assert_eq!(detect_language_by_script("Ελληνικά", 0), Some("el"));
-        assert_eq!(detect_language_by_script("עברית", 0), Some("he"));
-        assert_eq!(detect_language_by_script("ภาษาไทย", 0), Some("th"));
-        assert_eq!(detect_language_by_script("বাংলা", 0), Some("bn"));
-        assert_eq!(detect_language_by_script("ગુજરાતી", 0), Some("gu"));
-        assert_eq!(detect_language_by_script("हिन्दी", 0), Some("hi"));
-        assert_eq!(detect_language_by_script("தமிழ்", 0), Some("ta"));
-        assert_eq!(detect_language_by_script("తెలుగు", 0), Some("te"));
-        assert_eq!(detect_language_by_script("ಕನ್ನಡ", 0), Some("kn"));
-        assert_eq!(detect_language_by_script("മലയാളം", 0), Some("ml"));
-        assert_eq!(detect_language_by_script("فارسی چ گ پ ژ", 0), Some("fa"));
-        assert_eq!(detect_language_by_script("العربية", 0), Some("ar"));
-        assert_eq!(detect_language_by_script("   Ελληνικά", 3), Some("el"));
-    }
-
-    #[test]
-    fn test_detect_language_by_words_cyrillic_uppercase() {
-        // Test Cyrillic uppercase in word-based detection
-        assert_eq!(detect_language_by_words("ДНЕС"), Some("bg"));
-        assert_eq!(detect_language_by_words("ЗДРАВЕЙТЕ"), Some("bg"));
-        assert_eq!(detect_language_by_words("ХВАЛА"), Some("sr"));
-    }
-
-    #[test]
     fn test_distinguish_chinese_variant() {
         let trad_text = "我們正在實施繁體中文的語言識別優化，測試繁簡特徵字。這點會讓我們學習與說話更標準。";
         assert_eq!(distinguish_chinese_variant(trad_text), "zh-Hant");
@@ -941,12 +755,10 @@ mod tests {
     #[tokio::test]
     async fn test_detect_greek_math_symbol_and_diaeresis_guards() {
         // Single Greek letter in English math/science context must not be misclassified as Greek ("el")
-        assert_eq!(detect_language_by_script("The angle θ is measured in radians.", 0), None);
         assert_eq!(detect_language("The angle θ is measured in radians.").await, "en");
         assert_eq!(detect_dominant_language("The learning rate α is set to 0.001."), "en");
 
         // French and Dutch words with 'ë' (0x00EB) must not be misclassified as Albanian ("sq")
-        assert_eq!(detect_language_by_chars("Joyeux Noël à tous et bonne année!", 0), None);
         assert_eq!(detect_language("Joyeux Noël à tous et bonne année!").await, "fr");
         assert_eq!(detect_language("Welkom in België, een prachtig land.").await, "nl");
     }
@@ -964,5 +776,24 @@ mod tests {
         // CJK mixed with English brand/acronym should still be recognized by CJK heuristic
         let mixed_cjk = "我的 iPhone 真的很实用，推荐大家使用。";
         assert_eq!(detect_pure_cjk_language(mixed_cjk, 0), Some("zh-Hans"));
+    }
+
+    #[test]
+    fn test_inline_lang_utf8_boundary() {
+        let short = InlineLang::new("en");
+        assert_eq!(short.as_str(), "en");
+
+        let exact_15 = InlineLang::new("123456789012345");
+        assert_eq!(exact_15.as_str(), "123456789012345");
+
+        // Truncation on ASCII
+        let long_ascii = InlineLang::new("12345678901234567890");
+        assert_eq!(long_ascii.as_str(), "123456789012345");
+
+        // Multi-byte character crossing 15-byte boundary:
+        // 14 ASCII bytes + 3-byte Chinese char '中' (0xE4, 0xB8, 0xAD).
+        // The character boundary at <= 15 is 14 bytes. It must truncate cleanly to 14 bytes without UB.
+        let boundary_cross = InlineLang::new("abcdefghijklmn中");
+        assert_eq!(boundary_cross.as_str(), "abcdefghijklmn");
     }
 }

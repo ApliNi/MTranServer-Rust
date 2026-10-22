@@ -120,8 +120,8 @@ impl HeadMajorV {
 
 /// Permute a `[len, d_model]` K projection into `out` in [`HeadMajorK`] layout.
 fn rearrange_k_heads_into(t: &Tensor2, heads: usize, out: &mut HeadMajorK) {
-    let src_len = t.shape[0];
-    let d_model = t.shape[1];
+    let src_len = t.rows();
+    let d_model = t.cols();
     let dk = d_model / heads;
     let total_len = src_len * d_model;
     out.src_len = src_len;
@@ -143,8 +143,8 @@ fn rearrange_k_heads_into(t: &Tensor2, heads: usize, out: &mut HeadMajorK) {
 
 /// Permute a `[len, d_model]` V projection into `out` in [`HeadMajorV`] layout.
 fn rearrange_v_heads_into(t: &Tensor2, heads: usize, out: &mut HeadMajorV) {
-    let src_len = t.shape[0];
-    let d_model = t.shape[1];
+    let src_len = t.rows();
+    let d_model = t.cols();
     let dk = d_model / heads;
     let total_len = src_len * d_model;
     out.src_len = src_len;
@@ -455,8 +455,8 @@ impl<'a> LayerWeightsView<'a> {
         let d_ff = decoder_layers
             .first()
             .map(|l| match &l.ffn_w1 {
-                LinW::F32(w) => w.shape[1],
-                LinW::Q8(wq, _) => wq.shape[0],
+                LinW::F32(w) => w.cols(),
+                LinW::Q8(wq, _) => wq.rows(),
             })
             .unwrap_or(1536);
 
@@ -537,23 +537,32 @@ impl DecoderLayerKVCache {
     }
 
     pub fn reset(&mut self) {
-        let d_model = self.k.shape[1];
-        self.k.shape = [0, d_model];
+        let d_model = self.k.cols();
+        self.k.set_shape_2d(0, d_model);
         self.k.data.clear();
-        self.v.shape = [0, d_model];
+        self.v.set_shape_2d(0, d_model);
         self.v.data.clear();
     }
 
     pub fn step(&self) -> usize {
-        self.k.shape[0]
+        self.k.rows()
     }
 
     pub fn append(&mut self, k_step: &[f32], v_step: &[f32], d_model: usize) {
-        let curr_len = self.k.shape[0];
+        let curr_len = self.k.rows();
         self.k.data.extend_from_slice(k_step);
         self.v.data.extend_from_slice(v_step);
         self.k.set_shape_2d(curr_len + 1, d_model);
         self.v.set_shape_2d(curr_len + 1, d_model);
+    }
+
+    pub fn copy_from(&mut self, other: &Self) {
+        self.k.shape = other.k.shape;
+        self.k.data.clear();
+        self.k.data.extend_from_slice(&other.k.data);
+        self.v.shape = other.v.shape;
+        self.v.data.clear();
+        self.v.data.extend_from_slice(&other.v.data);
     }
 }
 
@@ -581,6 +590,17 @@ impl DecoderKVCache {
             self.layers = (0..num_layers).map(|_| DecoderLayerKVCache::new()).collect();
         } else {
             self.reset();
+        }
+    }
+
+    pub fn copy_from(&mut self, other: &Self) {
+        if self.layers.len() != other.layers.len() {
+            self.layers = (0..other.layers.len())
+                .map(|_| DecoderLayerKVCache::new())
+                .collect();
+        }
+        for (dst, src) in self.layers.iter_mut().zip(other.layers.iter()) {
+            dst.copy_from(src);
         }
     }
 }
@@ -1296,8 +1316,8 @@ unsafe fn embed_add_pos_avx2(src: &[i8], pos_slice: &[f32], dst: &mut [f32], qm_
 fn embed_src_into(src_emb: &SrcEmbedding, ids: &[u32], unk_id: u32, out: &mut Tensor2) {
     match src_emb {
         SrcEmbedding::F32(weight) => {
-            let max_vocab = weight.shape.first().copied().unwrap_or(0);
-            let d_model = weight.shape.get(1).copied().unwrap_or(0);
+            let max_vocab = weight.rows();
+            let d_model = weight.cols();
             let total_len = ids.len() * d_model;
             out.set_shape_2d(ids.len(), d_model);
             if out.data.len() != total_len {
@@ -1326,8 +1346,8 @@ fn embed_src_into(src_emb: &SrcEmbedding, ids: &[u32], unk_id: u32, out: &mut Te
             }
         }
         SrcEmbedding::Q8(q) => {
-            let max_vocab = q.shape.first().copied().unwrap_or(0);
-            let d_model = q.shape.get(1).copied().unwrap_or(0);
+            let max_vocab = q.rows();
+            let d_model = q.cols();
             let total_len = ids.len() * d_model;
             out.set_shape_2d(ids.len(), d_model);
             if out.data.len() != total_len {
@@ -1669,13 +1689,13 @@ fn multi_head_attention_qkv_into(
     out_scores: &mut Tensor2,
     kt_panel: &mut Tensor2,
 ) {
-    let q_len = q.shape[0];
-    let kv_len = k.shape[0];
-    let d_model = q.shape[1];
+    let q_len = q.rows();
+    let kv_len = k.rows();
+    let d_model = q.cols();
     let dk = d_model / heads;
     let scale = 1.0 / (dk as f32).sqrt();
 
-    let mask_cols = mask.map(|m| m.shape[1]).unwrap_or(0);
+    let mask_cols = mask.map(|m| m.cols()).unwrap_or(0);
 
     if pre_ctx.data.len() == q_len * d_model {
         pre_ctx.data.fill(0.0);
@@ -1738,7 +1758,7 @@ fn multi_head_attention_qkv_into(
             }
         }
         if let Some(m) = mask {
-            for i in 0..q_len.min(m.shape[0]) {
+            for i in 0..q_len.min(m.rows()) {
                 for j in 0..kv_len.min(mask_cols) {
                     scores[i * kv_len + j] += m.data[i * mask_cols + j];
                 }
@@ -1885,14 +1905,14 @@ fn multi_head_attention_qkv_headmajor_into(
     out_scores: &mut Tensor2,
     mut attn_accum: Option<&mut [f32]>,
 ) {
-    let q_len = q.shape[0];
+    let q_len = q.rows();
     let kv_len = k.src_len;
     let d_model = k.d_model;
     let heads = k.heads;
     let dk = k.dk;
     let scale = 1.0 / (dk as f32).sqrt();
 
-    let mask_cols = mask.map(|m| m.shape[1]).unwrap_or(0);
+    let mask_cols = mask.map(|m| m.cols()).unwrap_or(0);
 
     pre_ctx.data.resize(q_len * d_model, 0.0);
     out_scores.data.resize(q_len * kv_len, 0.0);
@@ -1971,7 +1991,7 @@ fn multi_head_attention_qkv_headmajor_into(
             }
         }
         if let Some(m) = mask {
-            for i in 0..q_len.min(m.shape[0]) {
+            for i in 0..q_len.min(m.rows()) {
                 for j in 0..kv_len.min(mask_cols) {
                     scores[i * kv_len + j] += m.data[i * mask_cols + j];
                 }
@@ -2241,7 +2261,7 @@ fn encoder_forward_into(
         #[cfg(target_arch = "x86_64")]
         if crate::utils::arch::has_avx2() && config.position_table.len() >= need {
             if let SrcEmbedding::Q8(q8) = &weights.src_wemb {
-                let max_vocab = q8.shape.first().copied().unwrap_or(0);
+                let max_vocab = q8.rows();
                 x.set_shape_2d(seq_len, d_model);
                 if x.data.len() != need {
                     x.data.resize(need, 0.0);
@@ -2580,7 +2600,7 @@ fn decoder_layer(
                 linear_into(x, self_wq, self_bq, &mut s.q);
                 linear_into(x, self_wk, self_bk, &mut s.self_k);
                 linear_into(x, self_wv, self_bv, &mut s.self_v);
-                let d_model = x.shape[1];
+                let d_model = x.cols();
                 kv_layer.append(&s.self_k.data, &s.self_v.data, d_model);
 
                 multi_head_attention_qkv_into(
@@ -2708,6 +2728,7 @@ fn decoder_forward(
 ///
 /// Returns `(wq, sb)` with `wq.data[j * d_model + t] = Wemb_i8[shortlist[j]][t]`
 /// and `sb[j]` the corresponding bias.
+#[allow(dead_code)]
 fn gather_shortlist_projection_into(
     wemb: &Quant8Tensor,
     bias: Option<&Tensor2>,
@@ -2716,27 +2737,58 @@ fn gather_shortlist_projection_into(
     out_row_sums: &mut Vec<i32>,
     out_bias: &mut Vec<f32>,
 ) {
-    let d_model = wemb.shape[1];
-    let max_vocab = wemb.shape.first().copied().unwrap_or(0);
+    gather_shortlist_projection_prefix_into(
+        wemb,
+        bias,
+        shortlist,
+        0,
+        out_data,
+        out_row_sums,
+        out_bias,
+    );
+}
+
+fn gather_shortlist_projection_prefix_into(
+    wemb: &Quant8Tensor,
+    bias: Option<&Tensor2>,
+    shortlist: &[u32],
+    common_prefix_len: usize,
+    out_data: &mut Vec<i8>,
+    out_row_sums: &mut Vec<i32>,
+    out_bias: &mut Vec<f32>,
+) {
+    let d_model = wemb.cols();
+    let max_vocab = wemb.rows();
     let sh_len = shortlist.len();
     let total_elems = sh_len * d_model;
 
-    out_data.clear();
+    if common_prefix_len == 0 {
+        out_data.clear();
+        out_bias.clear();
+        out_row_sums.clear();
+    } else {
+        out_data.truncate(common_prefix_len * d_model);
+        out_bias.truncate(common_prefix_len);
+        if wemb.row_sums.is_some() {
+            out_row_sums.truncate(common_prefix_len);
+        } else {
+            out_row_sums.clear();
+        }
+    }
+
     if out_data.capacity() < total_elems {
         out_data.reserve(total_elems - out_data.capacity());
     }
 
-    out_bias.clear();
     if out_bias.capacity() < sh_len {
         out_bias.reserve(sh_len - out_bias.capacity());
     }
 
-    out_row_sums.clear();
     if wemb.row_sums.is_some() && out_row_sums.capacity() < sh_len {
         out_row_sums.reserve(sh_len - out_row_sums.capacity());
     }
 
-    let mut i = 0;
+    let mut i = common_prefix_len;
     while i < shortlist.len() {
         let start_v = shortlist[i] as usize;
         let mut run_len = 1;
@@ -2778,7 +2830,7 @@ fn gather_shortlist_projection_into(
         i += run_len;
     }
 
-    if bias.is_none() {
+    if bias.is_none() && out_bias.len() < sh_len {
         out_bias.resize(sh_len, 0.0);
     }
 }
@@ -2796,8 +2848,8 @@ fn gather_shortlist_projection_f32_into(
     out_proj: &mut Vec<f32>,
     out_bias: &mut Vec<f32>,
 ) {
-    let d_model = wemb.shape[1];
-    let max_vocab = wemb.shape.first().copied().unwrap_or(0);
+    let d_model = wemb.cols();
+    let max_vocab = wemb.rows();
     let sh_len = shortlist.len();
     let total_elems = sh_len * d_model;
 
@@ -3520,14 +3572,26 @@ impl Transformer {
         // across all decoder steps, cached across consecutive identical shortlist calls).
         let (proj_qa, proj_denom) = if let Some(wemb_q8) = weights.trg_wemb_q8 {
             let wemb_ptr = wemb_q8.data.as_ptr() as usize;
-            let can_reuse = *cached_wemb_ptr == wemb_ptr
-                && cached_shortlist.as_slice() == shortlist_indices
+            let common_prefix = if *cached_wemb_ptr == wemb_ptr {
+                let max_valid = short_proj_q8_data.len() / d_model;
+                cached_shortlist
+                    .iter()
+                    .zip(shortlist_indices.iter())
+                    .take_while(|(&a, &b)| a == b)
+                    .count()
+                    .min(max_valid)
+            } else {
+                0
+            };
+            let can_reuse = common_prefix == shortlist_indices.len()
+                && cached_shortlist.len() == shortlist_indices.len()
                 && short_proj_q8_data.len() == shortlist_indices.len() * d_model;
             if !can_reuse {
-                gather_shortlist_projection_into(
+                gather_shortlist_projection_prefix_into(
                     wemb_q8,
                     Some(weights.output_bias),
                     shortlist_indices,
+                    common_prefix,
                     short_proj_q8_data,
                     short_row_sums,
                     short_bias,
@@ -3609,6 +3673,14 @@ impl Transformer {
                 .max(32)
                 .min(max_length_break)
         };
+        if out_tokens.capacity() < dyn_limit + 4 {
+            out_tokens.reserve((dyn_limit + 4) - out_tokens.capacity());
+        }
+        if let Some(a) = &mut alignments {
+            if a.capacity() < dyn_limit + 4 {
+                a.reserve((dyn_limit + 4) - a.capacity());
+            }
+        }
         if beam_size <= 1 {
             loop {
                 profiling::scope("dec/embed+pos", || {
@@ -3618,7 +3690,7 @@ impl Transformer {
                     let pos_slice = &position_table[pos * d_model..(pos + 1) * d_model];
                     if let Some(&last) = out_tokens.last() {
                         if let Some(wemb_q8) = weights.trg_wemb_q8 {
-                            let max_vocab = wemb_q8.shape.first().copied().unwrap_or(0);
+                            let max_vocab = wemb_q8.rows();
                             let eff_last = if (last as usize) < max_vocab {
                                 Some(last as usize)
                             } else if (spm_trg.unk_id() as usize) < max_vocab {
@@ -3651,8 +3723,8 @@ impl Transformer {
                                 step_buf.copy_from_slice(pos_slice);
                             }
                         } else if let Some(w) = weights.trg_wemb_f32 {
-                            let max_vocab = w.shape.first().copied().unwrap_or(0);
-                            let d = w.shape[1];
+                            let max_vocab = w.rows();
+                            let d = w.cols();
                             let eff_last = if (last as usize) < max_vocab {
                                 Some(last as usize)
                             } else if (spm_trg.unk_id() as usize) < max_vocab {
@@ -3781,7 +3853,6 @@ impl Transformer {
                 }
             }
         } else {
-            #[derive(Clone)]
             struct BeamHypothesis {
                 tokens: Vec<u32>,
                 score: f32,
@@ -3789,6 +3860,53 @@ impl Transformer {
                 kv_cache: DecoderKVCache,
                 alignments: Vec<usize>,
                 eos_reached: bool,
+            }
+
+            impl BeamHypothesis {
+                fn new(dec_layers: usize, d_model: usize, dyn_limit: usize) -> Self {
+                    let mut cell_states = Vec::with_capacity(dec_layers);
+                    for _ in 0..dec_layers {
+                        cell_states.push(Tensor2::zeros([1, d_model]));
+                    }
+                    let kv_cache = DecoderKVCache {
+                        layers: (0..dec_layers)
+                            .map(|_| DecoderLayerKVCache::with_capacity(dyn_limit + 4, d_model))
+                            .collect(),
+                    };
+                    Self {
+                        tokens: Vec::with_capacity(dyn_limit + 4),
+                        score: 0.0,
+                        cell_states,
+                        kv_cache,
+                        alignments: Vec::with_capacity(dyn_limit + 4),
+                        eos_reached: false,
+                    }
+                }
+
+                fn copy_from(&mut self, parent: &Self, cand: &Candidate, need_align: bool) {
+                    self.score = cand.score;
+                    self.tokens.clear();
+                    self.tokens.extend_from_slice(&parent.tokens);
+                    if !cand.is_finished_beam {
+                        self.tokens.push(cand.token);
+                    }
+                    self.alignments.clear();
+                    self.alignments.extend_from_slice(&parent.alignments);
+                    if need_align && !cand.is_finished_beam {
+                        self.alignments.push(cand.align_src);
+                    }
+                    self.eos_reached = if cand.is_finished_beam {
+                        parent.eos_reached
+                    } else {
+                        cand.is_eos
+                    };
+                    for (dst, src) in self.cell_states.iter_mut().zip(parent.cell_states.iter()) {
+                        dst.shape = src.shape;
+                        dst.data.clear();
+                        dst.data.extend_from_slice(&src.data);
+                    }
+                    self.kv_cache.copy_from(&parent.kv_cache);
+                }
             }
 
             struct Candidate {
@@ -3801,26 +3919,35 @@ impl Transformer {
                 is_finished_beam: bool,
             }
 
-            let initial_cells = cell_states[..dec_layers].to_vec();
-            let mut initial_kv = kv_cache.clone();
-            initial_kv.reset();
-            let mut beams = vec![BeamHypothesis {
-                tokens: Vec::new(),
-                score: 0.0,
-                cell_states: initial_cells,
-                kv_cache: initial_kv,
-                alignments: Vec::new(),
-                eos_reached: false,
-            }];
+            let mut current_beams: Vec<BeamHypothesis> = (0..beam_size)
+                .map(|_| BeamHypothesis::new(dec_layers, d_model, dyn_limit))
+                .collect();
+            let mut next_beams: Vec<BeamHypothesis> = (0..beam_size)
+                .map(|_| BeamHypothesis::new(dec_layers, d_model, dyn_limit))
+                .collect();
+
+            current_beams[0].tokens.clear();
+            current_beams[0].score = 0.0;
+            current_beams[0].alignments.clear();
+            current_beams[0].eos_reached = false;
+            for (dst, src) in current_beams[0].cell_states.iter_mut().zip(&cell_states[..dec_layers]) {
+                dst.shape = src.shape;
+                dst.data.clear();
+                dst.data.extend_from_slice(&src.data);
+            }
+            current_beams[0].kv_cache.reset();
+            let mut num_active = 1;
+
+            let mut candidates: Vec<Candidate> = Vec::with_capacity(beam_size * sh_len.min(512) + beam_size);
             let mut log_prob_buf = vec![0.0f32; sh_len];
             for _step in 0..dyn_limit {
-                if beams.iter().all(|b| b.eos_reached) {
+                if current_beams[..num_active].iter().all(|b| b.eos_reached) {
                     break;
                 }
 
-                let mut candidates: Vec<Candidate> = Vec::new();
+                candidates.clear();
 
-                for (b_idx, beam) in beams.iter_mut().enumerate() {
+                for (b_idx, beam) in current_beams[..num_active].iter_mut().enumerate() {
                     if beam.eos_reached || beam.tokens.len() >= dyn_limit {
                         let len = beam.tokens.len().max(1);
                         let norm = beam.score / google_length_penalty(len, length_penalty);
@@ -3842,7 +3969,7 @@ impl Transformer {
                     let pos_slice = &position_table[pos * d_model..(pos + 1) * d_model];
                     if let Some(&last) = beam.tokens.last() {
                         if let Some(wemb_q8) = weights.trg_wemb_q8 {
-                            let max_vocab = wemb_q8.shape.first().copied().unwrap_or(0);
+                            let max_vocab = wemb_q8.rows();
                             let eff_last = if (last as usize) < max_vocab {
                                 Some(last as usize)
                             } else if (spm_trg.unk_id() as usize) < max_vocab {
@@ -3875,8 +4002,8 @@ impl Transformer {
                                 step_buf.copy_from_slice(pos_slice);
                             }
                         } else if let Some(w) = weights.trg_wemb_f32 {
-                            let max_vocab = w.shape.first().copied().unwrap_or(0);
-                            let d = w.shape[1];
+                            let max_vocab = w.rows();
+                            let d = w.cols();
                             let eff_last = if (last as usize) < max_vocab {
                                 Some(last as usize)
                             } else if (spm_trg.unk_id() as usize) < max_vocab {
@@ -4035,34 +4162,16 @@ impl Transformer {
                         .then_with(|| a.token.cmp(&b.token))
                 });
 
-                let mut next_beams = Vec::with_capacity(candidates.len());
-                for cand in candidates {
-                    if cand.is_finished_beam {
-                        next_beams.push(beams[cand.parent_idx].clone());
-                    } else {
-                        let parent = &beams[cand.parent_idx];
-                        let mut new_tokens = parent.tokens.clone();
-                        new_tokens.push(cand.token);
-                        let mut new_align = parent.alignments.clone();
-                        if need_align {
-                            new_align.push(cand.align_src);
-                        }
-                        let new_cells = parent.cell_states.clone();
-                        let new_kv = parent.kv_cache.clone();
-                        next_beams.push(BeamHypothesis {
-                            tokens: new_tokens,
-                            score: cand.score,
-                            cell_states: new_cells,
-                            kv_cache: new_kv,
-                            alignments: new_align,
-                            eos_reached: cand.is_eos,
-                        });
-                    }
+                let next_beams_active = candidates.len();
+                for (cand_idx, cand) in candidates.iter().enumerate() {
+                    let parent = &current_beams[cand.parent_idx];
+                    next_beams[cand_idx].copy_from(parent, cand, need_align);
                 }
-                beams = next_beams;
+                num_active = next_beams_active;
+                std::mem::swap(&mut current_beams, &mut next_beams);
             }
 
-            if let Some(best_beam) = beams.iter().max_by(|a, b| {
+            if let Some(best_beam) = current_beams[..num_active].iter().max_by(|a, b| {
                 let a_len = a.tokens.len().max(1);
                 let b_len = b.tokens.len().max(1);
                 let a_norm = a.score / google_length_penalty(a_len, length_penalty);

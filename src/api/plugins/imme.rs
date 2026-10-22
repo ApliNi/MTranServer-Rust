@@ -1,19 +1,10 @@
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
+use crate::api::plugins::{deserialize_null_default, parse_source_lang, parse_target_lang};
 use crate::api::translate::validate_batch;
 use crate::api::ApiError;
 use crate::service;
-use crate::utils::lang::normalize_language_code;
-
-fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Default + Deserialize<'de>,
-{
-    let opt = Option::deserialize(deserializer)?;
-    Ok(opt.unwrap_or_default())
-}
 
 #[derive(Deserialize)]
 pub struct ImmeRequest {
@@ -37,20 +28,8 @@ pub struct ImmeResponse {
 pub async fn translate(Json(body): Json<ImmeRequest>) -> Result<Json<ImmeResponse>, ApiError> {
     validate_batch(&body.text_list)?;
 
-    // An empty target language would build a meaningless engine key.
-    let target_lang = normalize_language_code(&body.target_lang);
-    if target_lang.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Missing 'target_lang' language".to_string(),
-        ));
-    }
-
-    let raw_source = body.source_lang.trim();
-    let source_lang = if raw_source.is_empty() || raw_source.eq_ignore_ascii_case("auto") {
-        "auto".to_string()
-    } else {
-        normalize_language_code(raw_source)
-    };
+    let target_lang = parse_target_lang(&body.target_lang, "target_lang")?;
+    let source_lang = parse_source_lang(Some(&body.source_lang));
 
     let results = service::translate_batch_with_pivot_formats(
         &source_lang,
@@ -60,15 +39,19 @@ pub async fn translate(Json(body): Json<ImmeRequest>) -> Result<Json<ImmeRespons
     )
     .await?;
 
+    let fallback_source = if source_lang != "auto" {
+        source_lang.as_ref()
+    } else {
+        "auto"
+    };
+
     let translations = results
         .into_iter()
         .map(|(text, detected)| {
             let detected_source_lang = if !detected.is_empty() {
                 detected
-            } else if source_lang != "auto" {
-                source_lang.clone()
             } else {
-                "auto".to_string()
+                fallback_source.to_string()
             };
             ImmeTranslation {
                 detected_source_lang,

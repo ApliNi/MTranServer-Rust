@@ -45,13 +45,31 @@ pub struct RecordItem {
     pub last_modified: i64,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+pub struct LanguagePair {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+pub struct LanguageListResponse {
+    pub languages: Vec<String>,
+    pub pairs: Vec<LanguagePair>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub struct RecordsData {
     pub data: Vec<RecordItem>,
     #[serde(skip)]
     pub pairs_index: HashMap<String, HashSet<String>>,
     #[serde(skip)]
     pub supported_languages: HashSet<String>,
+    #[serde(skip)]
+    pub supported_languages_list: Vec<String>,
+    #[serde(skip)]
+    pub pairs_list: Vec<String>,
+    #[serde(skip)]
+    pub language_list_response: std::sync::Arc<LanguageListResponse>,
 }
 
 impl RecordsData {
@@ -67,8 +85,33 @@ impl RecordsData {
             pairs_index.entry(from).or_default().insert(to);
         }
 
+        let mut supported_languages_list: Vec<String> = supported_languages.iter().cloned().collect();
+        supported_languages_list.sort();
+
+        let mut pairs_list = Vec::with_capacity(pairs_index.len() * 2);
+        let mut pairs_split = Vec::with_capacity(pairs_index.len() * 2);
+        for (from, targets) in &pairs_index {
+            for to in targets {
+                pairs_list.push(format!("{}_{}", from, to));
+                pairs_split.push(LanguagePair {
+                    from: from.clone(),
+                    to: to.clone(),
+                });
+            }
+        }
+        pairs_list.sort();
+        pairs_split.sort_by(|a, b| (&a.from, &a.to).cmp(&(&b.from, &b.to)));
+
+        let response = LanguageListResponse {
+            languages: supported_languages_list.clone(),
+            pairs: pairs_split,
+        };
+
         self.pairs_index = pairs_index;
         self.supported_languages = supported_languages;
+        self.supported_languages_list = supported_languages_list;
+        self.pairs_list = pairs_list;
+        self.language_list_response = std::sync::Arc::new(response);
     }
 }
 /// Installed model records, swapped atomically so the background updater can
@@ -221,25 +264,20 @@ pub fn has_language_pair(from_lang: &str, to_lang: &str) -> bool {
 
 /// Get all available language pairs as "from_to" strings.
 pub fn get_language_pairs() -> Vec<String> {
-    records().map_or(vec![], |r| {
-        let mut pairs: Vec<String> = Vec::new();
-        for (from, targets) in &r.pairs_index {
-            for to in targets {
-                pairs.push(format!("{}_{}", from, to));
-            }
-        }
-        pairs.sort();
-        pairs
-    })
+    with_records(|r| r.pairs_list.clone()).unwrap_or_default()
 }
 
 /// Get all supported language codes.
 pub fn get_supported_languages() -> Vec<String> {
-    records().map_or(vec![], |r| {
-        let mut langs: Vec<String> = r.supported_languages.iter().cloned().collect();
-        langs.sort();
-        langs
-    })
+    with_records(|r| r.supported_languages_list.clone()).unwrap_or_default()
+}
+
+/// Get the cached language list response for `/languages` without recomputing.
+pub fn get_language_list_response() -> std::sync::Arc<LanguageListResponse> {
+    static EMPTY: std::sync::LazyLock<std::sync::Arc<LanguageListResponse>> =
+        std::sync::LazyLock::new(|| std::sync::Arc::new(LanguageListResponse::default()));
+    with_records(|r| std::sync::Arc::clone(&r.language_list_response))
+        .unwrap_or_else(|| std::sync::Arc::clone(&EMPTY))
 }
 
 /// Check if a language code has at least one model record (source or target).
@@ -805,6 +843,7 @@ mod tests {
             ],
             pairs_index: std::collections::HashMap::new(),
             supported_languages: std::collections::HashSet::new(),
+            ..Default::default()
         };
         super::set_records(data);
         assert!(super::has_language_pair("en", "es"));

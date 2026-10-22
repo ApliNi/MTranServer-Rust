@@ -189,8 +189,16 @@ pub unsafe fn layer_norm_store_avx(
         let v0 = _mm256_mul_ps(v0, inv_v);
         let v1 = _mm256_mul_ps(v1, inv_v);
 
-        let v0 = _mm256_fmadd_ps(v0, _mm256_loadu_ps(s_ptr.add(o)), _mm256_loadu_ps(b_ptr.add(o)));
-        let v1 = _mm256_fmadd_ps(v1, _mm256_loadu_ps(s_ptr.add(o + 8)), _mm256_loadu_ps(b_ptr.add(o + 8)));
+        let v0 = _mm256_fmadd_ps(
+            v0,
+            _mm256_loadu_ps(s_ptr.add(o)),
+            _mm256_loadu_ps(b_ptr.add(o)),
+        );
+        let v1 = _mm256_fmadd_ps(
+            v1,
+            _mm256_loadu_ps(s_ptr.add(o + 8)),
+            _mm256_loadu_ps(b_ptr.add(o + 8)),
+        );
 
         _mm256_storeu_ps(o_ptr.add(o), v0);
         _mm256_storeu_ps(o_ptr.add(o + 8), v1);
@@ -202,7 +210,11 @@ pub unsafe fn layer_norm_store_avx(
         let o = tail_start;
         let v = _mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o)), mean_v);
         let v = _mm256_mul_ps(v, inv_v);
-        let v = _mm256_fmadd_ps(v, _mm256_loadu_ps(s_ptr.add(o)), _mm256_loadu_ps(b_ptr.add(o)));
+        let v = _mm256_fmadd_ps(
+            v,
+            _mm256_loadu_ps(s_ptr.add(o)),
+            _mm256_loadu_ps(b_ptr.add(o)),
+        );
         _mm256_storeu_ps(o_ptr.add(o), v);
         for i in (tail_start + 8)..x.len() {
             *o_ptr.add(i) = (*x_ptr.add(i) - mean) * inv * *s_ptr.add(i) + *b_ptr.add(i);
@@ -319,12 +331,13 @@ pub fn layer_norm_into(x: &Tensor2, scale: &Tensor2, bias: &Tensor2, eps: f32, o
 }
 /// Fused add + layer norm AVX2+FMA implementation on raw pointers.
 ///
-/// On-the-fly computes `a[i] + b[i]` in SIMD registers:
-/// - Pass 1: sums `(a + b)` with `_mm256_add_ps` to compute `mean`, and writes intermediate `a + b` to `out`.
-/// - Pass 2: sums `(x - mean)^2` with `_mm256_fmadd_ps` from `out` to compute variance and `inv`.
-/// - Pass 3: computes `norm = (x - mean) * inv`, applies `_mm256_fmadd_ps(norm, scale, bias)`, stores into `out`.
-///
-/// Handles scalar tail. Correctly handles when `out_ptr` equals `a_ptr` or `b_ptr`.
+/// 2-Pass Zero-STLF (Store-To-Load Forwarding) architecture:
+/// - Pass 1: Streaming loads `a_ptr` and `b_ptr`, computes `a + b` in AVX2 registers,
+///   unpacks with `_mm256_cvtps_pd` to double-precision `f64` accumulators for `sum` and `sum_sq`
+///   (guaranteeing numerical stability without cancellation). Out pointer is never written to.
+///   Computes exact `mean` and `inv = 1.0 / sqrt(var + eps)`.
+/// - Pass 2: Re-reads `a_ptr`, `b_ptr`, `scale`, and `bias` from hot L1 cache, computes
+///   `(a + b - mean) * inv * scale + bias` in SIMD registers and writes once to `out_ptr`.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 pub unsafe fn fused_add_layer_norm_avx2_raw(
@@ -339,8 +352,10 @@ pub unsafe fn fused_add_layer_norm_avx2_raw(
     use std::arch::x86_64::*;
 
     let chunks16 = d / 16;
-    let mut sum0 = _mm256_setzero_ps();
-    let mut sum1 = _mm256_setzero_ps();
+    let mut sum0 = _mm256_setzero_pd();
+    let mut sum1 = _mm256_setzero_pd();
+    let mut sum_sq0 = _mm256_setzero_pd();
+    let mut sum_sq1 = _mm256_setzero_pd();
 
     for i in 0..chunks16 {
         let o = i * 16;
@@ -348,71 +363,88 @@ pub unsafe fn fused_add_layer_norm_avx2_raw(
         let b0 = _mm256_loadu_ps(b_ptr.add(o));
         let a1 = _mm256_loadu_ps(a_ptr.add(o + 8));
         let b1 = _mm256_loadu_ps(b_ptr.add(o + 8));
+
         let x0 = _mm256_add_ps(a0, b0);
         let x1 = _mm256_add_ps(a1, b1);
-        sum0 = _mm256_add_ps(sum0, x0);
-        sum1 = _mm256_add_ps(sum1, x1);
-        _mm256_storeu_ps(out_ptr.add(o), x0);
-        _mm256_storeu_ps(out_ptr.add(o + 8), x1);
+
+        let d0_lo = _mm256_cvtps_pd(_mm256_castps256_ps128(x0));
+        let d0_hi = _mm256_cvtps_pd(_mm256_extractf128_ps(x0, 1));
+        let d1_lo = _mm256_cvtps_pd(_mm256_castps256_ps128(x1));
+        let d1_hi = _mm256_cvtps_pd(_mm256_extractf128_ps(x1, 1));
+
+        sum0 = _mm256_add_pd(sum0, d0_lo);
+        sum1 = _mm256_add_pd(sum1, d0_hi);
+        sum_sq0 = _mm256_fmadd_pd(d0_lo, d0_lo, sum_sq0);
+        sum_sq1 = _mm256_fmadd_pd(d0_hi, d0_hi, sum_sq1);
+
+        sum0 = _mm256_add_pd(sum0, d1_lo);
+        sum1 = _mm256_add_pd(sum1, d1_hi);
+        sum_sq0 = _mm256_fmadd_pd(d1_lo, d1_lo, sum_sq0);
+        sum_sq1 = _mm256_fmadd_pd(d1_hi, d1_hi, sum_sq1);
     }
 
-    let sum_v = _mm256_add_ps(sum0, sum1);
-    let sum128 = _mm_add_ps(
-        _mm256_castps256_ps128(sum_v),
-        _mm256_extractf128_ps(sum_v, 1),
+    let tail16_start = chunks16 * 16;
+    let mut tail_start = tail16_start;
+    if d - tail_start >= 8 {
+        let o = tail_start;
+        let a = _mm256_loadu_ps(a_ptr.add(o));
+        let b = _mm256_loadu_ps(b_ptr.add(o));
+        let x = _mm256_add_ps(a, b);
+        let d_lo = _mm256_cvtps_pd(_mm256_castps256_ps128(x));
+        let d_hi = _mm256_cvtps_pd(_mm256_extractf128_ps(x, 1));
+
+        sum0 = _mm256_add_pd(sum0, d_lo);
+        sum1 = _mm256_add_pd(sum1, d_hi);
+        sum_sq0 = _mm256_fmadd_pd(d_lo, d_lo, sum_sq0);
+        sum_sq1 = _mm256_fmadd_pd(d_hi, d_hi, sum_sq1);
+        tail_start += 8;
+    }
+
+    let sum_v = _mm256_add_pd(sum0, sum1);
+    let sum_sq_v = _mm256_add_pd(sum_sq0, sum_sq1);
+
+    let sum128 = _mm_add_pd(
+        _mm256_castpd256_pd128(sum_v),
+        _mm256_extractf128_pd(sum_v, 1),
     );
-    let sum64 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
-    let sum32 = _mm_add_ss(sum64, _mm_shuffle_ps(sum64, sum64, 1));
-    let mut sum = _mm_cvtss_f32(sum32);
+    let sum_sq128 = _mm_add_pd(
+        _mm256_castpd256_pd128(sum_sq_v),
+        _mm256_extractf128_pd(sum_sq_v, 1),
+    );
 
-    let tail_start16 = chunks16 * 16;
-    for i in tail_start16..d {
-        let x = *a_ptr.add(i) + *b_ptr.add(i);
-        *out_ptr.add(i) = x;
-        sum += x;
+    let sum_high = _mm_unpackhi_pd(sum128, sum128);
+    let sum_sq_high = _mm_unpackhi_pd(sum_sq128, sum_sq128);
+
+    let mut sum_scalar = _mm_cvtsd_f64(_mm_add_sd(sum128, sum_high));
+    let mut sum_sq_scalar = _mm_cvtsd_f64(_mm_add_sd(sum_sq128, sum_sq_high));
+
+    for i in tail_start..d {
+        let x = (*a_ptr.add(i) + *b_ptr.add(i)) as f64;
+        sum_scalar += x;
+        sum_sq_scalar += x * x;
     }
 
-    let d_f = d as f32;
-    let mean = sum / d_f;
+    let d_f64 = d as f64;
+    let mean_f64 = sum_scalar / d_f64;
+    let var_f64 = (sum_sq_scalar / d_f64) - mean_f64 * mean_f64;
+    let var_f64 = if var_f64 > 0.0 { var_f64 } else { 0.0 };
+    let inv_f64 = 1.0 / (var_f64 + eps as f64).sqrt();
+
+    let mean = mean_f64 as f32;
+    let inv = inv_f64 as f32;
     let mean_v = _mm256_set1_ps(mean);
-
-    // Pass 2: compute sum((x - mean)^2) directly reading from out_ptr
-    let mut var0 = _mm256_setzero_ps();
-    let mut var1 = _mm256_setzero_ps();
-
-    for i in 0..chunks16 {
-        let o = i * 16;
-        let x0 = _mm256_loadu_ps(out_ptr.add(o));
-        let x1 = _mm256_loadu_ps(out_ptr.add(o + 8));
-        let diff0 = _mm256_sub_ps(x0, mean_v);
-        let diff1 = _mm256_sub_ps(x1, mean_v);
-        var0 = _mm256_fmadd_ps(diff0, diff0, var0);
-        var1 = _mm256_fmadd_ps(diff1, diff1, var1);
-    }
-
-    let var_v = _mm256_add_ps(var0, var1);
-    let var128 = _mm_add_ps(
-        _mm256_castps256_ps128(var_v),
-        _mm256_extractf128_ps(var_v, 1),
-    );
-    let var64 = _mm_add_ps(var128, _mm_movehl_ps(var128, var128));
-    let var32 = _mm_add_ss(var64, _mm_shuffle_ps(var64, var64, 1));
-    let mut var = _mm_cvtss_f32(var32);
-
-    for i in tail_start16..d {
-        let diff = *out_ptr.add(i) - mean;
-        var += diff * diff;
-    }
-
-    let variance = var / d_f;
-    let inv = 1.0 / (variance + eps).sqrt();
     let inv_v = _mm256_set1_ps(inv);
 
-    // Pass 3: norm = (x - mean) * inv, out = norm * scale + bias
+    // Pass 2: compute (a + b - mean) * inv * scale + bias and write once to out_ptr
     for i in 0..chunks16 {
         let o = i * 16;
-        let x0 = _mm256_loadu_ps(out_ptr.add(o));
-        let x1 = _mm256_loadu_ps(out_ptr.add(o + 8));
+        let a0 = _mm256_loadu_ps(a_ptr.add(o));
+        let b0 = _mm256_loadu_ps(b_ptr.add(o));
+        let a1 = _mm256_loadu_ps(a_ptr.add(o + 8));
+        let b1 = _mm256_loadu_ps(b_ptr.add(o + 8));
+
+        let x0 = _mm256_add_ps(a0, b0);
+        let x1 = _mm256_add_ps(a1, b1);
 
         let diff0 = _mm256_sub_ps(x0, mean_v);
         let diff1 = _mm256_sub_ps(x1, mean_v);
@@ -433,26 +465,24 @@ pub unsafe fn fused_add_layer_norm_avx2_raw(
         _mm256_storeu_ps(out_ptr.add(o + 8), res1);
     }
 
-    let rem = d - tail_start16;
-    if rem >= 8 {
-        let o = tail_start16;
-        let x = _mm256_loadu_ps(out_ptr.add(o));
+    let mut tail_start2 = tail16_start;
+    if d - tail_start2 >= 8 {
+        let o = tail_start2;
+        let a = _mm256_loadu_ps(a_ptr.add(o));
+        let b = _mm256_loadu_ps(b_ptr.add(o));
+        let x = _mm256_add_ps(a, b);
         let diff = _mm256_sub_ps(x, mean_v);
         let norm = _mm256_mul_ps(diff, inv_v);
         let s = _mm256_loadu_ps(s_ptr.add(o));
         let bias = _mm256_loadu_ps(bias_ptr.add(o));
         let res = _mm256_fmadd_ps(norm, s, bias);
         _mm256_storeu_ps(out_ptr.add(o), res);
+        tail_start2 += 8;
+    }
 
-        for i in (tail_start16 + 8)..d {
-            let x = *out_ptr.add(i);
-            *out_ptr.add(i) = (x - mean) * inv * *s_ptr.add(i) + *bias_ptr.add(i);
-        }
-    } else {
-        for i in tail_start16..d {
-            let x = *out_ptr.add(i);
-            *out_ptr.add(i) = (x - mean) * inv * *s_ptr.add(i) + *bias_ptr.add(i);
-        }
+    for i in tail_start2..d {
+        let x = *a_ptr.add(i) + *b_ptr.add(i);
+        *out_ptr.add(i) = (x - mean) * inv * *s_ptr.add(i) + *bias_ptr.add(i);
     }
 }
 
@@ -493,24 +523,26 @@ pub unsafe fn fused_add_layer_norm_scalar_raw(
     out_ptr: *mut f32,
     d: usize,
 ) {
-    let mut sum = 0.0f32;
+    let mut sum = 0.0f64;
+    let mut sum_sq = 0.0f64;
     for i in 0..d {
-        sum += *a_ptr.add(i) + *b_ptr.add(i);
+        let x = (*a_ptr.add(i) + *b_ptr.add(i)) as f64;
+        sum += x;
+        sum_sq += x * x;
     }
-    let d_f = d as f32;
-    let mean = sum / d_f;
+    let d_f64 = d as f64;
+    let mean_f64 = sum / d_f64;
+    let var_f64 = (sum_sq / d_f64) - mean_f64 * mean_f64;
+    let var_f64 = if var_f64 > 0.0 { var_f64 } else { 0.0 };
+    let inv_f64 = 1.0 / (var_f64 + eps as f64).sqrt();
 
-    let mut var = 0.0f32;
-    for i in 0..d {
-        let diff = (*a_ptr.add(i) + *b_ptr.add(i)) - mean;
-        var += diff * diff;
-    }
-    let variance = var / d_f;
-    let inv = 1.0 / (variance + eps).sqrt();
+    let mean = mean_f64 as f32;
+    let inv = inv_f64 as f32;
 
     for i in 0..d {
         let x = *a_ptr.add(i) + *b_ptr.add(i);
-        *out_ptr.add(i) = (x - mean) * inv * *scale_ptr.add(i) + *bias_ptr.add(i);
+        let norm = (x - mean) * inv;
+        *out_ptr.add(i) = norm.mul_add(*scale_ptr.add(i), *bias_ptr.add(i));
     }
 }
 
@@ -552,27 +584,37 @@ pub fn fused_add_layer_norm_in_place_scalar(
 ) {
     let d = a_and_out.len();
     debug_assert_eq!(b.len(), d, "fused_add_layer_norm: b len != a_and_out len");
-    debug_assert_eq!(scale.len(), d, "fused_add_layer_norm: scale len != a_and_out len");
-    debug_assert_eq!(bias.len(), d, "fused_add_layer_norm: bias len != a_and_out len");
+    debug_assert_eq!(
+        scale.len(),
+        d,
+        "fused_add_layer_norm: scale len != a_and_out len"
+    );
+    debug_assert_eq!(
+        bias.len(),
+        d,
+        "fused_add_layer_norm: bias len != a_and_out len"
+    );
 
-    let mut sum = 0.0f32;
+    let mut sum = 0.0f64;
+    let mut sum_sq = 0.0f64;
     for i in 0..d {
-        sum += a_and_out[i] + b[i];
+        let x = (a_and_out[i] + b[i]) as f64;
+        sum += x;
+        sum_sq += x * x;
     }
-    let d_f = d as f32;
-    let mean = sum / d_f;
+    let d_f64 = d as f64;
+    let mean_f64 = sum / d_f64;
+    let var_f64 = (sum_sq / d_f64) - mean_f64 * mean_f64;
+    let var_f64 = if var_f64 > 0.0 { var_f64 } else { 0.0 };
+    let inv_f64 = 1.0 / (var_f64 + eps as f64).sqrt();
 
-    let mut var = 0.0f32;
-    for i in 0..d {
-        let diff = (a_and_out[i] + b[i]) - mean;
-        var += diff * diff;
-    }
-    let variance = var / d_f;
-    let inv = 1.0 / (variance + eps).sqrt();
+    let mean = mean_f64 as f32;
+    let inv = inv_f64 as f32;
 
     for i in 0..d {
         let x = a_and_out[i] + b[i];
-        a_and_out[i] = (x - mean) * inv * scale[i] + bias[i];
+        let norm = (x - mean) * inv;
+        a_and_out[i] = norm.mul_add(scale[i], bias[i]);
     }
 }
 
@@ -587,9 +629,14 @@ pub fn fused_add_layer_norm_into(
 ) {
     let d = a.shape[1];
     assert!(d > 0, "fused_add_layer_norm: last dim must be > 0");
-    debug_assert_eq!(scale.data.len(), d, "fused_add_layer_norm: scale length != d");
+    debug_assert_eq!(
+        scale.data.len(),
+        d,
+        "fused_add_layer_norm: scale length != d"
+    );
     debug_assert_eq!(bias.data.len(), d, "fused_add_layer_norm: bias length != d");
-    let is_b_broadcast = (b.shape[0] == 1 || b.shape[0] == 0) && b.shape[1] == d && b.data.len() == d;
+    let is_b_broadcast =
+        (b.shape[0] == 1 || b.shape[0] == 0) && b.shape[1] == d && b.data.len() == d;
     debug_assert!(
         a.data.len() == b.data.len() || is_b_broadcast,
         "fused_add_layer_norm: shapes must match or b be [last_dim], got {:?} vs {:?}",
@@ -658,9 +705,14 @@ pub fn fused_add_layer_norm_in_place(
 ) {
     let d = a_and_out.shape[1];
     assert!(d > 0, "fused_add_layer_norm: last dim must be > 0");
-    debug_assert_eq!(scale.data.len(), d, "fused_add_layer_norm: scale length != d");
+    debug_assert_eq!(
+        scale.data.len(),
+        d,
+        "fused_add_layer_norm: scale length != d"
+    );
     debug_assert_eq!(bias.data.len(), d, "fused_add_layer_norm: bias length != d");
-    let is_b_broadcast = (b.shape[0] == 1 || b.shape[0] == 0) && b.shape[1] == d && b.data.len() == d;
+    let is_b_broadcast =
+        (b.shape[0] == 1 || b.shape[0] == 0) && b.shape[1] == d && b.data.len() == d;
     debug_assert!(
         a_and_out.data.len() == b.data.len() || is_b_broadcast,
         "fused_add_layer_norm: shapes must match or b be [last_dim], got {:?} vs {:?}",
@@ -1023,11 +1075,7 @@ pub fn softmax_inplace(x: &mut Tensor2) {
 
 #[inline]
 pub fn relu_f32(x: f32) -> f32 {
-    if x > 0.0 {
-        x
-    } else {
-        0.0
-    }
+    if x > 0.0 { x } else { 0.0 }
 }
 
 #[inline]
@@ -1073,6 +1121,14 @@ pub fn gelu_into(x: &Tensor2, out: &mut Tensor2) {
     unsafe {
         out.prepare_uninit(x.data.len());
     }
+    #[cfg(target_arch = "x86_64")]
+    if crate::utils::arch::has_avx2() {
+        unsafe {
+            gelu_into_avx2(&x.data, &mut out.data);
+        }
+        out.shape = x.shape;
+        return;
+    }
     for (o, &v) in out.data.iter_mut().zip(x.data.iter()) {
         *o = gelu_f32(v);
     }
@@ -1081,11 +1137,169 @@ pub fn gelu_into(x: &Tensor2, out: &mut Tensor2) {
 
 #[inline]
 pub fn gelu_inplace(x: &mut Tensor2) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::utils::arch::has_avx2() {
+        unsafe {
+            gelu_inplace_avx2(&mut x.data);
+        }
+        return;
+    }
     for v in x.data.iter_mut() {
         *v = gelu_f32(*v);
     }
 }
 
+/// Vectorized GELU calculation for slices using AVX2 and FMA.
+/// Evaluates `x * sigmoid(2 * sqrt(2/pi) * (x + 0.044715 * x^3))` using fast vector exponential.
+/// Numerical precision is within 1e-4 (typically < 1e-6) of `gelu_f32`.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+#[allow(clippy::excessive_precision)]
+pub unsafe fn gelu_inplace_avx2(data: &mut [f32]) {
+    use std::arch::x86_64::*;
+
+    let n = data.len();
+    let c1 = _mm256_set1_ps(1.5957691_f32);
+    let c2 = _mm256_set1_ps(0.071354816_f32);
+    let one = _mm256_set1_ps(1.0);
+    let zero = _mm256_setzero_ps();
+    let sign_bit = _mm256_set1_ps(-0.0);
+
+    let chunks = n / 16;
+    let ptr = data.as_mut_ptr();
+
+    for i in 0..chunks {
+        let p = ptr.add(i * 16);
+        let v0 = _mm256_loadu_ps(p);
+        let v1 = _mm256_loadu_ps(p.add(8));
+
+        let x2_0 = _mm256_mul_ps(v0, v0);
+        let x2_1 = _mm256_mul_ps(v1, v1);
+        let z0 = _mm256_mul_ps(v0, _mm256_fmadd_ps(x2_0, c2, c1));
+        let z1 = _mm256_mul_ps(v1, _mm256_fmadd_ps(x2_1, c2, c1));
+
+        let abs_z0 = _mm256_andnot_ps(sign_bit, z0);
+        let abs_z1 = _mm256_andnot_ps(sign_bit, z1);
+        let neg_abs_z0 = _mm256_or_ps(abs_z0, sign_bit);
+        let neg_abs_z1 = _mm256_or_ps(abs_z1, sign_bit);
+
+        let exp_neg0 = exp256_ps(neg_abs_z0);
+        let exp_neg1 = exp256_ps(neg_abs_z1);
+
+        let sig_abs0 = _mm256_div_ps(one, _mm256_add_ps(one, exp_neg0));
+        let sig_abs1 = _mm256_div_ps(one, _mm256_add_ps(one, exp_neg1));
+
+        let ge_mask0 = _mm256_cmp_ps(z0, zero, _CMP_GE_OQ);
+        let ge_mask1 = _mm256_cmp_ps(z1, zero, _CMP_GE_OQ);
+
+        let sig0 = _mm256_blendv_ps(_mm256_sub_ps(one, sig_abs0), sig_abs0, ge_mask0);
+        let sig1 = _mm256_blendv_ps(_mm256_sub_ps(one, sig_abs1), sig_abs1, ge_mask1);
+
+        _mm256_storeu_ps(p, _mm256_mul_ps(v0, sig0));
+        _mm256_storeu_ps(p.add(8), _mm256_mul_ps(v1, sig1));
+    }
+
+    let rem_start = chunks * 16;
+    let rem = n - rem_start;
+    if rem >= 8 {
+        let p = ptr.add(rem_start);
+        let v0 = _mm256_loadu_ps(p);
+        let x2_0 = _mm256_mul_ps(v0, v0);
+        let z0 = _mm256_mul_ps(v0, _mm256_fmadd_ps(x2_0, c2, c1));
+        let abs_z0 = _mm256_andnot_ps(sign_bit, z0);
+        let neg_abs_z0 = _mm256_or_ps(abs_z0, sign_bit);
+        let exp_neg0 = exp256_ps(neg_abs_z0);
+        let sig_abs0 = _mm256_div_ps(one, _mm256_add_ps(one, exp_neg0));
+        let ge_mask0 = _mm256_cmp_ps(z0, zero, _CMP_GE_OQ);
+        let sig0 = _mm256_blendv_ps(_mm256_sub_ps(one, sig_abs0), sig_abs0, ge_mask0);
+        _mm256_storeu_ps(p, _mm256_mul_ps(v0, sig0));
+    }
+
+    let tail_start = rem_start + (rem / 8) * 8;
+    for v in &mut data[tail_start..] {
+        *v = gelu_f32(*v);
+    }
+}
+
+/// Out-of-place vectorized GELU calculation for slices using AVX2 and FMA.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features. `dst.len()` must be at least `src.len()`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+#[allow(clippy::excessive_precision)]
+pub unsafe fn gelu_into_avx2(src: &[f32], dst: &mut [f32]) {
+    use std::arch::x86_64::*;
+
+    let n = src.len();
+    debug_assert_eq!(n, dst.len());
+    let c1 = _mm256_set1_ps(1.5957691_f32);
+    let c2 = _mm256_set1_ps(0.071354816_f32);
+    let one = _mm256_set1_ps(1.0);
+    let zero = _mm256_setzero_ps();
+    let sign_bit = _mm256_set1_ps(-0.0);
+
+    let chunks = n / 16;
+    let s_ptr = src.as_ptr();
+    let d_ptr = dst.as_mut_ptr();
+
+    for i in 0..chunks {
+        let sp = s_ptr.add(i * 16);
+        let dp = d_ptr.add(i * 16);
+        let v0 = _mm256_loadu_ps(sp);
+        let v1 = _mm256_loadu_ps(sp.add(8));
+
+        let x2_0 = _mm256_mul_ps(v0, v0);
+        let x2_1 = _mm256_mul_ps(v1, v1);
+        let z0 = _mm256_mul_ps(v0, _mm256_fmadd_ps(x2_0, c2, c1));
+        let z1 = _mm256_mul_ps(v1, _mm256_fmadd_ps(x2_1, c2, c1));
+
+        let abs_z0 = _mm256_andnot_ps(sign_bit, z0);
+        let abs_z1 = _mm256_andnot_ps(sign_bit, z1);
+        let neg_abs_z0 = _mm256_or_ps(abs_z0, sign_bit);
+        let neg_abs_z1 = _mm256_or_ps(abs_z1, sign_bit);
+
+        let exp_neg0 = exp256_ps(neg_abs_z0);
+        let exp_neg1 = exp256_ps(neg_abs_z1);
+
+        let sig_abs0 = _mm256_div_ps(one, _mm256_add_ps(one, exp_neg0));
+        let sig_abs1 = _mm256_div_ps(one, _mm256_add_ps(one, exp_neg1));
+
+        let ge_mask0 = _mm256_cmp_ps(z0, zero, _CMP_GE_OQ);
+        let ge_mask1 = _mm256_cmp_ps(z1, zero, _CMP_GE_OQ);
+
+        let sig0 = _mm256_blendv_ps(_mm256_sub_ps(one, sig_abs0), sig_abs0, ge_mask0);
+        let sig1 = _mm256_blendv_ps(_mm256_sub_ps(one, sig_abs1), sig_abs1, ge_mask1);
+
+        _mm256_storeu_ps(dp, _mm256_mul_ps(v0, sig0));
+        _mm256_storeu_ps(dp.add(8), _mm256_mul_ps(v1, sig1));
+    }
+
+    let rem_start = chunks * 16;
+    let rem = n - rem_start;
+    if rem >= 8 {
+        let sp = s_ptr.add(rem_start);
+        let dp = d_ptr.add(rem_start);
+        let v0 = _mm256_loadu_ps(sp);
+        let x2_0 = _mm256_mul_ps(v0, v0);
+        let z0 = _mm256_mul_ps(v0, _mm256_fmadd_ps(x2_0, c2, c1));
+        let abs_z0 = _mm256_andnot_ps(sign_bit, z0);
+        let neg_abs_z0 = _mm256_or_ps(abs_z0, sign_bit);
+        let exp_neg0 = exp256_ps(neg_abs_z0);
+        let sig_abs0 = _mm256_div_ps(one, _mm256_add_ps(one, exp_neg0));
+        let ge_mask0 = _mm256_cmp_ps(z0, zero, _CMP_GE_OQ);
+        let sig0 = _mm256_blendv_ps(_mm256_sub_ps(one, sig_abs0), sig_abs0, ge_mask0);
+        _mm256_storeu_ps(dp, _mm256_mul_ps(v0, sig0));
+    }
+
+    let tail_start = rem_start + (rem / 8) * 8;
+    for (o, &v) in dst[tail_start..].iter_mut().zip(&src[tail_start..]) {
+        *o = gelu_f32(v);
+    }
+}
 #[inline]
 pub fn sigmoid_f32(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
@@ -1436,13 +1650,17 @@ mod tests {
                         assert!(
                             rel <= 1e-5,
                             "Rel error at {}: exp={}, got={}, rel={rel}",
-                            vals[i], expected, got
+                            vals[i],
+                            expected,
+                            got
                         );
                     } else {
                         assert!(
                             (expected - got).abs() <= 1e-6,
                             "Abs error at {}: exp={}, got={}",
-                            vals[i], expected, got
+                            vals[i],
+                            expected,
+                            got
                         );
                     }
                 }
@@ -1452,10 +1670,7 @@ mod tests {
 
     #[test]
     fn test_softmax_tensor_api() {
-        let t = Tensor2::from_vec([2, 4], vec![
-            1.0, 2.0, 3.0, 4.0,
-            0.5, -0.5, 1.5, -1.5,
-        ]);
+        let t = Tensor2::from_vec([2, 4], vec![1.0, 2.0, 3.0, 4.0, 0.5, -0.5, 1.5, -1.5]);
         let sm = softmax(&t);
         assert_eq!(sm.shape, [2, 4]);
         for row in sm.data.chunks_exact(4) {

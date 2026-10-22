@@ -30,7 +30,10 @@ pub fn distinguish_chinese_variant(text: &str) -> &'static str {
 }
 
 /// Distinguish Traditional Chinese from Simplified Chinese using a precompiled detection model.
-pub fn distinguish_chinese_variant_with_model(text: &str, model: &CompiledDetectionModel) -> &'static str {
+pub fn distinguish_chinese_variant_with_model(
+    text: &str,
+    model: &CompiledDetectionModel,
+) -> &'static str {
     let mut trad_count = 0usize;
     let mut simp_count = 0usize;
 
@@ -164,7 +167,10 @@ pub const CORE_GREETINGS: &[(&str, &str)] = &[
 /// Match a short greeting phrase against `CORE_GREETINGS` with zero heap allocations.
 #[inline]
 pub fn lookup_greeting(text: &str) -> Option<&'static str> {
-    if let Some(res) = RuleRegistry::global().detection_model().lookup_greeting(text) {
+    if let Some(res) = RuleRegistry::global()
+        .detection_model()
+        .lookup_greeting(text)
+    {
         return Some(res);
     }
     let trimmed = text.trim_matches(|c: char| {
@@ -172,7 +178,18 @@ pub fn lookup_greeting(text: &str) -> Option<&'static str> {
             || c.is_ascii_punctuation()
             || matches!(
                 c,
-                '«' | '»' | '“' | '”' | '‘' | '’' | '¡' | '¿' | '…' | '—' | '–' | '·' | '•'
+                '«' | '»'
+                    | '“'
+                    | '”'
+                    | '‘'
+                    | '’'
+                    | '¡'
+                    | '¿'
+                    | '…'
+                    | '—'
+                    | '–'
+                    | '·'
+                    | '•'
             )
     });
     if trimmed.is_empty() {
@@ -262,11 +279,11 @@ struct ScriptStats {
     simp_han: usize,
 
     // Cyrillic sub-flags
-    has_uk_exclusive: bool, // ї, є, ґ
-    has_cyrillic_i: bool,   // і
-    has_be: bool,           // ў
-    has_sr: bool,           // ђ, ћ, ј, љ, њ, џ
-    cyrillic_yer: usize,    // ъ
+    has_uk_exclusive: bool,       // ї, є, ґ
+    has_cyrillic_i: bool,         // і
+    has_be: bool,                 // ў
+    has_sr: bool,                 // ђ, ћ, ј, љ, њ, џ
+    cyrillic_yer: usize,          // ъ
     cyrillic_ru_exclusive: usize, // ы, э, ё
 
     // Arabic sub-flags
@@ -475,21 +492,153 @@ fn scan_script_stats(text: &str, model: &CompiledDetectionModel) -> ScriptStats 
     stats
 }
 
-/// Tier 0: Fast bypass for technical logs, CLI commands, HTTP messages, and pure noise.
+#[inline]
+fn starts_with_ascii_ci(text: &str, prefix: &str) -> bool {
+    text.len() >= prefix.len()
+        && text.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+}
+
+#[inline]
+fn contains_ascii_ci(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if haystack.len() < needle.len() {
+        return false;
+    }
+    let needle_bytes = needle.as_bytes();
+    haystack
+        .as_bytes()
+        .windows(needle_bytes.len())
+        .any(|w| w.eq_ignore_ascii_case(needle_bytes))
+}
+
+#[inline]
+fn starts_with_any(text: &str, prefixes: &[&str]) -> bool {
+    prefixes.iter().any(|&p| text.starts_with(p))
+}
+
+/// Tier 0: Fast bypass for technical logs, CLI commands, HTTP messages, code snippets, and common greetings.
 fn tier0_fast_bypass(text: &str) -> Option<&'static str> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Some("en");
     }
 
-    // CLI Commands
-    if trimmed.starts_with("curl ")
-        || trimmed.starts_with("git ")
-        || trimmed.starts_with("docker ")
-        || trimmed.starts_with("npm ")
-        || trimmed.starts_with("pip ")
-        || trimmed.starts_with("cargo ")
-    {
+    // CLI Commands - must match real tool invocation patterns and subcommands
+    // to avoid false positives with natural language words (e.g., Spanish 'cargo', Turkish 'git', Norwegian 'tar', Spanish 'sudo')
+    if starts_with_any(
+        trimmed,
+        &[
+            "curl -",
+            "curl http://",
+            "curl https://",
+            "curl \"http",
+            "curl 'http",
+            "git checkout ",
+            "git commit ",
+            "git push ",
+            "git pull ",
+            "git status",
+            "git clone ",
+            "git add ",
+            "git diff ",
+            "git log",
+            "git branch",
+            "git merge ",
+            "git rebase ",
+            "git reset ",
+            "git stash",
+            "git remote",
+            "git init",
+            "git config ",
+            "git --",
+            "docker run ",
+            "docker build ",
+            "docker compose ",
+            "docker ps",
+            "docker exec ",
+            "docker images",
+            "docker stop ",
+            "docker rm ",
+            "docker --",
+            "npm install",
+            "npm run ",
+            "npm i ",
+            "npm start",
+            "npm test",
+            "npm build",
+            "npm publish",
+            "npm init",
+            "npm update",
+            "npm --",
+            "pip install ",
+            "pip uninstall ",
+            "pip list",
+            "pip freeze",
+            "pip --",
+            "cargo build",
+            "cargo test",
+            "cargo run",
+            "cargo check",
+            "cargo clippy",
+            "cargo update",
+            "cargo publish",
+            "cargo new ",
+            "cargo init",
+            "cargo --",
+            "sudo apt ",
+            "sudo apt-get ",
+            "sudo systemctl ",
+            "sudo docker ",
+            "sudo rm ",
+            "sudo chmod ",
+            "sudo chown ",
+            "sudo mkdir ",
+            "sudo cp ",
+            "sudo mv ",
+            "sudo service ",
+            "sudo --",
+            "kubectl get ",
+            "kubectl apply ",
+            "kubectl describe ",
+            "kubectl delete ",
+            "kubectl logs ",
+            "kubectl exec ",
+            "kubectl --",
+            "yarn add ",
+            "yarn install",
+            "yarn run ",
+            "yarn build",
+            "yarn start",
+            "yarn test",
+            "yarn --",
+            "pnpm add ",
+            "pnpm install",
+            "pnpm run ",
+            "pnpm build",
+            "pnpm start",
+            "pnpm test",
+            "pnpm --",
+            "systemctl start ",
+            "systemctl stop ",
+            "systemctl restart ",
+            "systemctl status ",
+            "systemctl enable ",
+            "systemctl disable ",
+            "systemctl --",
+            "tar -",
+            "tar x",
+            "tar c",
+            "tar t",
+            "tar z",
+            "apt install ",
+            "apt update",
+            "apt upgrade",
+            "apt-get install ",
+            "apt-get update",
+        ],
+    ) {
         return Some("en");
     }
 
@@ -500,13 +649,140 @@ fn tier0_fast_bypass(text: &str) -> Option<&'static str> {
         || trimmed.starts_with("DELETE ")
         || trimmed.starts_with("PATCH ")
         || trimmed.starts_with("HEAD ")
+        || trimmed.starts_with("OPTIONS ")
         || trimmed.starts_with("### [ALERT]")
         || trimmed.starts_with("### [ERROR")
+        || trimmed.starts_with("### [WARN")
+        || trimmed.starts_with("### [INFO")
         || trimmed.contains("(CRITICAL FAILURE)")
         || trimmed.contains("status HTTP/1.1")
         || trimmed.contains("HTTP/1.1")
+        || trimmed.contains("HTTP/2.0")
     {
         return Some("en");
+    }
+
+    // Common English greeting prefixes and exact phrases
+    const GREETING_PREFIXES: &[&str] = &[
+        "hello ",
+        "hello,",
+        "hello!",
+        "hello?",
+        "good morning ",
+        "good morning,",
+        "good morning!",
+        "good afternoon ",
+        "good afternoon,",
+        "good afternoon!",
+        "good evening ",
+        "good evening,",
+        "good evening!",
+        "good night ",
+        "good night,",
+        "good night!",
+        "thank you ",
+        "thank you,",
+        "thank you!",
+        "thanks ",
+        "thanks,",
+        "thanks!",
+        "welcome to ",
+        "see you ",
+    ];
+
+    const EXACT_GREETINGS: &[&str] = &[
+        "hello",
+        "hi",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "good night",
+        "thank you",
+        "thanks",
+    ];
+
+    for &exact in EXACT_GREETINGS {
+        if trimmed.eq_ignore_ascii_case(exact) {
+            return Some("en");
+        }
+    }
+
+    for &prefix in GREETING_PREFIXES {
+        if starts_with_ascii_ci(trimmed, prefix) {
+            return Some("en");
+        }
+    }
+
+    // Pure ASCII code / query / syntax structures
+    if trimmed.is_ascii() {
+        // SQL queries - require characteristic keywords
+        if (starts_with_ascii_ci(trimmed, "select ")
+            && (contains_ascii_ci(trimmed, " from ") || trimmed.ends_with(';')))
+            || starts_with_ascii_ci(trimmed, "insert into ")
+            || (starts_with_ascii_ci(trimmed, "update ") && contains_ascii_ci(trimmed, " set "))
+            || starts_with_ascii_ci(trimmed, "delete from ")
+            || starts_with_ascii_ci(trimmed, "create table ")
+            || starts_with_ascii_ci(trimmed, "drop table ")
+            || starts_with_ascii_ci(trimmed, "alter table ")
+            || starts_with_ascii_ci(trimmed, "truncate table ")
+        {
+            return Some("en");
+        }
+
+        // Programming language declarations & statements
+        // Verified against code syntax delimiters to prevent collision with natural languages (e.g., Danish 'let', 'var', French 'import')
+        if (trimmed.starts_with("fn ")
+            && (trimmed.contains('(') || trimmed.contains("->") || trimmed.contains('{')))
+            || trimmed.starts_with("pub fn ")
+            || (trimmed.starts_with("def ") && trimmed.contains('(') && trimmed.contains(':'))
+            || (trimmed.starts_with("function ") && trimmed.contains('('))
+            || ((trimmed.starts_with("const ")
+                || trimmed.starts_with("let ")
+                || trimmed.starts_with("var "))
+                && (trimmed.contains('=') || trimmed.contains(':') || trimmed.ends_with(';')))
+            || (trimmed.starts_with("import ")
+                && (trimmed.contains("from ")
+                    || trimmed.contains('{')
+                    || trimmed.contains('*')
+                    || trimmed.ends_with(';')
+                    || trimmed.starts_with("import static ")
+                    || trimmed.starts_with("import java.")
+                    || trimmed.starts_with("import std.")))
+            || (trimmed.starts_with("export ")
+                && (trimmed.starts_with("export default ")
+                    || trimmed.starts_with("export const ")
+                    || trimmed.starts_with("export function ")
+                    || trimmed.starts_with("export class ")
+                    || trimmed.starts_with("export {")))
+            || (trimmed.starts_with("class ")
+                && (trimmed.contains('{')
+                    || trimmed.contains(':')
+                    || trimmed.contains("extends ")
+                    || trimmed.contains("implements ")))
+            || trimmed.starts_with("public class ")
+            || trimmed.starts_with("public static void ")
+            || (trimmed.starts_with("package ") && trimmed.ends_with(';'))
+            || (trimmed.starts_with("return ") && (trimmed.ends_with(';') || trimmed.contains(';')))
+            || trimmed.starts_with("#include <")
+            || trimmed.starts_with("console.log(")
+            || trimmed.starts_with("println!(")
+        {
+            return Some("en");
+        }
+
+        // JSON / XML / HTML structure
+        if (trimmed.starts_with('{') && (trimmed.contains("\":") || trimmed.contains("\": ")))
+            || trimmed.starts_with("[{")
+            || trimmed.starts_with("<?xml")
+            || trimmed.starts_with("<!DOCTYPE")
+            || starts_with_ascii_ci(trimmed, "<html")
+            || starts_with_ascii_ci(trimmed, "<script")
+            || starts_with_ascii_ci(trimmed, "<style")
+            || starts_with_ascii_ci(trimmed, "<div")
+        {
+            return Some("en");
+        }
     }
 
     None
@@ -612,16 +888,28 @@ pub fn detect_text_language_with_model_and_confidence(
         }
         return ("zh-Hans", 1.0);
     }
-    if stats.cyrillic > 0 && (stats.latin == 0 || stats.cyrillic >= stats.latin || stats.cyrillic * 2 >= stats.latin) {
+    if stats.cyrillic > 0
+        && (stats.latin == 0 || stats.cyrillic >= stats.latin || stats.cyrillic * 2 >= stats.latin)
+    {
         // Serbian
-        if stats.has_sr || model.cyrillic.sr_terms.iter().any(|t| trimmed.contains(t.as_str())) {
+        if stats.has_sr
+            || model
+                .cyrillic
+                .sr_terms
+                .iter()
+                .any(|t| trimmed.contains(t.as_str()))
+        {
             return ("sr", 1.0);
         }
 
         // Belarusian: exclusive 'ў', or has 'і' + 'ы' (Ukrainian has no 'ы'), or keywords
         if stats.has_be
             || (stats.has_cyrillic_i && stats.cyrillic_ru_exclusive > 0 && !stats.has_uk_exclusive)
-            || model.cyrillic.be_terms.iter().any(|t| trimmed.contains(t.as_str()))
+            || model
+                .cyrillic
+                .be_terms
+                .iter()
+                .any(|t| trimmed.contains(t.as_str()))
         {
             return ("be", 1.0);
         }
@@ -629,14 +917,22 @@ pub fn detect_text_language_with_model_and_confidence(
         // Ukrainian: exclusive 'ї', 'є', 'ґ', or has 'і' without Russian/Belarusian exclusive letters
         if stats.has_uk_exclusive
             || (stats.has_cyrillic_i && stats.cyrillic_ru_exclusive == 0)
-            || model.cyrillic.uk_terms.iter().any(|t| trimmed.contains(t.as_str()))
+            || model
+                .cyrillic
+                .uk_terms
+                .iter()
+                .any(|t| trimmed.contains(t.as_str()))
         {
             return ("uk", 1.0);
         }
 
         // Bulgarian: 'ъ' without Russian-exclusive letters, or Bulgarian keywords
         if (stats.cyrillic_yer > 0 && stats.cyrillic_ru_exclusive == 0)
-            || model.cyrillic.bg_terms.iter().any(|t| trimmed.contains(t.as_str()))
+            || model
+                .cyrillic
+                .bg_terms
+                .iter()
+                .any(|t| trimmed.contains(t.as_str()))
         {
             return ("bg", 1.0);
         }
@@ -652,8 +948,16 @@ pub fn detect_text_language_with_model_and_confidence(
     // (C) Devanagari family
     if stats.devanagari > 0 {
         if stats.has_marathi_exclusive
-            || model.devanagari.mr_terms.iter().any(|t| trimmed.contains(t.as_str()))
-            || model.devanagari.mr_words.iter().any(|w| find_whole_word_safe(trimmed, w))
+            || model
+                .devanagari
+                .mr_terms
+                .iter()
+                .any(|t| trimmed.contains(t.as_str()))
+            || model
+                .devanagari
+                .mr_words
+                .iter()
+                .any(|w| find_whole_word_safe(trimmed, w))
         {
             return ("mr", 1.0);
         }
@@ -695,7 +999,11 @@ pub fn detect_text_language_with_model_and_confidence(
     }
     if stats.has_romanian
         || (stats.romanian_vowels >= 2
-            && model.latin.ro_words.iter().any(|w| find_whole_word_safe(trimmed, w.as_str())))
+            && model
+                .latin
+                .ro_words
+                .iter()
+                .any(|w| find_whole_word_safe(trimmed, w.as_str())))
     {
         return ("ro", 1.0);
     }
@@ -709,7 +1017,11 @@ pub fn detect_text_language_with_model_and_confidence(
         return ("es", 1.0);
     }
     if stats.has_portuguese_tilde
-        && model.latin.pt_terms.iter().any(|t| trimmed.contains(t.as_str()))
+        && model
+            .latin
+            .pt_terms
+            .iter()
+            .any(|t| trimmed.contains(t.as_str()))
     {
         return ("pt", 1.0);
     }
@@ -724,65 +1036,58 @@ pub fn detect_text_language_with_model_and_confidence(
     }
 
     // (B) Twin / near-relative language lexical discriminators
-    if model.latin.nn_words.iter().any(|w| find_whole_word_safe(trimmed, w))
-        || model.latin.nn_terms.iter().any(|t| trimmed.contains(t.as_str()))
-    {
-        return ("nn", 1.0);
+    if let Some(lang) = match_latin_lexical(trimmed, &model.latin) {
+        return (lang, 1.0);
     }
-    if model.latin.nb_terms.iter().any(|t| trimmed.contains(t.as_str())) {
-        return ("nb", 1.0);
-    }
-    if model.latin.da_terms.iter().any(|t| trimmed.contains(t.as_str())) {
-        return ("da", 1.0);
-    }
-    if model.latin.gl_terms.iter().any(|t| trimmed.contains(t.as_str()))
-        || model.latin.gl_words.iter().any(|w| find_whole_word_safe(trimmed, w))
-    {
-        return ("gl", 1.0);
-    }
-    if model.latin.eu_terms.iter().any(|t| trimmed.contains(t.as_str())) {
-        return ("eu", 1.0);
-    }
-    if model.latin.sq_terms.iter().any(|t| trimmed.contains(t.as_str())) {
-        return ("sq", 1.0);
-    }
-    if model.latin.af_terms.iter().any(|t| trimmed.contains(t.as_str())) {
-        return ("af", 1.0);
-    }
-    if model.latin.ms_terms.iter().any(|t| trimmed.contains(t.as_str())) {
-        return ("ms", 1.0);
-    }
-    if model.latin.id_terms.iter().any(|t| trimmed.contains(t.as_str())) {
-        return ("id", 1.0);
-    }
-
     // Scandinavian disambiguation
     if stats.scand_ae_oe > 0 {
-        if model.latin.scand_nb_terms.iter().any(|t| trimmed.contains(t.as_str())) {
+        if model
+            .latin
+            .scand_nb_terms
+            .iter()
+            .any(|t| trimmed.contains(t.as_str()))
+        {
             return ("nb", 1.0);
         }
-        if model.latin.scand_da_terms.iter().any(|t| trimmed.contains(t.as_str())) {
+        if model
+            .latin
+            .scand_da_terms
+            .iter()
+            .any(|t| trimmed.contains(t.as_str()))
+        {
             return ("da", 1.0);
         }
         return ("da", 1.0);
     }
 
-    if stats.scand_a_o_umlaut > 0 {
-        if model.latin.scand_sv_terms.iter().any(|t| trimmed.contains(t.as_str()))
-            || model.latin.scand_sv_words.iter().any(|w| find_whole_word_safe(trimmed, w))
-        {
-            return ("sv", 1.0);
-        }
+    if stats.scand_a_o_umlaut > 0
+        && (model
+            .latin
+            .scand_sv_terms
+            .iter()
+            .any(|t| trimmed.contains(t.as_str()))
+            || model
+                .latin
+                .scand_sv_words
+                .iter()
+                .any(|w| find_whole_word_safe(trimmed, w)))
+    {
+        return ("sv", 1.0);
     }
 
     // -------------------------------------------------------------
     // Tier 4: Statistical 3-gram fallback (Whatlang)
     // -------------------------------------------------------------
-    if let Some(info) = whatlang::detect(trimmed) {
+    const MAX_WHATLANG_CHARS: usize = 128;
+    let sample = match trimmed.char_indices().nth(MAX_WHATLANG_CHARS) {
+        Some((byte_idx, _)) => &trimmed[..byte_idx],
+        None => trimmed,
+    };
+    if let Some(info) = whatlang::detect(sample) {
         let code = whatlang_code_to_bcp47(info.lang().code());
         let mapped = map_detected_code_to_static(code);
         let conf = info.confidence() as f32;
-        let min_conf = if trimmed.is_ascii() && !info.is_reliable() {
+        let min_conf = if sample.is_ascii() && !info.is_reliable() {
             0.25
         } else {
             0.1
@@ -954,6 +1259,59 @@ pub fn map_detected_code_to_static(code: &str) -> &'static str {
         "ka" => "ka",
         _ => "en",
     }
+}
+#[inline]
+fn match_latin_lexical(
+    text: &str,
+    latin: &super::detection_model::CompiledLatinDetection,
+) -> Option<&'static str> {
+    let mut best: Option<(usize, &'static str)> = None;
+
+    let mut check_tok = |tok: &str| -> bool {
+        if let Ok(idx) = latin
+            .latin_lexical_words
+            .binary_search_by(|(w, _, _)| w.as_str().cmp(tok))
+        {
+            let (_, lang, prio) = latin.latin_lexical_words[idx];
+            if prio == 0 {
+                best = Some((0, lang));
+                return true;
+            }
+            if best.map_or(true, |(p, _)| prio < p) {
+                best = Some((prio, lang));
+            }
+        }
+        false
+    };
+
+    let mut word_start = None;
+    for (i, c) in text.char_indices() {
+        if c.is_alphanumeric() {
+            if word_start.is_none() {
+                word_start = Some(i);
+            }
+        } else if let Some(start) = word_start {
+            let tok = &text[start..i];
+            word_start = None;
+            if check_tok(tok) {
+                return best.map(|(_, lang)| lang);
+            }
+        }
+    }
+    if let Some(start) = word_start {
+        let tok = &text[start..];
+        if check_tok(tok) {
+            return best.map(|(_, lang)| lang);
+        }
+    }
+
+    for (phrase, lang, prio) in latin.latin_lexical_phrases.iter() {
+        if best.map_or(true, |(p, _)| *prio < p) && text.contains(phrase.as_str()) {
+            best = Some((*prio, lang));
+        }
+    }
+
+    best.map(|(_, lang)| lang)
 }
 
 #[cfg(test)]

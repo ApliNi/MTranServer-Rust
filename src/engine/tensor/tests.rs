@@ -230,7 +230,7 @@ mod i8_gemm_tests {
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn avxvnni_gemm_matches_scalar_reference() {
-        if !std::arch::is_x86_feature_detected!("avxvnni") {
+        if !crate::utils::arch::has_avxvnni() {
             return;
         }
         // Shapes mirror the AVX2 case: exact blocks, tails, sub-group columns.
@@ -330,7 +330,7 @@ mod i8_gemm_tests {
                     matmul_row_i8_sse41,
                     "sse41 row full-range",
                 );
-                if std::arch::is_x86_feature_detected!("avxvnni") {
+                if crate::utils::arch::has_avxvnni() {
                     run_row_case(k, n, 127.0, 127.0, matmul_row_i8_avxvnni, "avxvnni row");
                 }
             }
@@ -616,5 +616,126 @@ mod fused_add_layer_norm_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_fused_add_layer_norm_avx2_vs_scalar_precision() {
+        let mut rng = 9999u64;
+        let eps = 1e-5f32;
+        for &d in &[17, 33, 64, 128, 384, 512, 1024] {
+            let a: Vec<f32> = (0..d).map(|_| next_rand(&mut rng)).collect();
+            let b: Vec<f32> = (0..d).map(|_| next_rand(&mut rng)).collect();
+            let scale: Vec<f32> = (0..d).map(|_| next_rand(&mut rng) + 1.0).collect();
+            let bias: Vec<f32> = (0..d).map(|_| next_rand(&mut rng)).collect();
+
+            let mut out_scalar = vec![0.0f32; d];
+            unsafe {
+                ops::fused_add_layer_norm_scalar_raw(
+                    a.as_ptr(),
+                    b.as_ptr(),
+                    scale.as_ptr(),
+                    bias.as_ptr(),
+                    eps,
+                    out_scalar.as_mut_ptr(),
+                    d,
+                );
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            if crate::utils::arch::has_avx2() {
+                let mut out_avx2 = vec![0.0f32; d];
+                unsafe {
+                    ops::fused_add_layer_norm_avx2_raw(
+                        a.as_ptr(),
+                        b.as_ptr(),
+                        scale.as_ptr(),
+                        bias.as_ptr(),
+                        eps,
+                        out_avx2.as_mut_ptr(),
+                        d,
+                    );
+                }
+
+                for i in 0..d {
+                    let diff = (out_avx2[i] - out_scalar[i]).abs();
+                    let denom = out_scalar[i].abs().max(1e-5);
+                    let rel = diff / denom;
+                    assert!(
+                        rel < 2e-7,
+                        "AVX2 vs Scalar relative mismatch at d={d}, idx {i}: avx2={}, scalar={}, diff={}, rel={}",
+                        out_avx2[i],
+                        out_scalar[i],
+                        diff,
+                        rel
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn test_gelu_accuracy_and_vectorization() {
+        use crate::engine::tensor::{Tensor2, gelu, gelu_f32, gelu_inplace, gelu_into};
+
+        // Test over a broad range of values: negative, zero, positive, tail cases
+        let test_vals: Vec<f32> = (-200..=200).map(|i| i as f32 * 0.1).collect();
+        let t = Tensor2::from_vec([10, 41], test_vals.clone());
+
+        let mut t_inplace = t.clone();
+        gelu_inplace(&mut t_inplace);
+
+        let mut t_into = Tensor2::zeros([10, 41]);
+        gelu_into(&t, &mut t_into);
+
+        let t_out = gelu(&t);
+
+        assert_eq!(t_inplace.rows(), 10);
+        assert_eq!(t_inplace.cols(), 41);
+        assert_eq!(t_into.rows(), 10);
+        assert_eq!(t_into.cols(), 41);
+        assert_eq!(t_out.rows(), 10);
+        assert_eq!(t_out.cols(), 41);
+
+        for (i, &x) in test_vals.iter().enumerate() {
+            let expected = gelu_f32(x);
+            let diff_inplace = (t_inplace.data[i] - expected).abs();
+            let diff_into = (t_into.data[i] - expected).abs();
+            let diff_out = (t_out.data[i] - expected).abs();
+
+            assert!(
+                diff_inplace < 1e-4,
+                "GELU inplace mismatch at x={x}: got {}, expected {}, diff {}",
+                t_inplace.data[i],
+                expected,
+                diff_inplace
+            );
+            assert!(
+                diff_into < 1e-4,
+                "GELU into mismatch at x={x}: got {}, expected {}, diff {}",
+                t_into.data[i],
+                expected,
+                diff_into
+            );
+            assert!(
+                diff_out < 1e-4,
+                "GELU out mismatch at x={x}: got {}, expected {}, diff {}",
+                t_out.data[i],
+                expected,
+                diff_out
+            );
+        }
+    }
+
+    #[test]
+    fn test_tensor2_shape_rows_cols() {
+        use crate::engine::tensor::Tensor2;
+        let mut t = Tensor2::zeros([3, 7]);
+        assert_eq!(t.rows(), 3);
+        assert_eq!(t.cols(), 7);
+        assert_eq!(t.shape, [3, 7]);
+
+        t.set_shape_2d(5, 4);
+        assert_eq!(t.rows(), 5);
+        assert_eq!(t.cols(), 4);
+        assert_eq!(t.shape, [5, 4]);
     }
 }

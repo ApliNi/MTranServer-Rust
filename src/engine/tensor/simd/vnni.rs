@@ -35,6 +35,29 @@ pub unsafe fn matmul_row_i8_avxvnni_prebiased(
     denom: f32,
     relu: bool,
 ) {
+    if crate::utils::arch::vnni_uses_evex() {
+        matmul_row_i8_avxvnni_prebiased_impl::<true>(xb_buf, x, w, k, n, bias, row_sums, out, denom, relu);
+    } else {
+        matmul_row_i8_avxvnni_prebiased_impl::<false>(xb_buf, x, w, k, n, bias, row_sums, out, denom, relu);
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[inline]
+unsafe fn matmul_row_i8_avxvnni_prebiased_impl<const EVEX: bool>(
+    xb_buf: &[std::arch::x86_64::__m256i],
+    x: &[i8],
+    w: &[i8],
+    k: usize,
+    n: usize,
+    bias: Option<&[f32]>,
+    row_sums: Option<&[i32]>,
+    out: &mut [f32],
+    denom: f32,
+    relu: bool,
+) {
     use std::arch::asm;
     use std::arch::x86_64::*;
 
@@ -44,17 +67,26 @@ pub unsafe fn matmul_row_i8_avxvnni_prebiased(
             let a = $a;
             let b = $b;
             let out;
-            asm!(
-                "{{vex}} vpdpbusd {acc}, {a}, {b}",
-                acc = inout(ymm_reg) acc => out,
-                a = in(ymm_reg) a,
-                b = in(ymm_reg) b,
-                options(pure, nomem, nostack)
-            );
+            if EVEX {
+                asm!(
+                    "{{evex}} vpdpbusd {acc}, {a}, {b}",
+                    acc = inout(ymm_reg) acc => out,
+                    a = in(ymm_reg) a,
+                    b = in(ymm_reg) b,
+                    options(pure, nomem, nostack)
+                );
+            } else {
+                asm!(
+                    "{{vex}} vpdpbusd {acc}, {a}, {b}",
+                    acc = inout(ymm_reg) acc => out,
+                    a = in(ymm_reg) a,
+                    b = in(ymm_reg) b,
+                    options(pure, nomem, nostack)
+                );
+            }
             out
         }};
     }
-
     const BLK: usize = 32;
     const NR: usize = 8;
     let blocks = k / BLK;
@@ -239,49 +271,64 @@ pub unsafe fn matmul_row_i8_avxvnni(
     let b_pairs = blocks / 2;
     let b_rem = blocks % 2;
 
-    let mut xb_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 64];
-    let xb_heap;
-    let xb_buf: &[__m256i] = if blocks <= 64 {
+    VNNI_XB_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        if buf.len() < blocks {
+            buf.resize(blocks, _mm256_setzero_si256());
+        }
         for bp in 0..b_pairs {
             let b0 = bp * 2;
             let b1 = b0 + 1;
             let xv0 = _mm256_loadu_si256(x.as_ptr().add(b0 * BLK) as *const __m256i);
             let xv1 = _mm256_loadu_si256(x.as_ptr().add(b1 * BLK) as *const __m256i);
-            xb_stack[b0].write(_mm256_add_epi8(xv0, x_bias_vec));
-            xb_stack[b1].write(_mm256_add_epi8(xv1, x_bias_vec));
+            buf[b0] = _mm256_add_epi8(xv0, x_bias_vec);
+            buf[b1] = _mm256_add_epi8(xv1, x_bias_vec);
         }
         if b_rem > 0 {
             let b = b_pairs * 2;
             let xv = _mm256_loadu_si256(x.as_ptr().add(b * BLK) as *const __m256i);
-            xb_stack[b].write(_mm256_add_epi8(xv, x_bias_vec));
+            buf[b] = _mm256_add_epi8(xv, x_bias_vec);
         }
-        std::slice::from_raw_parts(xb_stack.as_ptr() as *const __m256i, blocks)
-    } else {
-        let mut v = Vec::with_capacity(blocks);
-        for bp in 0..b_pairs {
-            let b0 = bp * 2;
-            let b1 = b0 + 1;
-            let xv0 = _mm256_loadu_si256(x.as_ptr().add(b0 * BLK) as *const __m256i);
-            let xv1 = _mm256_loadu_si256(x.as_ptr().add(b1 * BLK) as *const __m256i);
-            v.push(_mm256_add_epi8(xv0, x_bias_vec));
-            v.push(_mm256_add_epi8(xv1, x_bias_vec));
-        }
-        if b_rem > 0 {
-            let b = b_pairs * 2;
-            let xv = _mm256_loadu_si256(x.as_ptr().add(b * BLK) as *const __m256i);
-            v.push(_mm256_add_epi8(xv, x_bias_vec));
-        }
-        xb_heap = v;
-        &xb_heap[..]
-    };
-
-    matmul_row_i8_avxvnni_prebiased(xb_buf, x, w, k, n, bias, row_sums, out, denom, relu);
+        let xb_buf = &buf[..blocks];
+        matmul_row_i8_avxvnni_prebiased(xb_buf, x, w, k, n, bias, row_sums, out, denom, relu);
+    });
 }
+
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[allow(clippy::too_many_arguments)]
 #[inline]
 pub unsafe fn matmul_2rows_i8_avxvnni(
+    xb0_buf: &[std::arch::x86_64::__m256i],
+    xb1_buf: &[std::arch::x86_64::__m256i],
+    x0: &[i8],
+    x1: &[i8],
+    w: &[i8],
+    k: usize,
+    n: usize,
+    bias: Option<&[f32]>,
+    row_sums: Option<&[i32]>,
+    out0: &mut [f32],
+    out1: &mut [f32],
+    denom: f32,
+    relu: bool,
+) {
+    if crate::utils::arch::vnni_uses_evex() {
+        matmul_2rows_i8_avxvnni_impl::<true>(
+            xb0_buf, xb1_buf, x0, x1, w, k, n, bias, row_sums, out0, out1, denom, relu,
+        );
+    } else {
+        matmul_2rows_i8_avxvnni_impl::<false>(
+            xb0_buf, xb1_buf, x0, x1, w, k, n, bias, row_sums, out0, out1, denom, relu,
+        );
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::too_many_arguments)]
+#[inline]
+unsafe fn matmul_2rows_i8_avxvnni_impl<const EVEX: bool>(
     xb0_buf: &[std::arch::x86_64::__m256i],
     xb1_buf: &[std::arch::x86_64::__m256i],
     x0: &[i8],
@@ -305,13 +352,23 @@ pub unsafe fn matmul_2rows_i8_avxvnni(
             let a = $a;
             let b = $b;
             let out;
-            asm!(
-                "{{vex}} vpdpbusd {acc}, {a}, {b}",
-                acc = inout(ymm_reg) acc => out,
-                a = in(ymm_reg) a,
-                b = in(ymm_reg) b,
-                options(pure, nomem, nostack)
-            );
+            if EVEX {
+                asm!(
+                    "{{evex}} vpdpbusd {acc}, {a}, {b}",
+                    acc = inout(ymm_reg) acc => out,
+                    a = in(ymm_reg) a,
+                    b = in(ymm_reg) b,
+                    options(pure, nomem, nostack)
+                );
+            } else {
+                asm!(
+                    "{{vex}} vpdpbusd {acc}, {a}, {b}",
+                    acc = inout(ymm_reg) acc => out,
+                    a = in(ymm_reg) a,
+                    b = in(ymm_reg) b,
+                    options(pure, nomem, nostack)
+                );
+            }
             out
         }};
     }

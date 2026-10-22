@@ -1000,11 +1000,14 @@ name = "mtranserver-test"
 version = "0.1.0"
 dependencies = [
  "MTranServer-Rust",
+ "axum",
+ "clap",
  "parking_lot",
  "serde",
  "serde_json",
  "tokio",
  "toml",
+ "tower",
 ]
 
 [[package]]

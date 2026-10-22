@@ -144,11 +144,10 @@ fn extract_inline_impl(
     depth: usize,
 ) -> (String, Vec<MarkupSpan>) {
     let mut plain = String::with_capacity(text.len());
-    let mut spans = Vec::new();
+    let mut spans = Vec::with_capacity(4);
     let bytes = text.as_bytes();
     let len = bytes.len();
     let mut i = 0;
-
     while i < len {
         // 1. HTML Comment or CDATA
         if options.parse_html {
@@ -437,10 +436,36 @@ fn extract_inline_impl(
             }
         }
 
-        // 9. Regular character
+        // 9. Regular characters (chunk contiguous plain text to avoid per-char looping)
+        let run_start = i;
         let c = text[i..].chars().next().unwrap();
-        plain.push(c);
         i += c.len_utf8();
+        while i < len {
+            let b = bytes[i];
+            let is_trigger = (options.parse_html && (b == b'<' || b == b'&'))
+                || (options.parse_markdown
+                    && (b == b'`'
+                        || b == b'*'
+                        || b == b'_'
+                        || b == b'~'
+                        || b == b'['
+                        || (b == b'!' && i + 1 < len && bytes[i + 1] == b'[')));
+            if is_trigger {
+                break;
+            }
+            if b < 0x80 {
+                i += 1;
+            } else if (b & 0xE0) == 0xC0 && i + 1 < len {
+                i += 2;
+            } else if (b & 0xF0) == 0xE0 && i + 2 < len {
+                i += 3;
+            } else if i + 3 < len {
+                i += 4;
+            } else {
+                i += 1;
+            }
+        }
+        plain.push_str(&text[run_start..i]);
     }
 
     (plain, spans)
@@ -508,12 +533,21 @@ pub(crate) fn parse_tag_info(tag: &str) -> (bool, String, bool) {
 /// Returns `Some((close_tag_start_offset, close_tag_end_offset))` relative to `html`.
 /// Performs 0 heap allocations and zero-copy case-insensitive tag matching.
 pub(crate) fn find_matching_close_tag(html: &str, tag_name: &str) -> Option<(usize, usize)> {
+    if !html.contains("</") {
+        return None;
+    }
     let bytes = html.as_bytes();
     let mut depth = 0;
     let mut i = 0;
 
     while i < bytes.len() {
-        if bytes[i] == b'<' && i + 1 < bytes.len() {
+        let next = match bytes[i..].iter().position(|&b| b == b'<') {
+            Some(pos) => i + pos,
+            None => break,
+        };
+        i = next;
+
+        if i + 1 < bytes.len() {
             let next_b = bytes[i + 1];
             if next_b == b'/' || next_b.is_ascii_alphabetic() {
                 if let Some(tag_end) = find_tag_end(bytes, i) {

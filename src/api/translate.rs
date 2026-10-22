@@ -1,9 +1,9 @@
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
+use crate::api::plugins::{parse_source_lang, parse_target_lang};
 use crate::api::ApiError;
 use crate::service;
-use crate::utils::lang::normalize_language_code_cow;
 
 /// Batch limits: reject oversized batches before touching the engines.
 pub const MAX_BATCH_TOTAL_CHARS: usize = 65536;
@@ -25,12 +25,15 @@ pub fn validate_batch<T: AsRef<str>>(texts: &[T]) -> Result<(), ApiError> {
     }
     let total_bytes: usize = texts.iter().map(|t| t.as_ref().len()).sum();
     if total_bytes > MAX_BATCH_TOTAL_CHARS {
-        let total: usize = texts.iter().map(|t| t.as_ref().chars().count()).sum();
-        if total > MAX_BATCH_TOTAL_CHARS {
-            return Err(ApiError::BadRequest(format!(
-                "Batch too large: {} characters (max {})",
-                total, MAX_BATCH_TOTAL_CHARS
-            )));
+        let mut total = 0;
+        for t in texts {
+            total += t.as_ref().chars().count();
+            if total > MAX_BATCH_TOTAL_CHARS {
+                return Err(ApiError::BadRequest(format!(
+                    "Batch too large: {} characters (max {})",
+                    total, MAX_BATCH_TOTAL_CHARS
+                )));
+            }
         }
     }
     Ok(())
@@ -91,12 +94,8 @@ fn resolve_parse_formats(
 pub async fn translate(
     Json(body): Json<TranslateRequest>,
 ) -> Result<Json<TranslateResponse>, ApiError> {
-    // An empty target language would build a meaningless engine key.
-    let to = normalize_language_code_cow(&body.to);
-    if to.is_empty() {
-        return Err(ApiError::BadRequest("Missing 'to' language".to_string()));
-    }
-    let from = normalize_language_code_cow(&body.from);
+    let to = parse_target_lang(&body.to, "to")?;
+    let from = parse_source_lang(Some(&body.from));
     let parse_formats = resolve_parse_formats(body.parse.as_ref())?;
     validate_batch(std::slice::from_ref(&body.text))?;
     match service::translate_with_pivot_timed_formats(&from, &to, &body.text, parse_formats).await {
@@ -119,11 +118,8 @@ pub async fn translate(
 pub async fn translate_batch(
     Json(body): Json<TranslateBatchRequest>,
 ) -> Result<Json<TranslateBatchResponse>, ApiError> {
-    let to = normalize_language_code_cow(&body.to);
-    if to.is_empty() {
-        return Err(ApiError::BadRequest("Missing 'to' language".to_string()));
-    }
-    let from = normalize_language_code_cow(&body.from);
+    let to = parse_target_lang(&body.to, "to")?;
+    let from = parse_source_lang(Some(&body.from));
     let parse_formats = resolve_parse_formats(body.parse.as_ref())?;
     validate_batch(&body.texts)?;
 

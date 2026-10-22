@@ -125,6 +125,16 @@ impl Quant8Tensor {
             row_sums,
         }
     }
+
+    #[inline]
+    pub fn rows(&self) -> usize {
+        self.shape.first().copied().unwrap_or(0)
+    }
+
+    #[inline]
+    pub fn cols(&self) -> usize {
+        self.shape.get(1).copied().unwrap_or(0)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1073,12 +1083,16 @@ pub(crate) unsafe fn prepare_uninit_vec<T: Copy>(vec: &mut Vec<T>, len: usize) {
     }
     vec.set_len(len);
 }
+#[cfg(target_arch = "x86_64")]
+thread_local! {
+    static VNNI_PREBIASED_SCRATCH: std::cell::RefCell<Vec<std::arch::x86_64::__m256i>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    static AVX2_PREBIASED_SCRATCH: std::cell::RefCell<(
+        Vec<std::arch::x86_64::__m256i>,
+        Vec<std::arch::x86_64::__m256i>,
+    )> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+}
 
-/// Pre-biases activation vector `x` (+128 unsigned bias) for AVX-VNNI dot products,
-/// utilizing a stack buffer for sizes up to 2048 elements (`blocks <= 64`) to avoid allocation.
-///
-/// # Safety
-/// Requires AVX2 CPU features. `k` must be a multiple of 32 and `x.len() >= k`.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[allow(clippy::needless_range_loop)]
@@ -1092,30 +1106,22 @@ unsafe fn with_vnni_prebiased<R, F: FnOnce(&[std::arch::x86_64::__m256i]) -> R>(
     let blocks = k / BLK;
     let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
 
-    let mut xb_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 64];
-    let xb_heap;
-    let xb_buf: &[__m256i] = if blocks <= 64 {
+    VNNI_PREBIASED_SCRATCH.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        if buf.len() < blocks {
+            buf.resize(blocks, _mm256_setzero_si256());
+        }
         for b in 0..blocks {
             let off = b * BLK;
             let xv = _mm256_loadu_si256(x.as_ptr().add(off) as *const __m256i);
-            xb_stack[b].write(_mm256_add_epi8(xv, x_bias_vec));
+            buf[b] = _mm256_add_epi8(xv, x_bias_vec);
         }
-        std::slice::from_raw_parts(xb_stack.as_ptr() as *const __m256i, blocks)
-    } else {
-        let mut v = Vec::with_capacity(blocks);
-        for b in 0..blocks {
-            let off = b * BLK;
-            let xv = _mm256_loadu_si256(x.as_ptr().add(off) as *const __m256i);
-            v.push(_mm256_add_epi8(xv, x_bias_vec));
-        }
-        xb_heap = v;
-        &xb_heap[..]
-    };
-    f(xb_buf)
+        f(&buf[..blocks])
+    })
 }
 
 /// Pre-biases activation vector `x` (+128) and unpacks into low/high 4-bit nibbles for AVX2 dot products,
-/// utilizing stack buffers for sizes up to 2048 elements (`blocks <= 64`) to avoid allocation.
+/// utilizing thread-local buffers to eliminate stack frame footprint and repeated heap allocations.
 ///
 /// # Safety
 /// Requires AVX2 CPU features. `k` must be a multiple of 32 and `x.len() >= k`.
@@ -1136,37 +1142,22 @@ unsafe fn with_avx2_prebiased<
     let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
     let nibble_mask = _mm256_set1_epi8(0x0F);
 
-    let mut lo_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 64];
-    let mut hi_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 64];
-    let (lo_heap, hi_heap);
-    let (lo_buf, hi_buf): (&[__m256i], &[__m256i]) = if blocks <= 64 {
+    AVX2_PREBIASED_SCRATCH.with(|cell| {
+        let (lo_buf, hi_buf) = &mut *cell.borrow_mut();
+        if lo_buf.len() < blocks {
+            lo_buf.resize(blocks, _mm256_setzero_si256());
+            hi_buf.resize(blocks, _mm256_setzero_si256());
+        }
         for b in 0..blocks {
             let off = b * BLK;
             let xv = _mm256_loadu_si256(x.as_ptr().add(off) as *const __m256i);
             let xb = _mm256_add_epi8(xv, x_bias_vec);
-            lo_stack[b].write(_mm256_and_si256(xb, nibble_mask));
-            hi_stack[b].write(_mm256_and_si256(_mm256_srli_epi16::<4>(xb), nibble_mask));
+            lo_buf[b] = _mm256_and_si256(xb, nibble_mask);
+            hi_buf[b] = _mm256_and_si256(_mm256_srli_epi16::<4>(xb), nibble_mask);
         }
-        let lo_slice = std::slice::from_raw_parts(lo_stack.as_ptr() as *const __m256i, blocks);
-        let hi_slice = std::slice::from_raw_parts(hi_stack.as_ptr() as *const __m256i, blocks);
-        (lo_slice, hi_slice)
-    } else {
-        let mut lo_v = Vec::with_capacity(blocks);
-        let mut hi_v = Vec::with_capacity(blocks);
-        for b in 0..blocks {
-            let off = b * BLK;
-            let xv = _mm256_loadu_si256(x.as_ptr().add(off) as *const __m256i);
-            let xb = _mm256_add_epi8(xv, x_bias_vec);
-            lo_v.push(_mm256_and_si256(xb, nibble_mask));
-            hi_v.push(_mm256_and_si256(_mm256_srli_epi16::<4>(xb), nibble_mask));
-        }
-        lo_heap = lo_v;
-        hi_heap = hi_v;
-        (&lo_heap[..], &hi_heap[..])
-    };
-    f(lo_buf, hi_buf)
+        f(&lo_buf[..blocks], &hi_buf[..blocks])
+    })
 }
-
 // Per-thread scratch for the single-row quantized matmul's activation
 // buffer (`i8_quantize_into`), so the decode loop's several quantized
 // matmuls per step share one allocation instead of materializing a fresh

@@ -1,5 +1,5 @@
 use lru::LruCache;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use crate::config;
 
@@ -14,38 +14,74 @@ pub struct CacheKey(pub u64, pub u64);
 const SHARDS: usize = 32;
 
 #[repr(align(64))]
-struct CacheShard(Mutex<Option<LruCache<CacheKey, std::sync::Arc<str>>>>);
+struct CacheShard(RwLock<Option<LruCache<CacheKey, std::sync::Arc<str>>>>);
 
-static CACHE: [CacheShard; SHARDS] = [const { CacheShard(Mutex::new(None)) }; SHARDS];
+static CACHE: [CacheShard; SHARDS] = [const { CacheShard(RwLock::new(None)) }; SHARDS];
 
 /// True if the cache is enabled and configured with a positive size.
 pub fn enabled() -> bool {
     config::is_initialized() && config::get().cache_size > 0
 }
 
+const SEED1: u64 = 0xcbf29ce484222325;
+const SEED2: u64 = 0x84222325cbf29ce4;
+const P1: u64 = 0x517cc1b727220a95;
+const P2: u64 = 0x9e3779b97f4a7c15;
+const SEPARATOR: u8 = 0xff;
+
+#[inline(always)]
+fn mix_step(h1: &mut u64, h2: &mut u64, v1: u64, v2: u64) {
+    let m1 = (*h1 ^ v1) as u128 * P1 as u128;
+    *h1 = (m1 as u64) ^ ((m1 >> 64) as u64) ^ v2;
+    let m2 = (*h2 ^ v2) as u128 * P2 as u128;
+    *h2 = (m2 as u64) ^ ((m2 >> 64) as u64) ^ v1;
+}
+
+#[inline(always)]
+fn feed_bytes(h1: &mut u64, h2: &mut u64, bytes: &[u8]) {
+    *h1 = (*h1 ^ (bytes.len() as u64)).wrapping_mul(P1);
+    *h2 = (*h2 ^ (bytes.len() as u64)).wrapping_mul(P2);
+
+    let mut chunks = bytes.chunks_exact(16);
+    for chunk in &mut chunks {
+        let v1 = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
+        let v2 = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
+        mix_step(h1, h2, v1, v2);
+    }
+
+    let rem = chunks.remainder();
+    if rem.len() >= 8 {
+        let v1 = u64::from_le_bytes(rem[0..8].try_into().unwrap());
+        let rem2 = &rem[8..];
+        let mut v2 = 0u64;
+        for (i, &b) in rem2.iter().enumerate() {
+            v2 |= (b as u64) << (i * 8);
+        }
+        mix_step(h1, h2, v1, v2);
+    } else if !rem.is_empty() {
+        let mut v1 = 0u64;
+        for (i, &b) in rem.iter().enumerate() {
+            v1 |= (b as u64) << (i * 8);
+        }
+        mix_step(h1, h2, v1, 0);
+    }
+
+    *h1 = (*h1 ^ (SEPARATOR as u64)).wrapping_mul(P1);
+    *h2 = (*h2 ^ (SEPARATOR as u64)).wrapping_mul(P2);
+}
+
 /// Compute a 128-bit collision-resistant cache key for request arguments.
 ///
-/// Arguments are hashed using dual independent 64-bit FNV-1a accumulators with distinct
-/// offset bases and primes, separated by 0xFF delimiters to eliminate boundary ambiguity.
+/// Arguments are hashed using 16-byte dual wide-multiplication block streams,
+/// separated by 0xFF delimiters to eliminate boundary ambiguity.
 /// The resulting 128-bit state is finalized with splitmix64 avalanche transformations
 /// to ensure uniform bit dispersion across both 64-bit lanes.
 pub fn compute_key(args: &[&str]) -> CacheKey {
-    const FNV_OFFSET_1: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME_1: u64 = 0x100000001b3;
-    const FNV_OFFSET_2: u64 = 0x84222325cbf29ce4;
-    const FNV_PRIME_2: u64 = 0x100000001bd;
-    const SEPARATOR: u8 = 0xff;
-
-    let mut h1: u64 = FNV_OFFSET_1;
-    let mut h2: u64 = FNV_OFFSET_2;
+    let mut h1: u64 = SEED1;
+    let mut h2: u64 = SEED2;
 
     for arg in args {
-        for &b in arg.as_bytes() {
-            h1 = (h1 ^ (b as u64)).wrapping_mul(FNV_PRIME_1);
-            h2 = (h2 ^ (b as u64)).wrapping_mul(FNV_PRIME_2);
-        }
-        h1 = (h1 ^ (SEPARATOR as u64)).wrapping_mul(FNV_PRIME_1);
-        h2 = (h2 ^ (SEPARATOR as u64)).wrapping_mul(FNV_PRIME_2);
+        feed_bytes(&mut h1, &mut h2, arg.as_bytes());
     }
 
     CacheKey(splitmix64(h1), splitmix64(h2))
@@ -53,33 +89,17 @@ pub fn compute_key(args: &[&str]) -> CacheKey {
 
 /// Compute a 128-bit collision-resistant cache key incorporating an explicit rules version.
 ///
-/// Hashes all request arguments and folds the language rules version into the dual FNV-1a
-/// streams, ensuring complete cache isolation between different versions of language rules.
+/// Hashes all request arguments and folds the language rules version into the dual block streams,
+/// ensuring complete cache isolation between different versions of language rules.
 pub fn compute_key_with_version(args: &[&str], version: u64) -> CacheKey {
-    const FNV_OFFSET_1: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME_1: u64 = 0x100000001b3;
-    const FNV_OFFSET_2: u64 = 0x84222325cbf29ce4;
-    const FNV_PRIME_2: u64 = 0x100000001bd;
-    const SEPARATOR: u8 = 0xff;
-
-    let mut h1: u64 = FNV_OFFSET_1;
-    let mut h2: u64 = FNV_OFFSET_2;
+    let mut h1: u64 = SEED1;
+    let mut h2: u64 = SEED2;
 
     for arg in args {
-        for &b in arg.as_bytes() {
-            h1 = (h1 ^ (b as u64)).wrapping_mul(FNV_PRIME_1);
-            h2 = (h2 ^ (b as u64)).wrapping_mul(FNV_PRIME_2);
-        }
-        h1 = (h1 ^ (SEPARATOR as u64)).wrapping_mul(FNV_PRIME_1);
-        h2 = (h2 ^ (SEPARATOR as u64)).wrapping_mul(FNV_PRIME_2);
+        feed_bytes(&mut h1, &mut h2, arg.as_bytes());
     }
 
-    for &b in &version.to_le_bytes() {
-        h1 = (h1 ^ (b as u64)).wrapping_mul(FNV_PRIME_1);
-        h2 = (h2 ^ (b as u64)).wrapping_mul(FNV_PRIME_2);
-    }
-    h1 = (h1 ^ (SEPARATOR as u64)).wrapping_mul(FNV_PRIME_1);
-    h2 = (h2 ^ (SEPARATOR as u64)).wrapping_mul(FNV_PRIME_2);
+    feed_bytes(&mut h1, &mut h2, &version.to_le_bytes());
 
     CacheKey(splitmix64(h1), splitmix64(h2))
 }
@@ -131,7 +151,7 @@ pub fn init() {
     };
     let per_shard = total.div_ceil(SHARDS).max(1);
     for shard in &CACHE {
-        *shard.0.lock() = Some(LruCache::new(
+        *shard.0.write() = Some(LruCache::new(
             std::num::NonZeroUsize::new(per_shard).unwrap(),
         ));
     }
@@ -147,14 +167,28 @@ fn shard(key: CacheKey) -> &'static CacheShard {
 /// Read a value from the cache by key. Returns None if disabled or missing.
 ///
 /// On cache hit, clones the `Arc<str>` reference directly without heap allocation
-/// or string copying.
+/// or string copying. Reads hold a shared lock, and optimistically update LRU order
+/// only when the shard write lock is uncontended.
 pub fn get(key: CacheKey) -> Option<std::sync::Arc<str>> {
     if !enabled() {
         return None;
     }
-    let mut guard = shard(key).0.lock();
-    let cache = guard.as_mut()?;
-    cache.get(&key).filter(|v| !v.is_empty()).cloned()
+    let shard = shard(key);
+    let hit = {
+        let read_guard = shard.0.read();
+        let cache = read_guard.as_ref()?;
+        cache.peek(&key).filter(|v| !v.is_empty()).cloned()
+    };
+
+    let val = hit?;
+
+    if let Some(mut write_guard) = shard.0.try_write() {
+        if let Some(cache) = write_guard.as_mut() {
+            cache.get(&key);
+        }
+    }
+
+    Some(val)
 }
 
 /// Read a value from the cache by key. Returns None if disabled or missing.
@@ -172,9 +206,28 @@ pub fn set(key: CacheKey, result: impl Into<std::sync::Arc<str>>) {
         return;
     }
     let val: std::sync::Arc<str> = result.into();
-    let mut guard = shard(key).0.lock();
+    let mut guard = shard(key).0.write();
     if let Some(cache) = guard.as_mut() {
         cache.put(key, val);
+    }
+}
+
+/// Insert a value into the cache under a precomputed key. Alias for [`set`].
+#[inline]
+pub fn insert(key: CacheKey, result: impl Into<std::sync::Arc<str>>) {
+    set(key, result);
+}
+
+/// Remove a specific entry from the cache by key. Returns true if the key was present.
+pub fn invalidate(key: CacheKey) -> bool {
+    if !enabled() {
+        return false;
+    }
+    let mut guard = shard(key).0.write();
+    if let Some(cache) = guard.as_mut() {
+        cache.pop(&key).is_some()
+    } else {
+        false
     }
 }
 
@@ -187,7 +240,7 @@ pub fn write_cached(result: &str, key: CacheKey) {
 /// Remove all cached entries across all shards.
 pub fn clear() {
     for shard in &CACHE {
-        let mut guard = shard.0.lock();
+        let mut guard = shard.0.write();
         if let Some(cache) = guard.as_mut() {
             cache.clear();
         }
@@ -201,7 +254,7 @@ pub fn len() -> usize {
     }
     CACHE
         .iter()
-        .map(|shard| shard.0.lock().as_ref().map_or(0, |c| c.len()))
+        .map(|shard| shard.0.read().as_ref().map_or(0, |c| c.len()))
         .sum()
 }
 
@@ -216,7 +269,7 @@ pub fn contains(key: CacheKey) -> bool {
     if !enabled() {
         return false;
     }
-    let guard = shard(key).0.lock();
+    let guard = shard(key).0.read();
     guard
         .as_ref()
         .is_some_and(|c| c.peek(&key).is_some_and(|v| !v.is_empty()))
@@ -230,7 +283,7 @@ pub fn memory_usage() -> usize {
     }
     let mut total_bytes = std::mem::size_of_val(&CACHE);
     for shard in &CACHE {
-        let guard = shard.0.lock();
+        let guard = shard.0.read();
         if let Some(cache) = guard.as_ref() {
             // Per-entry LRU node overhead:
             // CacheKey (16 bytes) + Arc pointer (8 bytes) + hash table bucket (~16 bytes) + LRU links (~16 bytes)
@@ -247,9 +300,45 @@ pub fn memory_usage() -> usize {
     total_bytes
 }
 
+/// Translation cache handle and utility wrapper.
+pub struct TranslationCache;
+
+impl TranslationCache {
+    #[inline]
+    pub fn get(key: CacheKey) -> Option<std::sync::Arc<str>> {
+        get(key)
+    }
+
+    #[inline]
+    pub fn insert(key: CacheKey, result: impl Into<std::sync::Arc<str>>) {
+        set(key, result);
+    }
+
+    #[inline]
+    pub fn invalidate(key: CacheKey) -> bool {
+        invalidate(key)
+    }
+
+    #[inline]
+    pub fn clear() {
+        clear();
+    }
+
+    #[inline]
+    pub fn len() -> usize {
+        len()
+    }
+
+    #[inline]
+    pub fn is_empty() -> bool {
+        is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parking_lot::Mutex;
     use clap::Parser;
     use std::sync::Once;
     static INIT: Once = Once::new();

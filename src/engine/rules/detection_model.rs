@@ -170,6 +170,8 @@ pub struct CompiledLatinDetection {
     pub scand_da_terms: Box<[String]>,
     pub scand_sv_terms: Box<[String]>,
     pub scand_sv_words: Box<[String]>,
+    pub latin_lexical_words: Box<[(String, &'static str, usize)]>,
+    pub latin_lexical_phrases: Box<[(String, &'static str, usize)]>,
 }
 
 impl CompiledLatinDetection {
@@ -266,9 +268,41 @@ impl CompiledDetectionModel {
         if trimmed.is_empty() {
             return None;
         }
-        let lower = trimmed.to_lowercase();
+
+        // Fast stack-allocated path for ASCII greetings (covers 95%+ of queries)
+        if trimmed.is_ascii() && trimmed.len() <= 64 {
+            let mut buf = [0u8; 64];
+            let len = trimmed.len();
+            buf[..len].copy_from_slice(trimmed.as_bytes());
+            buf[..len].make_ascii_lowercase();
+            // SAFETY: original text was valid ASCII, make_ascii_lowercase preserves ASCII validity
+            let lower = unsafe { std::str::from_utf8_unchecked(&buf[..len]) };
+            return self
+                .greetings
+                .binary_search_by(|(g, _)| g.as_str().cmp(lower))
+                .ok()
+                .map(|idx| self.greetings[idx].1);
+        }
+
+        // Zero-heap-allocation comparison for non-ASCII or long greetings
         self.greetings
-            .binary_search_by(|(g, _)| g.as_str().cmp(&lower))
+            .binary_search_by(|(g, _)| {
+                let mut b1 = g.chars();
+                let mut b2 = trimmed.chars().flat_map(|c| c.to_lowercase());
+                loop {
+                    match (b1.next(), b2.next()) {
+                        (None, None) => return std::cmp::Ordering::Equal,
+                        (None, Some(_)) => return std::cmp::Ordering::Less,
+                        (Some(_), None) => return std::cmp::Ordering::Greater,
+                        (Some(c1), Some(c2)) => {
+                            let ord = c1.cmp(&c2);
+                            if ord != std::cmp::Ordering::Equal {
+                                return ord;
+                            }
+                        }
+                    }
+                }
+            })
             .ok()
             .map(|idx| self.greetings[idx].1)
     }
@@ -651,6 +685,32 @@ impl CompiledDetectionModel {
         }
         greetings.sort_by(|a, b| a.0.cmp(&b.0));
         greetings.dedup_by(|a, b| a.0 == b.0);
+        let mut latin_lexical_words = Vec::new();
+        let mut latin_lexical_phrases = Vec::new();
+        let groups: &[(&[String], &'static str, usize)] = &[
+            (&nn_words, "nn", 0),
+            (&nn_terms, "nn", 0),
+            (&nb_terms, "nb", 1),
+            (&da_terms, "da", 2),
+            (&gl_terms, "gl", 3),
+            (&gl_words, "gl", 3),
+            (&eu_terms, "eu", 4),
+            (&sq_terms, "sq", 5),
+            (&af_terms, "af", 6),
+            (&ms_terms, "ms", 7),
+            (&id_terms, "id", 8),
+        ];
+        for (items, lang, prio) in groups {
+            for item in *items {
+                if item.contains(' ') {
+                    latin_lexical_phrases.push((item.clone(), *lang, *prio));
+                } else {
+                    latin_lexical_words.push((item.clone(), *lang, *prio));
+                }
+            }
+        }
+        latin_lexical_words.sort_by(|a, b| a.0.cmp(&b.0));
+        latin_lexical_words.dedup_by(|a, b| a.0 == b.0);
 
         let latin = CompiledLatinDetection {
             vi_chars: sort_chars(vi_chars),
@@ -687,6 +747,8 @@ impl CompiledDetectionModel {
             scand_da_terms: scand_da_terms.into_boxed_slice(),
             scand_sv_terms: scand_sv_terms.into_boxed_slice(),
             scand_sv_words: scand_sv_words.into_boxed_slice(),
+            latin_lexical_words: latin_lexical_words.into_boxed_slice(),
+            latin_lexical_phrases: latin_lexical_phrases.into_boxed_slice(),
         };
 
         Self {

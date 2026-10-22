@@ -374,8 +374,6 @@ pub struct EncodeScratch {
     pub char_offsets: Vec<usize>,
     /// Viterbi DP: score, split piece id, and back-pointer per position
     pub dp: Vec<DpNode>,
-    /// Reusable buffer for backtracked piece end positions
-    pub ends: Vec<u32>,
     /// Output token IDs
     pub ids: Vec<u32>,
     /// Byte ranges in the original input text corresponding to each token in `ids`.
@@ -550,19 +548,26 @@ impl Normalizer {
         longest
     }
 
-    pub fn normalize<'a>(&self, text: &'a str) -> Cow<'a, str> {
+    /// Normalize text into a reusable buffer, returning `true` if normalization modifications
+    /// were applied, or `false` if `text` is already normalized (in which case `norm_buf` is untouched).
+    pub fn normalize_into(&self, text: &str, norm_buf: &mut String) -> bool {
         // Fast path: pure printable ASCII (0x20..=0x7E) contains no matches in nmt_nfkc
         if text.bytes().all(|b| (0x20..=0x7E).contains(&b)) {
-            return Cow::Borrowed(text);
+            return false;
         }
 
         let raw_bytes = text.as_bytes();
         let mut pos = 0;
-        let mut out: Option<String> = None;
+        let mut matched = false;
         let mut last_copied = 0;
 
         while pos < raw_bytes.len() {
             if let Some((match_len, val)) = self.common_prefix_search(&raw_bytes[pos..]) {
+                if !matched {
+                    matched = true;
+                    norm_buf.clear();
+                    norm_buf.reserve(text.len() + 16);
+                }
                 let null_pos = self.normalized_bytes[val..]
                     .iter()
                     .position(|&b| b == 0)
@@ -570,16 +575,13 @@ impl Normalizer {
                     .unwrap_or(self.normalized_bytes.len());
                 let repl = &self.normalized_bytes[val..null_pos];
 
-                let buf = out.get_or_insert_with(|| {
-                    String::with_capacity(text.len() + 16)
-                });
                 if pos > last_copied {
                     if let Ok(prefix) = std::str::from_utf8(&raw_bytes[last_copied..pos]) {
-                        buf.push_str(prefix);
+                        norm_buf.push_str(prefix);
                     }
                 }
                 if let Ok(repl_str) = std::str::from_utf8(repl) {
-                    buf.push_str(repl_str);
+                    norm_buf.push_str(repl_str);
                 }
                 pos += match_len;
                 last_copied = pos;
@@ -598,16 +600,24 @@ impl Normalizer {
             }
         }
 
-        match out {
-            None => Cow::Borrowed(text),
-            Some(mut buf) => {
-                if last_copied < raw_bytes.len() {
-                    if let Ok(suffix) = std::str::from_utf8(&raw_bytes[last_copied..]) {
-                        buf.push_str(suffix);
-                    }
+        if matched {
+            if last_copied < raw_bytes.len() {
+                if let Ok(suffix) = std::str::from_utf8(&raw_bytes[last_copied..]) {
+                    norm_buf.push_str(suffix);
                 }
-                Cow::Owned(buf)
             }
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn normalize<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        let mut buf = String::new();
+        if self.normalize_into(text, &mut buf) {
+            Cow::Owned(buf)
+        } else {
+            Cow::Borrowed(text)
         }
     }
 
@@ -799,11 +809,19 @@ impl SentencePiece {
         if text.is_empty() {
             return &scratch.ids;
         }
-        let norm = match &self.normalizer {
-            Some(normalizer) => normalizer.normalize(text),
-            None => normalize_nmt_nfkc(text),
+        let modified = match &self.normalizer {
+            Some(normalizer) => normalizer.normalize_into(text, &mut scratch.norm_buf),
+            None => normalize_nmt_nfkc_into(text, &mut scratch.norm_buf),
         };
-        let norm_text = norm.as_ref();
+        let norm_text = if modified {
+            let norm_len = scratch.norm_buf.len();
+            let norm_ptr = scratch.norm_buf.as_ptr();
+            unsafe {
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(norm_ptr, norm_len))
+            }
+        } else {
+            text
+        };
         match self.model_type {
             ModelType::Unigram => self.encode_unigram_into(norm_text, scratch),
             ModelType::BPE => {
@@ -850,12 +868,17 @@ impl SentencePiece {
             }
             scratch.norm_to_orig.clear();
         } else {
-            let norm = normalize_nmt_nfkc(text);
-            let orig_text = match norm {
-                Cow::Borrowed(_) => None,
-                Cow::Owned(_) => Some(text),
+            let modified = normalize_nmt_nfkc_into(text, &mut scratch.norm_buf);
+            let (norm_text, orig_text) = if modified {
+                let norm_len = scratch.norm_buf.len();
+                let norm_ptr = scratch.norm_buf.as_ptr();
+                let s = unsafe {
+                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(norm_ptr, norm_len))
+                };
+                (s, Some(text))
+            } else {
+                (text, None)
             };
-            let norm_text = norm.as_ref();
             match self.model_type {
                 ModelType::Unigram => self.encode_unigram_with_spans_into(norm_text, orig_text, scratch),
                 ModelType::BPE => {
@@ -1104,20 +1127,6 @@ impl SentencePiece {
         }
     }
 
-    #[inline]
-    fn backtrack_ends(dp: &[DpNode], n: usize, ends: &mut Vec<u32>) {
-        ends.clear();
-        if ends.capacity() < n {
-            ends.reserve(n);
-        }
-        let mut pos = n;
-        while pos > 0 {
-            ends.push(pos as u32);
-            pos = dp[pos].prev as usize;
-        }
-        ends.reverse();
-    }
-
     /// Scratch-buffered variant of unigram encoding that reuses caller's
     /// heap allocations for DP tables and emits token IDs directly into `ids`
     /// without tracking character spans.
@@ -1131,22 +1140,23 @@ impl SentencePiece {
 
         Self::init_dp(n, &mut s.dp);
         self.run_unigram_dp(&s.sp_text, &s.char_offsets, &mut s.dp, n);
-        Self::backtrack_ends(&s.dp, n, &mut s.ends);
 
         let ids = &mut s.ids;
         ids.clear();
-        if ids.capacity() < s.ends.len() {
-            ids.reserve(s.ends.len());
+        if ids.capacity() < n {
+            ids.reserve(n);
         }
 
-        for &end_u32 in s.ends.iter() {
-            let end = end_u32 as usize;
+        let mut pos = n;
+        while pos > 0 {
+            let end = pos;
             let start = s.dp[end].prev as usize;
             let id = s.dp[end].split as usize;
+            pos = start;
 
             if id == self.unk_id as usize && end - start == 1 {
                 if let Some(c) = s.sp_text[s.char_offsets[start]..].chars().next() {
-                    if self.byte_fallback_encode_into(c, ids) {
+                    if self.byte_fallback_encode_into_rev(c, ids) {
                         continue;
                     }
                 }
@@ -1160,6 +1170,7 @@ impl SentencePiece {
                 }
             }
         }
+        ids.reverse();
     }
 
     /// Scratch-buffered unigram encoding that tracks token byte ranges `token_spans`.
@@ -1209,24 +1220,25 @@ impl SentencePiece {
 
         Self::init_dp(n, &mut s.dp);
         self.run_unigram_dp(&s.sp_text, &s.char_offsets, &mut s.dp, n);
-        Self::backtrack_ends(&s.dp, n, &mut s.ends);
 
         let ids = &mut s.ids;
         ids.clear();
-        if ids.capacity() < s.ends.len() {
-            ids.reserve(s.ends.len());
+        if ids.capacity() < n {
+            ids.reserve(n);
         }
 
         let token_spans = &mut s.token_spans;
         token_spans.clear();
-        if token_spans.capacity() < s.ends.len() {
-            token_spans.reserve(s.ends.len());
+        if token_spans.capacity() < n {
+            token_spans.reserve(n);
         }
 
-        for &end_u32 in s.ends.iter() {
-            let end = end_u32 as usize;
+        let mut pos = n;
+        while pos > 0 {
+            let end = pos;
             let start = s.dp[end].prev as usize;
             let id = s.dp[end].split as usize;
+            pos = start;
 
             let orig_start = s.sp_to_orig.get(start).map(|r| r.start).unwrap_or(0);
             let orig_end = if end > 0 {
@@ -1239,7 +1251,7 @@ impl SentencePiece {
             if id == self.unk_id as usize && end - start == 1 {
                 let prev_len = ids.len();
                 if let Some(c) = s.sp_text[s.char_offsets[start]..].chars().next() {
-                    if self.byte_fallback_encode_into(c, ids) {
+                    if self.byte_fallback_encode_into_rev(c, ids) {
                         let added = ids.len() - prev_len;
                         for _ in 0..added {
                             token_spans.push(span.clone());
@@ -1252,7 +1264,7 @@ impl SentencePiece {
                 let token_id = id as u32;
                 if token_id == self.unk_id && ids.last() == Some(&self.unk_id) {
                     if let Some(last_span) = token_spans.last_mut() {
-                        last_span.end = span.end;
+                        last_span.start = span.start;
                     }
                 } else {
                     ids.push(token_id);
@@ -1260,6 +1272,29 @@ impl SentencePiece {
                 }
             }
         }
+        ids.reverse();
+        token_spans.reverse();
+    }
+
+    #[inline]
+    fn byte_fallback_encode_into_rev(&self, c: char, out: &mut Vec<u32>) -> bool {
+        let mut buf = [0u8; 4];
+        let bytes = c.encode_utf8(&mut buf).as_bytes();
+        if bytes.is_empty() {
+            return false;
+        }
+        let mut piece_ids = [0u32; 4];
+        for (i, &b) in bytes.iter().enumerate() {
+            let id = self.byte_pieces[b as usize];
+            if id == u32::MAX {
+                return false;
+            }
+            piece_ids[i] = id;
+        }
+        for &id in piece_ids[..bytes.len()].iter().rev() {
+            out.push(id);
+        }
+        true
     }
 
     /// Encode a character that has no literal piece using byte-fallback.
@@ -1350,23 +1385,35 @@ impl SentencePiece {
 /// - Fullwidth space (`\u{3000}`), NBSP (`\u{00A0}`), and other Unicode whitespace -> regular ASCII space (`0x20`).
 /// - Soft hyphen (`\u{00AD}`) and zero-width control characters -> filtered out.
 /// - Pure ASCII text is zero-copy borrowed (`Cow::Borrowed`).
-pub fn normalize_nmt_nfkc(text: &str) -> Cow<'_, str> {
+/// Normalize text into `norm_buf` using NMT NFKC rules, returning `true` if modifications
+/// were made, or `false` if `text` requires no normalization.
+pub fn normalize_nmt_nfkc_into(text: &str, norm_buf: &mut String) -> bool {
     if text.is_ascii() {
-        return Cow::Borrowed(text);
+        return false;
     }
     for (i, c) in text.char_indices() {
         if is_nmt_nfkc_special(c) {
-            let mut out = String::with_capacity(text.len());
-            out.push_str(&text[..i]);
+            norm_buf.clear();
+            norm_buf.reserve(text.len());
+            norm_buf.push_str(&text[..i]);
             for c in text[i..].chars() {
                 if let Some(mapped) = map_nmt_nfkc_char(c) {
-                    out.push(mapped);
+                    norm_buf.push(mapped);
                 }
             }
-            return Cow::Owned(out);
+            return true;
         }
     }
-    Cow::Borrowed(text)
+    false
+}
+
+pub fn normalize_nmt_nfkc(text: &str) -> Cow<'_, str> {
+    let mut buf = String::new();
+    if normalize_nmt_nfkc_into(text, &mut buf) {
+        Cow::Owned(buf)
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 #[inline]

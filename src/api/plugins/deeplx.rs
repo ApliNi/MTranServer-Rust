@@ -1,18 +1,12 @@
+use std::borrow::Cow;
 use axum::Json;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+
+use crate::api::plugins::{deserialize_null_default, parse_source_lang, parse_target_lang};
 use crate::api::translate::validate_batch;
 use crate::api::ApiError;
 use crate::service;
-use crate::utils::lang::normalize_language_code;
-fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Default + Deserialize<'de>,
-{
-    let opt = Option::deserialize(deserializer)?;
-    Ok(opt.unwrap_or_default())
-}
 
 #[derive(Deserialize)]
 pub struct DeeplxRequest {
@@ -23,50 +17,41 @@ pub struct DeeplxRequest {
 }
 
 #[derive(Serialize)]
-pub struct DeeplxResponse {
-    pub alternatives: Vec<String>,
+pub struct DeeplxResponse<'a> {
+    pub alternatives: &'a [&'a str],
     pub code: i32,
     pub data: String,
     pub id: i64,
-    pub method: String,
-    pub source_lang: String,
-    pub target_lang: String,
+    pub method: &'static str,
+    pub source_lang: Cow<'static, str>,
+    pub target_lang: Cow<'static, str>,
 }
 
-pub async fn translate(Json(body): Json<DeeplxRequest>) -> Result<Json<DeeplxResponse>, ApiError> {
+pub async fn translate(
+    Json(body): Json<DeeplxRequest>,
+) -> Result<Json<DeeplxResponse<'static>>, ApiError> {
     validate_batch(std::slice::from_ref(&body.text))?;
-    let raw_source = body.source_lang.trim();
-    let source_lang = if raw_source.is_empty() || raw_source.eq_ignore_ascii_case("auto") {
-        "auto".to_string()
-    } else {
-        normalize_language_code(raw_source)
-    };
-    // An empty target language would build a meaningless engine key.
-    let target_lang = normalize_language_code(&body.target_lang);
-    if target_lang.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Missing 'target_lang' language".to_string(),
-        ));
-    }
+    let source_lang = parse_source_lang(Some(&body.source_lang));
+    let target_lang = parse_target_lang(&body.target_lang, "target_lang")?;
 
     match service::translate_with_pivot_detected(&source_lang, &target_lang, &body.text).await {
         Ok((data, detected)) => {
             let id: i64 = rand::thread_rng().gen_range(0..10000000000);
             let effective_source = if !detected.is_empty() {
-                detected
+                Cow::Owned(detected)
             } else if source_lang != "auto" {
                 source_lang
             } else {
-                "auto".to_string()
+                Cow::Borrowed("auto")
             };
             let source_lang_deepl = super::deepl::convert_bcp47_to_deepl(&effective_source);
             let target_lang_deepl = super::deepl::convert_bcp47_to_deepl(&target_lang);
             Ok(Json(DeeplxResponse {
-                alternatives: vec![],
+                alternatives: &[],
                 code: 200,
                 data,
                 id,
-                method: "Free".to_string(),
+                method: "Free",
                 source_lang: source_lang_deepl,
                 target_lang: target_lang_deepl,
             }))
@@ -99,13 +84,13 @@ mod tests {
         };
         let source_lang_deepl = crate::api::plugins::deepl::convert_bcp47_to_deepl(effective_source);
         let resp = DeeplxResponse {
-            alternatives: vec![],
+            alternatives: &[],
             code: 200,
             data: "你好".to_string(),
             id: 12345,
-            method: "Free".to_string(),
+            method: "Free",
             source_lang: source_lang_deepl,
-            target_lang: "EN".to_string(),
+            target_lang: Cow::Borrowed("EN"),
         };
         let serialized = serde_json::to_string(&resp).unwrap();
         assert!(serialized.contains(r#""source_lang":"ZH""#));

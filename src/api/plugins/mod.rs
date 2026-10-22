@@ -5,8 +5,45 @@ pub mod hcfy;
 pub mod imme;
 pub mod kiss;
 
+use std::borrow::Cow;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// Deserializer that falls back to `Default::default()` when the JSON value is `null`.
+pub fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
+/// Parse and canonicalize an incoming source language parameter.
+/// If absent, empty, or "auto" (case-insensitive), returns `"auto"`.
+#[inline]
+pub fn parse_source_lang<'a>(lang: Option<&'a str>) -> Cow<'a, str> {
+    match lang.map(str::trim) {
+        None | Some("") => Cow::Borrowed("auto"),
+        Some(s) if s.eq_ignore_ascii_case("auto") => Cow::Borrowed("auto"),
+        Some(s) => crate::utils::lang::normalize_language_code_cow(s),
+    }
+}
+
+/// Parse and canonicalize an incoming target language parameter.
+/// Returns an `ApiError::BadRequest` if the normalized language code is empty.
+#[inline]
+pub fn parse_target_lang<'a>(
+    lang: &'a str,
+    field_name: &str,
+) -> Result<Cow<'a, str>, crate::api::ApiError> {
+    let target = crate::utils::lang::normalize_language_code_cow(lang.trim());
+    if target.is_empty() {
+        return Err(crate::api::ApiError::BadRequest(format!(
+            "Missing '{field_name}' language"
+        )));
+    }
+    Ok(target)
+}
 /// A typed container for a field that can be either a single element or a sequence of elements.
 ///
 /// Avoids intermediate JSON AST construction (`serde_json::Value`), deserializing directly

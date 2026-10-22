@@ -134,7 +134,8 @@ pub fn split_sentences_with_profile<'a>(
         return Vec::new();
     }
 
-    let mut sentences = Vec::new();
+    let estimated_cap = (text.len() / 64).clamp(1, 64);
+    let mut sentences = Vec::with_capacity(estimated_cap);
     let bytes = text.as_bytes();
     let len = text.len();
     let mut cursor = 0;
@@ -969,6 +970,16 @@ fn find_best_semantic_split_candidate(
     let bytes = text.as_bytes();
     let len = text.len();
 
+    let is_cjk = profile.map(|p| !p.word_boundary).unwrap_or_else(|| {
+        text[cursor..limit_byte_pos].chars().any(|c| (c as u32) >= 0x3000)
+    });
+    let total_chars = text[cursor..limit_byte_pos].chars().count();
+    let effective_min_len = if is_cjk {
+        DEFAULT_CJK_MIN_CHUNK_LEN.min(total_chars / 3).max(2)
+    } else {
+        DEFAULT_MIN_CHUNK_LEN.min(total_chars / 3).max(3)
+    };
+    let min_edge = (effective_min_len / 2).max(1);
     let mut i = cursor;
     while i < limit_byte_pos {
         let c = match text.get(i..).and_then(|s| s.chars().next()) {
@@ -1170,20 +1181,9 @@ fn find_best_semantic_split_candidate(
         if let Some(cand) = candidate {
             if cand.punct_end > cursor && cand.punct_end <= limit_byte_pos {
                 let dist_from_cursor = text[cursor..cand.punct_end].chars().count();
-                let is_cjk = profile.map(|p| !p.word_boundary).unwrap_or_else(|| {
-                    text[cursor..limit_byte_pos].chars().any(|c| (c as u32) >= 0x3000)
-                });
-                let total_chars = text[cursor..limit_byte_pos].chars().count();
-                let effective_min_len = if is_cjk {
-                    DEFAULT_CJK_MIN_CHUNK_LEN.min(total_chars / 3).max(2)
-                } else {
-                    DEFAULT_MIN_CHUNK_LEN.min(total_chars / 3).max(3)
-                };
-
                 let too_close_to_cursor = dist_from_cursor < effective_min_len;
-                let rem_to_end = text[cand.sep_end..len].chars().count();
-                let too_close_to_edge = rem_to_end > 0 && rem_to_end < (effective_min_len / 2).max(1);
-
+                let rem = &text[cand.sep_end..len];
+                let too_close_to_edge = !rem.is_empty() && rem.chars().take(min_edge).count() < min_edge;
                 if !too_close_to_cursor && !too_close_to_edge {
                     let update = match &best {
                         None => true,
@@ -1243,28 +1243,24 @@ pub fn split_long_sentence_semantic_with_profile<'a>(
         return Vec::new();
     }
     let max_len = max_len.max(1);
-    let mut sentences = Vec::new();
+    let estimated_cap = (text.len() / max_len).clamp(1, 32);
+    let mut sentences = Vec::with_capacity(estimated_cap);
     let mut cursor = 0;
     let len = text.len();
 
     while cursor < len {
         let remaining = &text[cursor..];
-        let rem_char_count = remaining.chars().count();
-        if rem_char_count <= max_len {
-            sentences.push(SplitSentence::from_borrowed(
-                remaining,
-                cursor..len,
-                "",
-            ));
-            break;
-        }
-
-        let limit_byte_pos = cursor
-            + remaining
-                .char_indices()
-                .nth(max_len)
-                .map(|(idx, _)| idx)
-                .unwrap_or(remaining.len());
+        let limit_byte_pos = match remaining.char_indices().nth(max_len) {
+            Some((idx, _)) => cursor + idx,
+            None => {
+                sentences.push(SplitSentence::from_borrowed(
+                    remaining,
+                    cursor..len,
+                    "",
+                ));
+                break;
+            }
+        };
 
         let candidate =
             find_best_semantic_split_candidate(text, cursor, limit_byte_pos, profile);
@@ -1441,7 +1437,7 @@ pub fn split_sentences_hierarchical_with_profile<'a>(
     }
     let max_len = max_len.max(1);
     let initial_sentences = split_sentences_with_profile(text, profile);
-    let mut result = Vec::with_capacity(initial_sentences.len());
+    let mut result = Vec::with_capacity(initial_sentences.len().max(2));
 
     for sentence in initial_sentences {
         if sentence.text.chars().count() <= max_len {

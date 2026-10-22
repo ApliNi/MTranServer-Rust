@@ -1,11 +1,11 @@
+use std::borrow::Cow;
 use axum::{extract::Query, Json};
 use serde::{Deserialize, Serialize};
 
-use crate::api::plugins::OneOrMany;
+use crate::api::plugins::{parse_source_lang, parse_target_lang, OneOrMany};
 use crate::api::translate::validate_batch;
 use crate::api::ApiError;
 use crate::service;
-use crate::utils::lang::normalize_language_code;
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct GoogleRequest {
@@ -41,25 +41,34 @@ pub struct GoogleSingleQuery {
     pub q: String,
 }
 
+#[derive(Serialize)]
+pub struct GoogleSentence(
+    pub String,
+    pub String,
+    pub Option<()>,
+    pub Option<()>,
+    pub u8,
+);
+
+#[derive(Serialize)]
+pub struct GoogleSingleResponse(
+    pub [GoogleSentence; 1],
+    pub Option<()>,
+    pub String,
+    pub Option<()>,
+    pub Option<()>,
+    pub Option<()>,
+    pub Option<()>,
+    pub [(); 0],
+);
+
 pub async fn translate_compat(
     Json(body): Json<GoogleRequest>,
 ) -> Result<Json<GoogleResponse>, ApiError> {
     validate_batch(body.q.as_slice())?;
 
-    let raw_source = body.source.trim();
-    let source = if raw_source.is_empty() || raw_source.eq_ignore_ascii_case("auto") {
-        "auto".to_string()
-    } else {
-        normalize_language_code(raw_source)
-    };
-    let detected_source = body.source.clone();
-    // An empty target language would build a meaningless engine key.
-    let target = normalize_language_code(&body.target);
-    if target.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Missing 'target' language".to_string(),
-        ));
-    }
+    let source = parse_source_lang(Some(&body.source));
+    let target = parse_target_lang(&body.target, "target")?;
 
     let parse_formats = body.format.as_deref().and_then(|f| {
         if f.eq_ignore_ascii_case("html") {
@@ -82,14 +91,18 @@ pub async fn translate_compat(
     )
     .await?;
 
+    let fallback_source = if !body.source.trim().is_empty() {
+        body.source.as_str()
+    } else {
+        "auto"
+    };
+
     let mut translations = Vec::with_capacity(results.len());
     for (translated, detected) in results {
         let detected_lang = if source == "auto" && !detected.is_empty() {
             convert_bcp47_to_google(&detected).to_string()
-        } else if !detected_source.is_empty() {
-            detected_source.clone()
         } else {
-            "auto".to_string()
+            fallback_source.to_string()
         };
         translations.push(GoogleTranslation {
             translatedText: translated,
@@ -104,42 +117,35 @@ pub async fn translate_compat(
 
 pub async fn translate_single(
     Query(query): Query<GoogleSingleQuery>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<GoogleSingleResponse>, ApiError> {
     validate_batch(std::slice::from_ref(&query.q))?;
-    let target = normalize_language_code(&query.tl);
+    let target = crate::utils::lang::normalize_language_code_cow(query.tl.trim());
     if target.is_empty() {
         return Err(ApiError::BadRequest("Missing target language".to_string()));
     }
-    let raw_source = query.sl.as_deref().unwrap_or("auto").trim();
-    let source = if raw_source.is_empty() || raw_source.eq_ignore_ascii_case("auto") {
-        "auto".to_string()
-    } else {
-        normalize_language_code(raw_source)
-    };
+    let source = parse_source_lang(query.sl.as_deref());
     let (translated, detected_source) =
         service::translate_with_pivot_detected(&source, &target, &query.q).await?;
 
     let effective_source = if source == "auto" && !detected_source.is_empty() {
-        detected_source
+        Cow::Owned(detected_source)
     } else {
         source
     };
-    let detected_lang = convert_bcp47_to_google(&effective_source);
-
-    // Google format: [[[translated, original, null, null, 1]], null, detectedLang, ...]
-    Ok(Json(serde_json::json!([
-        [[translated, query.q, null, null, 1]],
-        null,
+    let detected_lang = convert_bcp47_to_google(&effective_source).to_string();
+    Ok(Json(GoogleSingleResponse(
+        [GoogleSentence(translated, query.q, None, None, 1)],
+        None,
         detected_lang,
-        null,
-        null,
-        null,
-        null,
-        []
-    ])))
+        None,
+        None,
+        None,
+        None,
+        [],
+    )))
 }
 
-fn convert_bcp47_to_google(lang: &str) -> &str {
+pub(crate) fn convert_bcp47_to_google(lang: &str) -> &str {
     match lang {
         "zh-Hans" => "zh-CN",
         "zh-Hant" => "zh-TW",
@@ -194,5 +200,35 @@ mod tests {
             req.q,
             OneOrMany::Many(vec!["Hello".to_string(), "world".to_string()])
         );
+    }
+
+    #[test]
+    fn test_google_single_response_serialization() {
+        let translated = "你好";
+        let original = "hello";
+        let detected_lang = "en";
+        let resp = GoogleSingleResponse(
+            [GoogleSentence(translated.to_string(), original.to_string(), None, None, 1)],
+            None,
+            detected_lang.to_string(),
+            None,
+            None,
+            None,
+            None,
+            [],
+        );
+        let json = serde_json::to_string(&resp).unwrap();
+        let expected = serde_json::to_string(&serde_json::json!([
+            [[translated, original, null, null, 1]],
+            null,
+            detected_lang,
+            null,
+            null,
+            null,
+            null,
+            []
+        ]))
+        .unwrap();
+        assert_eq!(json, expected);
     }
 }

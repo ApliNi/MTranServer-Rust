@@ -60,10 +60,11 @@ pub fn has_avx2() -> bool {
     *CACHED
 }
 
-/// Returns whether the host CPU supports VEX-encoded AVX-VNNI (`vpdpbusd`).
+/// Returns whether the host CPU supports AVX-VNNI (VEX-encoded) or AVX-512 VNNI (EVEX-encoded).
 ///
-/// Compute kernels in `src/engine/tensor/simd/vnni.rs` use the VEX encoding prefix
-/// (`{vex} vpdpbusd`), which strictly requires the `avxvnni` CPUID feature flag.
+/// Both instruction sets provide `vpdpbusd` for accelerating 8-bit quantized matrix
+/// multiplication: AVX-VNNI uses VEX encoding (Alder Lake+, Zen 5), while AVX-512 VNNI
+/// uses EVEX encoding (Cascade Lake+, Ice Lake+, Zen 4+).
 /// Evaluated once and cached. Respects `MT_FORCE_SIMD`.
 pub fn has_avxvnni() -> bool {
     static CACHED: LazyLock<bool> = LazyLock::new(|| {
@@ -75,6 +76,57 @@ pub fn has_avxvnni() -> bool {
                 }
             }
             std::arch::is_x86_feature_detected!("avxvnni")
+                || (std::arch::is_x86_feature_detected!("avx512vnni")
+                    && std::arch::is_x86_feature_detected!("avx512vl"))
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            false
+        }
+    });
+    *CACHED
+}
+
+/// Returns whether the host CPU supports EVEX-encoded AVX-512 VNNI (`vpdpbusd` with 256-bit VL).
+///
+/// Available on Intel Cascade Lake/Ice Lake/Sapphire Rapids and AMD Zen 4+.
+/// Evaluated once and cached. Respects `MT_FORCE_SIMD`.
+pub fn has_avx512vnni() -> bool {
+    static CACHED: LazyLock<bool> = LazyLock::new(|| {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if let Ok(forced) = std::env::var("MT_FORCE_SIMD") {
+                if forced == "sse41" || forced == "avx" {
+                    return false;
+                }
+            }
+            std::arch::is_x86_feature_detected!("avx512vnni")
+                && std::arch::is_x86_feature_detected!("avx512vl")
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            false
+        }
+    });
+    *CACHED
+}
+
+/// Returns whether VNNI acceleration should use EVEX encoding (AVX-512 VNNI) rather than VEX (AVX-VNNI).
+///
+/// Returns `true` when the CPU supports AVX-512 VNNI (`avx512vnni` + `avx512vl`) but does NOT support
+/// VEX-encoded AVX-VNNI (e.g. Intel Cascade Lake, Ice Lake, Cooper Lake, AMD Zen 4).
+pub fn vnni_uses_evex() -> bool {
+    static CACHED: LazyLock<bool> = LazyLock::new(|| {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if let Ok(forced) = std::env::var("MT_FORCE_SIMD") {
+                if forced == "sse41" || forced == "avx" {
+                    return false;
+                }
+            }
+            !std::arch::is_x86_feature_detected!("avxvnni")
+                && (std::arch::is_x86_feature_detected!("avx512vnni")
+                    && std::arch::is_x86_feature_detected!("avx512vl"))
         }
         #[cfg(not(target_arch = "x86_64"))]
         {
@@ -127,11 +179,13 @@ pub fn acceleration_report() -> String {
         let avx2 = std::arch::is_x86_feature_detected!("avx2");
         let fma = std::arch::is_x86_feature_detected!("fma");
         let vnni = has_avxvnni();
+        let avx512vnni = has_avx512vnni();
         parts.push(format!("sse4.1: {sse41}"));
         parts.push(format!("avx: {avx}"));
         parts.push(format!("avx2: {avx2}"));
         parts.push(format!("fma: {fma}"));
         parts.push(format!("vnni: {vnni}"));
+        parts.push(format!("avx512vnni: {avx512vnni}"));
         let active = match simd_level() {
             SimdLevel::Avx2Fma => "avx2+fma",
             SimdLevel::Avx => "avx",
