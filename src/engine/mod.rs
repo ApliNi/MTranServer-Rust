@@ -407,7 +407,9 @@ impl TranslationEngine {
             self.translate_internal(clean.as_ref())
         };
         if !emoji_repls.is_empty() {
-            if let Cow::Owned(s) = text::restore_emojis(&translation, &emoji_repls) {
+            if let Cow::Owned(s) =
+                text::restore_emojis_with_source_and_spans(&translation, &emoji_repls, text, &mut [])
+            {
                 translation = s;
             }
         }
@@ -466,11 +468,11 @@ impl TranslationEngine {
 
         if !emoji_repls.is_empty() {
             if let Cow::Owned(s) =
-                text::restore_emojis_with_spans(&out_text, &emoji_repls, &mut trg_spans)
+                text::restore_emojis_with_source_and_spans(&out_text, &emoji_repls, text, &mut trg_spans)
             {
                 out_text = s;
             }
-            text::restore_emojis_with_spans(clean.as_ref(), &emoji_repls, &mut src_spans);
+            text::restore_emojis_with_source_and_spans(clean.as_ref(), &emoji_repls, text, &mut src_spans);
         }
         let out_text = text::postprocess_translation_by_language_with_spans(
             &out_text,

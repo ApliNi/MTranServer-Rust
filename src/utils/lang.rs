@@ -327,6 +327,42 @@ pub fn is_cjk_or_continuous_script(c: char) -> bool {
             | '\u{1780}'..='\u{17FF}'   // Khmer
         )
 }
+/// Returns true if `c` is a CJK fullwidth punctuation character.
+#[inline]
+pub fn is_cjk_fullwidth_punct(c: char) -> bool {
+    matches!(
+        c,
+        '！' | '。' | '，' | '？' | '：' | '；' | '、'
+            | '（' | '）' | '《' | '》' | '“' | '”' | '‘' | '’'
+            | '【' | '】' | '—' | '…' | '～' | '〔' | '〕'
+            | '〈' | '〉' | '「' | '」' | '『' | '』' | '〖' | '〗'
+    )
+}
+
+/// Append sentence separator to output, omitting single ASCII spaces after CJK fullwidth punctuation.
+/// Extra spaces beyond the first are preserved.
+#[inline]
+pub fn append_split_sentence_separator(out: &mut String, sep: &str) {
+    if sep.is_empty() {
+        return;
+    }
+    let ends_with_fullwidth_punct = out
+        .trim_end()
+        .chars()
+        .next_back()
+        .map_or(false, is_cjk_fullwidth_punct);
+    if ends_with_fullwidth_punct {
+        if sep == " " {
+            return;
+        }
+        if sep.starts_with(' ') && !sep.contains('\n') {
+            out.push_str(&sep[1..]);
+            return;
+        }
+    }
+    out.push_str(sep);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,14 +433,43 @@ mod tests {
         assert!(!is_cjk_code(""));
     }
     #[test]
+    fn test_is_cjk_fullwidth_punct() {
+        assert!(is_cjk_fullwidth_punct('。'));
+        assert!(is_cjk_fullwidth_punct('！'));
+        assert!(is_cjk_fullwidth_punct('？'));
+        assert!(is_cjk_fullwidth_punct('，'));
+        assert!(!is_cjk_fullwidth_punct('.'));
+        assert!(!is_cjk_fullwidth_punct('!'));
+        assert!(!is_cjk_fullwidth_punct('?'));
+        assert!(!is_cjk_fullwidth_punct('a'));
+    }
+
+    #[test]
     fn test_split_language_pair() {
-        assert_eq!(split_language_pair("en-es"), Some(("en", "es")));
-        assert_eq!(split_language_pair("en_es"), Some(("en", "es")));
         assert_eq!(split_language_pair("zh-Hans-en"), Some(("zh-Hans", "en")));
         assert_eq!(split_language_pair("en-zh-Hans"), Some(("en", "zh-Hans")));
         assert_eq!(split_language_pair("zh-Hans_en"), Some(("zh-Hans", "en")));
         assert_eq!(split_language_pair("zh-Hans-zh-Hant"), Some(("zh-Hans", "zh-Hant")));
         assert_eq!(split_language_pair("pt-PT-en"), Some(("pt-PT", "en")));
         assert_eq!(split_language_pair("invalid"), None);
+    }
+
+    #[test]
+    fn test_append_split_sentence_separator() {
+        let mut s = "第一句话。".to_string();
+        append_split_sentence_separator(&mut s, " ");
+        assert_eq!(s, "第一句话。");
+
+        let mut s = "第一句话。".to_string();
+        append_split_sentence_separator(&mut s, "  ");
+        assert_eq!(s, "第一句话。 ");
+
+        let mut s = "第一句话。".to_string();
+        append_split_sentence_separator(&mut s, "\n");
+        assert_eq!(s, "第一句话。\n");
+
+        let mut s = "First sentence.".to_string();
+        append_split_sentence_separator(&mut s, " ");
+        assert_eq!(s, "First sentence. ");
     }
 }

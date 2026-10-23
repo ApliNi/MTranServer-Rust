@@ -212,7 +212,7 @@
   {
     "target": "zh-Hans",
     "input": "He said: \"OpenAI announced GPT-5 with 50% speedup.\" Indeed!",
-    "output": "他说：“OpenAI 宣布 GPT-5 加速率达到 50%。” 确实如此！"
+    "output": "他说：“OpenAI 宣布 GPT-5 加速率达到 50%。”确实如此！"
   },
   {
     "target": "zh-Hans",
@@ -222,7 +222,7 @@
   {
     "target": "zh-Hans",
     "input": "First sentence. Second sentence with numbers like 3.1415 and e.g. abbreviations. Third sentence concluded.",
-    "output": "第一句话。 第二句话，数字如 3.1415，例如缩写。 第三句话结束。"
+    "output": "第一句话。第二句话，数字如 3.1415，例如缩写。第三句话结束。"
   },
   {
     "target": "zh-Hans",
@@ -302,12 +302,12 @@
   {
     "target": "zh-Hans",
     "input": "The standard license costs $49.99, enterprise is €150.00, or ¥12,000 in Tokyo. Server has 64 GB RAM and 3.8 GHz clock rate.",
-    "output": "标准许可证售价为 49.99 美元，企业版价格为 150.00 欧元，东京为 12000 日元。 服务器具有 64 GB 运行内存和 3.8 GHz 时钟速率。"
+    "output": "标准许可证售价为 49.99 美元，企业版价格为 150.00 欧元，东京为 12000 日元。服务器具有 64 GB 运行内存和 3.8 GHz 时钟速率。"
   },
   {
     "target": "zh-Hans",
     "input": "🚀 Launching version 2.0 today! ✨ Lightning fast performance and 🔥 zero memory leaks. Approved 👍 by team.",
-    "output": "🚀 今日发布 2.0 版本！✨ 闪电快速性能和🔥 零内存泄漏。 由团队批准👍。"
+    "output": "🚀 今日发布 2.0 版本！✨ 闪电快速性能和 🔥 零内存泄漏。由团队批准 👍。"
   },
   {
     "target": "zh-Hans",
@@ -552,7 +552,7 @@
   {
     "target": "zh-Hans",
     "input": "Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> to open command palette. Highlighted: <mark>important note</mark>.",
-    "output": "按<kbd>Shift</kbd> +<kbd>P</kbd>+<kbd>Ctrl</kbd> 以打开命令调色板。 突出：<mark>重要说明</mark>。"
+    "output": "按<kbd>Shift</kbd> +<kbd>P</kbd>+<kbd>Ctrl</kbd> 以打开命令调色板。突出：<mark>重要说明</mark>。"
   },
   {
     "target": "zh-Hans",

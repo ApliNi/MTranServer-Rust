@@ -265,10 +265,20 @@ pub fn remap_spans(
         span.end = new_e;
     }
 }
-
 pub fn restore_emojis_with_spans<'a>(
     text: &'a str,
     replacements: &[String],
+    spans: &mut [std::ops::Range<usize>],
+) -> Cow<'a, str> {
+    restore_emojis_with_source_and_spans(text, replacements, "", spans)
+}
+
+/// Restore emoji placeholders `[EE{i}]` with original emoji strings,
+/// taking into account the source text's preceding whitespace context.
+pub fn restore_emojis_with_source_and_spans<'a>(
+    text: &'a str,
+    replacements: &[String],
+    source: &str,
     spans: &mut [std::ops::Range<usize>],
 ) -> Cow<'a, str> {
     if replacements.is_empty() {
@@ -279,6 +289,28 @@ pub fn restore_emojis_with_spans<'a>(
     let mut scan_offset = 0;
     let mut result: Option<String> = None;
     let mut deltas: Vec<(usize, usize, usize)> = Vec::new();
+
+    let repl_leading_ws: Vec<bool> = if source.is_empty() {
+        Vec::new()
+    } else {
+        let mut ws = Vec::with_capacity(replacements.len());
+        let mut src_cursor = 0;
+        for r in replacements {
+            if let Some(pos) = source[src_cursor..].find(r.as_str()) {
+                let abs_pos = src_cursor + pos;
+                let has_ws = abs_pos > 0
+                    && source[..abs_pos]
+                        .chars()
+                        .next_back()
+                        .map_or(false, |c| c.is_whitespace());
+                ws.push(has_ws);
+                src_cursor = abs_pos + r.len();
+            } else {
+                ws.push(false);
+            }
+        }
+        ws
+    };
 
     while let Some(start) = text[scan_offset..].find("[EE") {
         let match_start = scan_offset + start;
@@ -293,7 +325,8 @@ pub fn restore_emojis_with_spans<'a>(
             if let Ok(index) = after_prefix[..digit_end].parse::<usize>() {
                 if let Some(original) = replacements.get(index) {
                     let match_len = 3 + digit_end + 1;
-                    Some((match_len, original.as_str()))
+                    let src_has_ws = repl_leading_ws.get(index).copied().unwrap_or(false);
+                    Some((match_len, original.as_str(), src_has_ws))
                 } else {
                     None
                 }
@@ -304,7 +337,7 @@ pub fn restore_emojis_with_spans<'a>(
             None
         };
 
-        if let Some((match_len, original)) = matched {
+        if let Some((match_len, original, src_has_ws)) = matched {
             let res = match &mut result {
                 Some(r) => {
                     r.push_str(&text[scan_offset..match_start]);
@@ -317,10 +350,21 @@ pub fn restore_emojis_with_spans<'a>(
                     result.as_mut().unwrap()
                 }
             };
+
+            let mut added_space = false;
+            if src_has_ws {
+                if let Some(prev) = res.chars().next_back() {
+                    if !prev.is_whitespace() && !crate::utils::lang::is_cjk_fullwidth_punct(prev) {
+                        res.push(' ');
+                        added_space = true;
+                    }
+                }
+            }
+
             res.push_str(original);
 
             if track_spans {
-                deltas.push((match_start, match_len, original.len()));
+                deltas.push((match_start, match_len, original.len() + if added_space { 1 } else { 0 }));
             }
 
             scan_offset = match_start + match_len;

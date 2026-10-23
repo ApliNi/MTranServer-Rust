@@ -1345,7 +1345,7 @@ async fn translate_long_text_with_engines(
         )
         .await?;
         let mut out = t.into_string();
-        out.push_str(&sent.separator);
+        crate::utils::lang::append_split_sentence_separator(&mut out, &sent.separator);
         return Ok((out, d));
     }
 
@@ -1457,7 +1457,7 @@ async fn translate_long_text_with_engines(
         }
 
         out.push_str(piece.as_str());
-        out.push_str(&sent.separator);
+        crate::utils::lang::append_split_sentence_separator(&mut out, &sent.separator);
     }
 
     Ok((out, total_duration))
@@ -1518,7 +1518,8 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
     // Fast path: no convertible ASCII punctuation -> no allocation needed.
     let has_convertible = s
         .bytes()
-        .any(|b| matches!(b, b',' | b'?' | b'!' | b';' | b':'));
+        .any(|b| matches!(b, b',' | b'?' | b'!' | b';' | b':'))
+        || (s.as_bytes().iter().any(|&b| b >= 0x80) && s.contains(' '));
     if !has_convertible {
         return text;
     }
@@ -1640,6 +1641,26 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
             buf.push(fullwidth);
             i = next_i;
             last = next_i;
+        } else if b >= 0x80 && s.is_char_boundary(i) {
+            if let Some(curr) = s[i..].chars().next() {
+                let curr_len = curr.len_utf8();
+                let curr_end = i + curr_len;
+                if crate::utils::lang::is_cjk_fullwidth_punct(curr) && bytes.get(curr_end) == Some(&b' ') {
+                    let buf = out.get_or_insert_with(|| {
+                        let mut s_buf = String::with_capacity(text.len() + 16);
+                        s_buf.push_str(&text[..last]);
+                        s_buf
+                    });
+                    if i > last {
+                        buf.push_str(&text[last..i]);
+                    }
+                    buf.push(curr);
+                    i = curr_end + 1;
+                    last = i;
+                    continue;
+                }
+            }
+            i += 1;
         } else {
             i += 1;
         }
@@ -2030,6 +2051,23 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
         };
         let curr_len = curr.len_utf8();
         let curr_end = i + curr_len;
+
+        if crate::utils::lang::is_cjk_fullwidth_punct(curr) && bytes.get(curr_end) == Some(&b' ') {
+            let buf = out.get_or_insert_with(|| {
+                let mut s_buf = String::with_capacity(s.len() + 16);
+                s_buf.push_str(&s[..last_copied]);
+                s_buf
+            });
+            if i > last_copied {
+                buf.push_str(&s[last_copied..i]);
+            }
+            buf.push(curr);
+            prev_char = None;
+            i = curr_end + 1;
+            last_copied = i;
+            prev_end = i;
+            continue;
+        }
 
         if let Some(prev) = prev_char {
             let should_insert = (is_cjk_char(prev) && curr.is_ascii_alphanumeric())
