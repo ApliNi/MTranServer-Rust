@@ -36,3 +36,8 @@ pub fn load_text(rel_path: impl AsRef<Path>) -> String {
     fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("Failed to read text test fixture from {:?}: {}", path, err))
 }
+
+/// Loads all test cases from the standard regression fixture (`test/cases/regression.json`).
+pub fn load_regression_cases() -> Vec<crate::regression::TestCase> {
+    load_json("regression.json")
+}

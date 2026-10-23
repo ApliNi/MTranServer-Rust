@@ -140,6 +140,12 @@ data/
 
 若开启鉴权, 可通过在 URL 中添加 `?token=MT_API_TOKEN` 进行授权, 也可通过各翻译客户端提供的鉴权方式填写密钥.
 
+## 翻译质量差异跟踪
+
+该文件包含一些测试用例, 并将翻译结果一并保存在该文件中, 以便后续对比翻译质量变化.
+
+https://github.com/ApliNi/MTranServer-Rust/commits/main/test/cases/regression.json
+
 ## 性能基准
 
 使用 `--bench-qps` 运行内置基准测试.

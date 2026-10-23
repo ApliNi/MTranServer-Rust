@@ -1,0 +1,662 @@
+[
+  {
+    "target": "zh-Hans",
+    "input": "Hello, nice to meet you. Have a wonderful day!",
+    "output": "您好，很高兴认识您。祝您度过美好的一天！"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "The asynchronous runtime manages multiple concurrent tasks across background worker threads with minimal overhead.",
+    "output": "异步运行时在后台工作线程中管理多个并发任务，但开销极少。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Click <a href=\"https://example.com/download\">here</a> to download <strong>v2.0</strong> immediately.",
+    "output": "点击<a href=\"https://example.com/download\">此处</a>立即下载 <strong>v2.0</strong>。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Run `cargo test --release` to verify all test suites before submitting PR.",
+    "output": "在`cargo test --release`提交 PR 之前，先运行以验证所有测试套件。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Welcome, {username}! Your order #{order_id} has shipped to {address}.",
+    "output": "欢迎，{用户名}！您的订单 #{order_id} 已发货至 {address}。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Rust 1.75 brings async fn in traits, improving developer ergonomics.",
+    "output": "Rust 1.75 具有独特的特质，提升了开发者的人体工学能力。"
+  },
+  {
+    "target": "en",
+    "input": "早上好！请问今天下午两点的例会还在三楼会议室召开吗？",
+    "output": "Good morning!Is the meeting held at 2 p.m. in the conference room on the third floor?"
+  },
+  {
+    "target": "en",
+    "input": "内存安全由编译器在编译期静态保证，无需垃圾回收器介入即可彻底消除数据竞争。",
+    "output": "Memory security is guaranteed by the compiler at a static time of compilation, eliminating data competition without the need for garbage collector intervention."
+  },
+  {
+    "target": "en",
+    "input": "请查看<span class=\"badge\">系统通知</span>以及<a href=\"/docs\">开发者文档</a>。",
+    "output": "Please check <span class=\"badge\">the system notification</span> and <a href=\"/docs\">developer documentation</a>."
+  },
+  {
+    "target": "en",
+    "input": "使用 `Arc<Mutex<T>>` 可以在多个线程间共享可变状态，但请注意避免死锁。",
+    "output": "Use You`Arc<Mutex<T>>` can share a mutable state across multiple threads, but be careful to avoid deadlock."
+  },
+  {
+    "target": "en",
+    "input": "尊敬的用户 %s，您今日已消耗 %d 点配额，剩余额度为 %.2f%%。",
+    "output": "Dear user %s, you have consumed %d the quota today, and the remaining amount is %.2f%%."
+  },
+  {
+    "target": "de",
+    "input": "Good morning! Could you please give me a cup of black coffee?",
+    "output": "Guten Morgen! Könnten Sie mir bitte eine Tasse schwarzen Kaffee geben?"
+  },
+  {
+    "target": "de",
+    "input": "The configuration file defines the network socket timeout and maximum connection limits.",
+    "output": "Die Konfigurationsdatei definiert das Netzwerk-Socket-Timeout und die maximalen Verbindungsgrenzen."
+  },
+  {
+    "target": "en",
+    "input": "Guten Tag! Wo befindet sich der nächste Hauptbahnhof?",
+    "output": "Good day! Where is the nearest main station?"
+  },
+  {
+    "target": "en",
+    "input": "Das Betriebssystem verwaltet die Hardware-Ressourcen und stellt Schnittstellen für Anwendungen bereit.",
+    "output": "The operating system manages the hardware resources and provides interfaces for applications."
+  },
+  {
+    "target": "fr",
+    "input": "Excuse me, where is the Louvre Museum? Is it open today?",
+    "output": "Excusez-moi, où est le musée du Louvre ? Est-elle ouverte aujourd'hui ?"
+  },
+  {
+    "target": "fr",
+    "input": "Warning: Do not turn off the device during the firmware upgrade!",
+    "output": "Attention: N'éteignez pas l'appareil pendant la mise à niveau du micrologiciel !"
+  },
+  {
+    "target": "en",
+    "input": "Merci beaucoup pour votre aide précieuse, à bientôt!",
+    "output": "Thank you so much for your valuable help, see you soon!"
+  },
+  {
+    "target": "en",
+    "input": "Le protocole de communication garantit la livraison ordonnée et sécurisée des paquets.",
+    "output": "The communication protocol guarantees the orderly and secure delivery of packets."
+  },
+  {
+    "target": "es",
+    "input": "How are you doing today? Everything looks great!",
+    "output": "¿Cómo te va hoy? ¡Todo se ve genial!"
+  },
+  {
+    "target": "es",
+    "input": "What an incredible performance! Congratulations to the whole team!",
+    "output": "¡Qué increíble actuación! ¡Enhorabuena a todo el equipo!"
+  },
+  {
+    "target": "en",
+    "input": "¡Buenas tardes! ¿Podría indicarme el camino hacia la biblioteca central?",
+    "output": "Good afternoon! Could you tell me the way to the central library?"
+  },
+  {
+    "target": "en",
+    "input": "El servidor proxy redirige las peticiones HTTP hacia los microservicios internos.",
+    "output": "The proxy server redirects HTTP requests to internal microservices."
+  },
+  {
+    "target": "ja",
+    "input": "Thank you for your support. I look forward to working with you.",
+    "output": "ご支援ありがとうございます。 一緒に仕事をできることを楽しみにしています。"
+  },
+  {
+    "target": "ja",
+    "input": "The database cluster maintains data replication across multiple availability zones.",
+    "output": "データベースクラスタは、複数の可用性ゾーンにわたるデータレプリケーションを維持します。"
+  },
+  {
+    "target": "en",
+    "input": "本日はお忙しい中お時間をいただき、誠にありがとうございます。",
+    "output": "Thank you very much for your time today."
+  },
+  {
+    "target": "en",
+    "input": "このマイクロサービスはリクエスト負荷に応じて自動的にスケールアウトします。",
+    "output": "This microservice scales out automatically according to the request load."
+  },
+  {
+    "target": "ru",
+    "input": "Happy New Year and best wishes for health and prosperity!",
+    "output": "С Новым годом и наилучшими пожеланиями здоровья и процветания!"
+  },
+  {
+    "target": "ru",
+    "input": "The cryptographic algorithm generates a pair of public and private keys using elliptic curves.",
+    "output": "Криптографический алгоритм генерирует пару публичных и закрытых ключей с использованием эллиптических кривых."
+  },
+  {
+    "target": "en",
+    "input": "Добрый вечер! Не могли бы вы подсказать, когда прибывает поезд?",
+    "output": "Good evening! Could you tell me when the train arrives?"
+  },
+  {
+    "target": "en",
+    "input": "Архитектура распределенной файловой системы предотвращает потерю данных при сбое одного узла.",
+    "output": "The architecture of the distributed file system prevents data loss when a single node is failure."
+  },
+  {
+    "target": "de",
+    "input": "人工智能技术正在深刻改变现代软件工程的研发模式与生产效率。",
+    "output": "Die Technologie der Künstlichen Intelligenz verändert das F&E-Modell und die Produktionseffizienz moderner Softwaretechnik grundlegend."
+  },
+  {
+    "target": "ja",
+    "input": "本项目采用 Rust 编写，旨在为本地应用提供极致的低延迟翻译能力。",
+    "output": "このプロジェクトはRustで作成されており、地域アプリケーション向けに究極の低遅延翻訳機能を提供することを目的としています。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Die Energiewende erfordert massive Investitionen in erneuerbare Technologien und Stromnetze.",
+    "output": "能源转型需要对可再生能源技术和电网进行大规模投资。"
+  },
+  {
+    "target": "es",
+    "input": "La transition écologique est devenue une priorité absolue pour le développement durable des villes.",
+    "output": "La transición ecológica se ha convertido en una prioridad para el desarrollo sostenible de las ciudades."
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Космический телескоп нового поколения передал детальные снимки далеких галактик.",
+    "output": "新一代太空望远镜传输了遥远星系的详细图像。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Automated language identification allows the translator engine to route inputs seamlessly.",
+    "output": "自动化语言识别使翻译引擎能够无缝地路由输入。"
+  },
+  {
+    "target": "en",
+    "input": "开源社区的繁荣离不开全球开发者的持续奉献与协作支持。",
+    "output": "The prosperity of the open source community cannot be separated from the continued dedication and collaborative support of developers around the world."
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Please connect to https://127.0.0.1:8080/api/v1/translate using the default token.",
+    "output": "请使用默认令牌连接到 https://127.0.0.1:8080/api/v1/translate。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "### Step 1\nRun the following bash command:\n```bash\ncurl -X POST http://localhost:8080/translate\n```\nCheck the response status.",
+    "output": "### 第一步\n运行以下 bash 命令：\n```bash\ncurl -X POST http://localhost:8080/translate\n```\n检查响应状态。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "<div id=\"main\" style=\"color: red;\">Nested <b>bold</b> and <i>italic</i> tags with <a href=\"/target\" target=\"_blank\">links</a>.</div>",
+    "output": "<div id=\"main\" style=\"color: red;\">嵌有<b>带有<a href=\"/target\" target=\"_blank\">链接</a>的大胆</b>而<i>具有讽刺</i>性的标签。</div>"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "- Item 1: `status_ok`\n- Item 2: **critical warning**\n\n| Param | Type |\n|---|---|\n| `id` | `u64` |",
+    "output": "- 项目 1：`status_ok`\n- 项目 2：**关键警告**\n\n| 帕拉姆 | 类型 |\n|---|---|\n| `id` | `u64` |"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "He said: \"OpenAI announced GPT-5 with 50% speedup.\" Indeed!",
+    "output": "他说：“OpenAI 宣布 GPT-5 加速率达到 50%。” 确实如此！"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Formula: a & b < c && d > e || x != y; email: dev-team@mtrans.org",
+    "output": "公式：a & b < c && d > e || x != y；电子邮件：dev-team@mtrans.org"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "First sentence. Second sentence with numbers like 3.1415 and e.g. abbreviations. Third sentence concluded.",
+    "output": "第一句话。 第二句话，数字如 3.1415，例如缩写。 第三句话结束。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Please review the document below:<br><img src=\"https://example.com/diagram.png\" alt=\"Architecture Overview\" width=\"600\" /><hr>End of section.",
+    "output": "请在下方查看文件<br><img src=\"https://example.com/diagram.png\" alt=\"Architecture Overview\" width=\"600\" /><hr>：部分的结尾。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Condition: x &lt; 10 &amp;&amp; y &gt; 20; reserved copyright &copy; 2024 &quot;MTran&quot; &nbsp; Inc.",
+    "output": "条件：20 年&lt;10 点&amp;&amp;；&gt;保留版权归 2024&quot;年 MT&copy;ran 公司&quot;所有&nbsp;。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "<blockquote>Important advice: Always write tests.</blockquote><ul><li>Item one: speed</li><li>Item two: safety</li></ul>",
+    "output": "<blockquote>重要建议：始终编写测试。</blockquote><ul><li>项目一：速度</li><li>第二项：安全</li></ul>"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "---\ntitle: \"Regression Benchmark\"\nauthor: \"Core Team\"\nversion: 1.0\n---\nHere begins the actual article content.",
+    "output": "---\ntitle: “Regression Benchmark”\nauthor: “Core Team”\nversion: 1.0\n---\n此处开始提供实际文章内容。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "- [ ] Setup test environment\n- [x] Run regression suite\n\n> Note: Verification is mandatory before PR merge.",
+    "output": "- [ ] 设置测试环境\n- [x] 运行回归套件\n\n> 注意：在 PR 合并之前必须进行验证。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Visit [The Rust Book](https://doc.rust-lang.org/book/) for tutorials and inspect ![Flowchart](https://example.org/flow.png).",
+    "output": "请访问[《The RusT](https://doc.rust-lang.org/book/).Book》以获取教程并进行检查。！[Flowchart](https://example.org/flow.png)"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "This is ***crucially important*** and this deprecated method is ~~obsolete~~.",
+    "output": "这一点***至关重要***，这种被弃用的方法~~已经过时~~了。"
+  },
+  {
+    "target": "de",
+    "input": "Herr Dr. Schmidt will travel via train, e.g. tomorrow. \"This is wonderful!\", he noted.",
+    "output": "Herr Dr. Schmidt wird morgen mit dem Zug fahren. „Das ist wunderbar!“, bemerkte er."
+  },
+  {
+    "target": "fr",
+    "input": "M. Dupont met with Mme. Curie in Paris. \"Welcome to our laboratory!\", she exclaimed.",
+    "output": "M. Dupont a rencontré Mme. Curie à Paris. «Bienvenue dans notre laboratoire !», s'est-elle exclamée."
+  },
+  {
+    "target": "en",
+    "input": "А. С. Пушкин родился в г. Москва. Читайте гл. 3 и т. д. в сборнике.",
+    "output": "A. S. Pushkin was born in the city Moscow. Read Chapter 3, etc. in the collection."
+  },
+  {
+    "target": "en",
+    "input": "El Dr. García llegó temprano hoy. ¿Cómo está usted? ¡Todo está perfecto!",
+    "output": "El Dr. García llegó temprano hoy. How are you? Everything is perfect!"
+  },
+  {
+    "target": "ko",
+    "input": "Welcome to our platform! Please execute `npm install` to set up dependencies.",
+    "output": "우리 플랫폼에 오신 것을 환영합니다! 종속성을 설정`npm install`하려면 실행하십시오."
+  },
+  {
+    "target": "en",
+    "input": "안녕하세요! 새로운 오픈소스 프로젝트에 오신 것을 진심으로 환영합니다.",
+    "output": "Hello! We sincerely welcome you to the new open source project."
+  },
+  {
+    "target": "pt",
+    "input": "The microservice architecture ensures high availability and horizontal scalability across data centers.",
+    "output": "A arquitetura de microsserviços garante alta disponibilidade e escalabilidade horizontal em data centers."
+  },
+  {
+    "target": "en",
+    "input": "Grazie per la disponibilità. Questo algoritmo ottimizza la gestione della memoria virtuale.",
+    "output": "Thank you for the availability. This algorithm optimizes virtual memory management."
+  },
+  {
+    "target": "zh-Hans",
+    "input": "The standard license costs $49.99, enterprise is €150.00, or ¥12,000 in Tokyo. Server has 64 GB RAM and 3.8 GHz clock rate.",
+    "output": "标准许可证售价为 49.99 美元，企业版价格为 150.00 欧元，东京为 12000 日元。 服务器具有 64 GB 运行内存和 3.8 GHz 时钟速率。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "🚀 Launching version 2.0 today! ✨ Lightning fast performance and 🔥 zero memory leaks. Approved 👍 by team.",
+    "output": "🚀 今日发布 2.0 版本！✨ 闪电快速性能和🔥 零内存泄漏。 由团队批准👍。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Configuration template: export PORT=${HTTP_PORT:-8080} and set SECRET=\"{{APP_SECRET_KEY}}\" with max_retries=%d.",
+    "output": "配置模板：将 PORT=${HTTP_PORT：-8080} 导出，并使用 max_retries=%d 设置 SECRET=“{APP_SECRET_KEY}}。"
+  },
+  {
+    "target": "en",
+    "input": "请参阅《计算机程序设计艺术》第三卷与“快速排序”章节。（详见附录 A）",
+    "output": "See Computer Programming Art Volume 3 and the Quick Sort Chapter.(See Appendix A for details)"
+  },
+  {
+    "target": "en",
+    "input": "議長は「新システム『MTran』の導入を正式に決定しました」と発表しました。",
+    "output": "The chairman announced that “the introduction of the new system 'MTran' has been officially decided.”"
+  },
+  {
+    "target": "zh-Hant",
+    "input": "歡迎使用「MTranServer」！點擊 <a href=\"https://example.org\">這裡</a> 下載最新版本與說明文件。",
+    "output": "歡迎使用「MTranServer」！點擊 <a href=\"https://example.org\">這裡</a> 下載最新版本與說明文件。"
+  },
+  {
+    "target": "it",
+    "input": "Please verify the server status on port <code>8080</code> before proceeding with the upgrade.",
+    "output": "Si prega di verificare lo stato del server sulla<code>8080</code> porta prima di procedere con l'aggiornamento."
+  },
+  {
+    "target": "nl",
+    "input": "Welcome {user}! Your order #{order_id} has shipped with **free delivery**.",
+    "output": "Welkom {gebruiker}! Uw bestelling #{order_id} heeft verzonden met **gratis levering**."
+  },
+  {
+    "target": "pl",
+    "input": "The standard subscription costs $29.99 per month, or €250.00 annually with a 15% discount.",
+    "output": "Standardowa subskrypcja kosztuje $ 29.99 miesięcznie, czyli € 250.00 rocznie z 15% rabatem."
+  },
+  {
+    "target": "cs",
+    "input": "🚀 Version 3.0 has been deployed to production with zero downtime.",
+    "output": "🚀 Verze 3.0 byla nasazena do výroby s nulovými prostoky."
+  },
+  {
+    "target": "sv",
+    "input": "<table><tr><th>Service</th><th>Status</th></tr><tr><td>Database</td><td>Active</td></tr></table>",
+    "output": "<table><tr><th>Service</th><th>Status</th></tr><tr><td>Databas</td><td>Aktiv</td></tr></table>"
+  },
+  {
+    "target": "tr",
+    "input": "Press <kbd>Ctrl</kbd> + <kbd>C</kbd> in terminal to terminate the background process.",
+    "output": "Arka<kbd>Ctrl</kbd> plan<kbd>C</kbd> sürecini sona erdirmek için terminalde basın."
+  },
+  {
+    "target": "vi",
+    "input": "Visit [the official homepage](https://example.vn) for detailed documentation about the project.",
+    "output": "Truy cập [trang chủ chính thức](https://example.vn) để biết tài liệu chi tiết về dự án."
+  },
+  {
+    "target": "th",
+    "input": "System alert: CPU usage reached 95% at 14:30:00 on server {host_name}.",
+    "output": "การแจ้งเตือนระบบ: การใช้งาน CPU ถึง 95% เวลา 14:30:00 น. บนเซิร์ฟเวอร์ {host_name}"
+  },
+  {
+    "target": "ar",
+    "input": "Welcome to our portal! Are you ready to explore the new features? Visit https://example.com today.",
+    "output": "مرحبا بكم في موقعنا! هل أنت مستعد لاستكشاف الميزات الجديدة؟ قم بزيارة https://example.com اليوم"
+  },
+  {
+    "target": "he",
+    "input": "To install dependencies, run `cargo build --release` in the terminal.",
+    "output": "כדי להתקין תלות,`cargo build --release` לרוץ במסוף."
+  },
+  {
+    "target": "hi",
+    "input": "The high performance neural machine translation engine delivers high accuracy and low latency.",
+    "output": "उच्च प्रदर्शन तंत्रिका मशीन अनुवाद इंजन उच्च सटीकता और कम विलंबता प्रदान करता है।"
+  },
+  {
+    "target": "bn",
+    "input": "Welcome to our platform! Please check the latest release notes on GitHub repository.",
+    "output": "আমাদের প্ল্যাটফর্মে স্বাগতম! GitHub সংগ্রহস্থলের সর্বশেষ রিলিজ নোটগুলি পরীক্ষা করুন।"
+  },
+  {
+    "target": "ta",
+    "input": "Artificial intelligence is accelerating scientific discovery across multiple research disciplines.",
+    "output": "செயற்கை நுண்ணறிவு பல ஆராய்ச்சி துறைகளில் அறிவியல் கண்டுபிடிப்பை துரிதப்படுத்துகிறது."
+  },
+  {
+    "target": "te",
+    "input": "Cloud infrastructure provides scalable compute resources for distributed machine learning workflows.",
+    "output": "క్లౌడ్ ఇన్ఫ్రాస్ట్రక్చర్ పంపిణీ చేయబడిన మెషిన్ లెర్నింగ్ వర్క్ఫ్లోల కోసం స్కేలబుల్ కంప్యూటేట్ వనరులను అందిస్తుంది."
+  },
+  {
+    "target": "id",
+    "input": "- Step 1: Clone the git repository\n- Step 2: Run `cargo test` to verify all components",
+    "output": "- Langkah 1: Kloning repositori git\n- Langkah 2: Jalankan`cargo test` untuk memverifikasi semua komponen"
+  },
+  {
+    "target": "ms",
+    "input": "The reverse proxy efficiently balances traffic load across multiple geographic data centers.",
+    "output": "Proksi terbalik dengan cekap mengimbangi beban trafik merentasi pelbagai pusat data geografi."
+  },
+  {
+    "target": "uk",
+    "input": "Read section 4, etc. for additional information about the distributed system architecture.",
+    "output": "Прочитайте розділ 4 і т.д. Для отримання додаткової інформації про архітектуру розподіленої системи."
+  },
+  {
+    "target": "ro",
+    "input": "The network configuration enables a secure connection using the HTTPS protocol.",
+    "output": "Configurația rețelei permite o conexiune securizată utilizând protocolul HTTPS."
+  },
+  {
+    "target": "el",
+    "input": "The cryptographic protocol ensures confidentiality and message integrity across all validator nodes.",
+    "output": "Το κρυπτογραφικό πρωτόκολλο εξασφαλίζει την εμπιστευτικότητα και την ακεραιότητα των μηνυμάτων σε όλους τους κόμβους επικύρωσης."
+  },
+  {
+    "target": "hu",
+    "input": "The automated backup system creates **encrypted snapshots** every night at midnight.",
+    "output": "Az automatizált biztonsági mentési rendszer minden este, éjfélkor **titkosított pillanatfelvételeket** készít."
+  },
+  {
+    "target": "fi",
+    "input": "High performance computing clusters require efficient memory allocation and thread synchronization.",
+    "output": "Suurteholaskentaklusterit edellyttävät tehokasta muistin allokointia ja säikeiden synkronointia."
+  },
+  {
+    "target": "da",
+    "input": "Please contact technical support via e-mail, e.g. support@example.com, for urgent requests.",
+    "output": "Kontakt venligst teknisk support via e-mail, fx support@example.com, for presserende anmodninger."
+  },
+  {
+    "target": "fa",
+    "input": "How can I configure the firewall rules? Please refer to the administrative user manual.",
+    "output": "چگونه می توانم قوانین فایروال را پیکربندی کنم؟ لطفا به دفترچه راهنمای کاربر اداری مراجعه کنید."
+  },
+  {
+    "target": "bg",
+    "input": "The microservice architecture significantly improves fault tolerance and deployment flexibility.",
+    "output": "Архитектурата на микроуслугата значително подобрява толерантността към грешки и гъвкавостта при внедряване."
+  },
+  {
+    "target": "hr",
+    "input": "The distributed storage cluster provides 99.99% availability for enterprise cloud customers.",
+    "output": "Raspodijeljeni klaster za pohranu pruža 99,99% dostupnosti za poslovne kupce u oblaku."
+  },
+  {
+    "target": "sr",
+    "input": "Modern high-throughput web applications rely on asynchronous non-blocking event loops.",
+    "output": "Савремене веб апликације велике пропусности ослањају се на асинхроне петље догађаја које не блокирају."
+  },
+  {
+    "target": "sk",
+    "input": "The database query optimizer analyzes execution plans to reduce query latency.",
+    "output": "Optimalizátor databázového dotazu analyzuje plány vykonávania na zníženie latencie dopytu."
+  },
+  {
+    "target": "sl",
+    "input": "The container orchestration platform manages cluster resources effectively across worker nodes.",
+    "output": "Platforma za orkestracijo zabojnikov učinkovito upravlja vire grozdov med vozlišči delavcev."
+  },
+  {
+    "target": "lt",
+    "input": "The authentication microservice verifies JSON Web Tokens using asymmetric public keys.",
+    "output": "Autentifikavimo mikropaslauga patikrina JSON Web Tokens naudojant asimetrinius viešuosius raktus."
+  },
+  {
+    "target": "lv",
+    "input": "Data encryption at rest is strictly mandatory for all production database volumes.",
+    "output": "Datu šifrēšana miera stāvoklī ir stingri obligāta visiem ražošanas datubāzes apjomiem."
+  },
+  {
+    "target": "et",
+    "input": "The continuous integration pipeline automatically executes unit tests on every pull request.",
+    "output": "Pidev integratsioonitoru viib automaatselt läbi ühikutestid iga tõmbetaotluse korral."
+  },
+  {
+    "target": "ca",
+    "input": "The file transfer protocol guarantees the cryptographic integrity of all transmitted data packets.",
+    "output": "El protocol de transferència d'arxius garanteix la integritat criptogràfica de tots els paquets de dades transmeses."
+  },
+  {
+    "target": "eu",
+    "input": "To optimize database query performance, appropriate composite indexes must be utilized.",
+    "output": "Datu-basearen kontsultaren errendimendua optimizatzeko, indize konposatu egokiak erabili behar dira."
+  },
+  {
+    "target": "gl",
+    "input": "The modular software architecture facilitates long term maintenance and horizontal scalability.",
+    "output": "A arquitectura de software modular facilita o mantemento a longo prazo e a escalabilidade horizontal."
+  },
+  {
+    "target": "az",
+    "input": "Server performance metrics are monitored in real time using Prometheus and Grafana dashboards.",
+    "output": "Server performans ölçümləri Prometheus və Grafana tablolarından istifadə edərək real vaxtda izlənilir."
+  },
+  {
+    "target": "bs",
+    "input": "The monitoring daemon automatically detects fatal errors and sends alerts to the DevOps team.",
+    "output": "Daemon za praćenje automatski otkriva fatalne greške i šalje upozorenja DevOps timu."
+  },
+  {
+    "target": "gu",
+    "input": "The quantum computing simulator models multi-qubit entanglement and quantum logic gates.",
+    "output": "ક્વોન્ટમ કમ્પ્યુટિંગ સિમ્યુલેટર મોડેલો મલ્ટી-ક્વિટ એન્ગલમેન્ટ અને ક્વોન્ટમ તર્ક દરવાજા."
+  },
+  {
+    "target": "kn",
+    "input": "Machine learning algorithms extract hidden predictive patterns from large scale scientific datasets.",
+    "output": "ಯಂತ್ರ ಕಲಿಕೆ ಕ್ರಮಾವಳಿಗಳು ದೊಡ್ಡ ಪ್ರಮಾಣದ ವೈಜ್ಞಾನಿಕ ಡೇಟಾಸೆಟ್ಗಳಿಂದ ಗುಪ್ತ ಮುನ್ಸೂಚಕ ಮಾದರಿಗಳನ್ನು ಹೊರತೆಗೆಯುತ್ತವೆ."
+  },
+  {
+    "target": "ml",
+    "input": "Deep neural network architectures achieve state-of-the-art accuracy in real-time computer vision.",
+    "output": "ഡീപ് ന്യൂറൽ നെറ്റ്വർക്ക് ആർക്കിടെക്ചറുകൾ തത്സമയ കമ്പ്യൂട്ടർ കാഴ്ചയിൽ അത്യാധുനിക കൃത്യത കൈവരിക്കുന്നു."
+  },
+  {
+    "target": "is",
+    "input": "The decentralized network protocol synchronizes state across global peer-to-peer validator nodes.",
+    "output": "Dreifð netsamskiptareglur samstilla ástand yfir alþjóðlega jafningjamatsmenn."
+  },
+  {
+    "target": "en",
+    "input": "Ky shërbim ofron përkthim me shpejtësi të lartë dhe saktësi maksimale.",
+    "output": "Ky shërbim ofron përkthim me shpejtësi të lartë dhe saktesimale."
+  },
+  {
+    "target": "en",
+    "input": "Сістэма падтрымлівае аўтаматычнае вызначэнне мовы і высокую хуткасць працы.",
+    "output": "The system supports automatic language definition and high speed of operation."
+  },
+  {
+    "target": "zh-Hans",
+    "input": "<dl><dt>CPU</dt><dd>Central Processing Unit</dd><dt>GPU</dt><dd>Graphics Processing Unit</dd></dl>",
+    "output": "<dl><dt>CPU</dt><dd>中央处理单元</dd><dt>GPU</dt><dd>图形处理单元</dd></dl>"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "<pre><code class=\"language-rust\">let <b>greeting</b> = \"Hello, World!\";</code></pre>",
+    "output": "<pre><code class=\"language-rust\">let <b>greeting</b> = “Hello，World！”；</code></pre>"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> to open command palette. Highlighted: <mark>important note</mark>.",
+    "output": "按<kbd>Shift</kbd> +<kbd>P</kbd>+<kbd>Ctrl</kbd> 以打开命令调色板。 突出：<mark>重要说明</mark>。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "<form action=\"/submit\"><label for=\"email\">Email:</label><input type=\"email\" id=\"email\" placeholder=\"user@example.com\" /><button type=\"submit\">Subscribe</button></form>",
+    "output": "<form action=\"/submit\"><label for=\"email\">电子邮箱</label><input type=\"email\" id=\"email\" placeholder=\"user@example.com\" /><button type=\"submit\">：订阅</button></form>"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Chemical formula: H<sub>2</sub>O and CO<sub>2</sub>; Mathematical exponent: 2<sup>10</sup> = 1024.",
+    "output": "化学式：<sub>H2O</sub>和<sub>CO2</sub>；数学指数<sup>：210-</sup>104。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "| Method | Route | Description |\n|:---|:---:|---:|\n| `GET` | `/api/v1/health` | Health Check |\n| `POST` | `/api/v1/translate` | Translate |",
+    "output": "| 方法 | 道路 | 描述 |\n|：---|：---：|---：|\n| `GET`| `/api/v1/health`健康检查 |\n|`POST` |`/api/v1/translate` 翻译 |"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "> Level 1 quote\n> > Level 2 nested quote\n> Back to level 1",
+    "output": "> 一级报价\n> > 二级嵌套报价\n> 回到 1 级"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "Read the [**Official Guide** with `sample code`](https://example.com/guide) before starting.",
+    "output": "开始前请阅读[`sample code`**官方指南**](https://example.com/guide)。"
+  },
+  {
+    "target": "zh-Hans",
+    "input": "## System Overview\n\nThe server runs at `127.0.0.1:8080`. Please visit <a href=\"/dashboard\">Dashboard</a>.\n\n- Status: **Online** ✅\n- Memory: 512 MB / 16 GB\n- Uptime: 99.99%\n\n> Note: Backups occur at `02:00 UTC` daily.",
+    "output": "## 系统概述\n\n服务器运行在`127.0.0.1:8080`<a href=\"/dashboard\">。请访问仪表板</a>。\n\n- 状态：**在线** ✅\n- 内存：512 MB / 16 GB\n- 正常运行时间：99.99%\n\n> 注意：备份每天`02:00 UTC`发生。"
+  },
+  {
+    "target": "en",
+    "input": "使用 Rust 2024 构建 0 内存泄漏的系统。在 100% 负载下，QPS 提升了 3.5 倍。",
+    "output": "Build a system with 0 memory leaks using Rust 2024.At 100% load, QPS is increased by 3.5 times."
+  },
+  {
+    "target": "en",
+    "input": "总监指出：“《软件工程规范》第 5.2 节【错误处理】必须严格遵循。”（参见附录 B）",
+    "output": "The Director noted that “the Software Engineering Specification, Section 5.2 [Mishanding] must be strictly followed.”(See Appendix B)"
+  },
+  {
+    "target": "de",
+    "input": "\"Das neue Release enthält wichtige Verbesserungen\", erklärte Dr. Weber, \"z. B. eine um 40% reduzierte Latenz usw.\"",
+    "output": "„Das neue Release enthält wichtige Verbesserungen“, erklärte Dr. Weber, „z. B. eine um 40% reduzierte Latenz usw.“"
+  },
+  {
+    "target": "en",
+    "input": "Das Bundesverfassungsgericht entschied: „Die Reform tritt am 1. Januar in Kraft.“",
+    "output": "The Federal Constitutional Court ruled: “The reform will take place on 1. Januar in Kraft.“"
+  },
+  {
+    "target": "fr",
+    "input": "« Ce nouveau protocole est essentiel », a souligné M. Laurent : « Pourquoi ne pas l'adopter dès maintenant ? »",
+    "output": "« Ce nouveau protocole est essentiel », un M. soulignés. Laurent : « Pourquoi ne pas l'adopter dès maintenant ? »"
+  },
+  {
+    "target": "en",
+    "input": "Le Dr. Martin et Mme. Lefebvre habitent à Paris (France) ; ils étudient les énergies renouvelables.",
+    "output": "Le Dr. Martin et Mme. Lefebvre live in Paris (France); they study renewable energy."
+  },
+  {
+    "target": "es",
+    "input": "¡Bienvenido al sistema! ¿Cómo puedo ayudarte hoy? Por favor, ingresa tu consulta aquí.",
+    "output": "¡Bienvenido al sistema! ¿Cómo puedo ayudarte hoy? Por favor, tu consulta aquí ingresa."
+  },
+  {
+    "target": "es",
+    "input": "¿Cuándo comenzará la reunión técnica? ¡No olvides traer los informes de la Dra. Morales!",
+    "output": "¿Cuándo comenzará la reunión técnica? ¡No olvides traer los informes de la Dra. ¡¡ Morales!"
+  },
+  {
+    "target": "ru",
+    "input": "Например, см. гл. 2 и т. д. для получения подробных сведений об установке пакета.",
+    "output": "Например, см. гл. 2 и т. д. для получения подробных сведений об установке пакета."
+  },
+  {
+    "target": "en",
+    "input": "Проф. Иванов сообщил: «Эксперимент завершился успешно, т. е. данные полностью подтверждены».",
+    "output": "Prof. Ivanov said: “The experiment was completed successfully, i.e. the data is fully confirmed.”"
+  },
+  {
+    "target": "ja",
+    "input": "技術責任者は「『MTran』エンジンは高精度かつ低遅延な翻訳を提供します」と述べました。",
+    "output": "技術責任者は「『MTran』エンジンは高精度かつ低遅延な翻訳を提供します」と述べました。"
+  },
+  {
+    "target": "en",
+    "input": "田中課長は「来週の月曜日に東京本社で四半期会議を行います」と連絡しました。",
+    "output": "Mr. Tanaka said, “We will have a quarterly meeting at the Tokyo headquarters next Monday.”"
+  },
+  {
+    "target": "ko",
+    "input": "새로운 마이크로서비스 아키텍처는 시스템 확장성과 안정성을 크게 향상시킵니다.",
+    "output": "새로운 마이크로서비스 아키텍처는 시스템 확장성과 안정성을 크게 향상시킵니다."
+  },
+  {
+    "target": "en",
+    "input": "김 대표는 \"새로운 AI 번역 기술이 글로벌 시장에서 큰 호응을 얻고 있다\"고 밝혔습니다.",
+    "output": "“New AI translation technology is gaining a great response in the global market,” Kim said."
+  },
+  {
+    "target": "zh-Hans",
+    "input": "项目经理表示：“根据《微服务架构指南》第 3 章，所有 REST API 必须包含 Token 认证。”",
+    "output": "项目经理表示：“根据《微服务架构指南》第 3 章，所有 REST API 必须包含 Token 认证。”"
+  }
+]

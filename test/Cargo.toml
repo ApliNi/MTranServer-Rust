@@ -7,6 +7,10 @@ edition = "2021"
 name = "mtranserver_test"
 path = "src/lib.rs"
 
+[[bin]]
+name = "regression"
+path = "src/bin/regression.rs"
+
 [dependencies]
 mtranserver_lib = { package = "MTranServer-Rust", path = ".." }
 serde = { version = "1", features = ["derive"] }
