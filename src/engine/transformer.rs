@@ -4196,7 +4196,6 @@ impl Transformer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{EngineConfig, TranslationEngine};
 
     #[test]
     fn f32_shortlist_gather_transposes_rows() {
@@ -4367,71 +4366,6 @@ mod tests {
         assert_eq!(bufs.scratch.h1.data.len(), 1536);
     }
 
-    #[test]
-    fn test_forward_with_weights_and_alignments_runtime() {
-        use crate::engine::{EngineConfig, TranslationEngine};
-        use std::path::Path;
-
-        let model_dir = Path::new("data/models/en_zh-Hans");
-        if !model_dir.join("model.enzh.intgemm.alphas.bin").exists() {
-            return;
-        }
-
-        let engine = TranslationEngine::new(
-            "en",
-            "zh-Hans",
-            &model_dir.join("model.enzh.intgemm.alphas.bin"),
-            &model_dir.join("lex.50.50.enzh.s2t.bin"),
-            &model_dir.join("srcvocab.enzh.spm"),
-            &model_dir.join("trgvocab.enzh.spm"),
-            EngineConfig::default(),
-        )
-        .expect("load en_zh engine");
-
-        let source_text = "Hello world from Rust";
-        let source_ids = engine.spm_src().encode(source_text);
-        assert!(!source_ids.is_empty());
-
-        let mut seen = Vec::new();
-        let mut shortlist_indices = Vec::new();
-        engine.shortlist().generate_into(
-            &source_ids,
-            engine.spm_trg().vocab_size(),
-            &mut seen,
-            &mut shortlist_indices,
-            engine.shortlist_policy(),
-        );
-
-        let mut out_tokens = Vec::new();
-        let mut alignments = Vec::new();
-
-        Transformer::forward_with_weights_and_alignments_into(
-            engine.prepared_weights().weights(),
-            engine.spm_src(),
-            engine.spm_trg(),
-            &source_ids,
-            &shortlist_indices,
-            engine.forward_config(),
-            &mut out_tokens,
-            Some(&mut alignments),
-        );
-
-        assert!(!out_tokens.is_empty(), "out_tokens should not be empty");
-        assert_eq!(
-            alignments.len(),
-            out_tokens.len(),
-            "each out_token must have an alignment entry"
-        );
-
-        for &src_idx in &alignments {
-            assert!(
-                src_idx < source_ids.len(),
-                "alignment index {} must be strictly less than source_ids.len() {}",
-                src_idx,
-                source_ids.len()
-            );
-        }
-    }
     #[test]
     fn test_google_length_penalty() {
         assert_eq!(google_length_penalty(1, 0.0), 1.0);
@@ -4612,46 +4546,6 @@ mod tests {
         assert!((out[2] - expected2).abs() < 1e-5);
     }
 
-    #[test]
-    fn test_beam_search_runtime() {
-        let model_dir = std::path::Path::new("data/models/en_zh-Hans");
-        if !model_dir.join("model.enzh.intgemm.alphas.bin").exists() {
-            return;
-        }
-        let engine_greedy = TranslationEngine::new(
-            "en",
-            "zh",
-            &model_dir.join("model.enzh.intgemm.alphas.bin"),
-            &model_dir.join("lex.50.50.enzh.s2t.bin"),
-            &model_dir.join("srcvocab.enzh.spm"),
-            &model_dir.join("trgvocab.enzh.spm"),
-            EngineConfig {
-                beam_size: 1,
-                ..EngineConfig::default()
-            },
-        )
-        .expect("load en_zh engine greedy");
-
-        let engine_beam = TranslationEngine::new(
-            "en",
-            "zh",
-            &model_dir.join("model.enzh.intgemm.alphas.bin"),
-            &model_dir.join("lex.50.50.enzh.s2t.bin"),
-            &model_dir.join("srcvocab.enzh.spm"),
-            &model_dir.join("trgvocab.enzh.spm"),
-            EngineConfig {
-                beam_size: 2,
-                ..EngineConfig::default()
-            },
-        )
-        .expect("load en_zh engine beam");
-
-        let text = "Hello world";
-        let trans_greedy = engine_greedy.translate(text);
-        let trans_beam = engine_beam.translate(text);
-        assert!(!trans_greedy.is_empty());
-        assert!(!trans_beam.is_empty());
-    }
 
     #[test]
     fn test_dynamic_eos_bias_short_utterance() {

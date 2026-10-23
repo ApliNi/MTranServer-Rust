@@ -312,7 +312,7 @@
   {
     "target": "zh-Hans",
     "input": "Configuration template: export PORT=${HTTP_PORT:-8080} and set SECRET=\"{{APP_SECRET_KEY}}\" with max_retries=%d.",
-    "output": "配置模板：将 PORT=${HTTP_PORT：-8080} 导出，并使用 max_retries=%d 设置 SECRET=“{APP_SECRET_KEY}}。"
+    "output": "配置模板：导出 PORT=${HTTP_PORT:-8080}，并将 SECRET=\"{{APP_SECRET_KEY}}\" 设置为 max_retries=%d。"
   },
   {
     "target": "en",
@@ -567,7 +567,7 @@
   {
     "target": "zh-Hans",
     "input": "| Method | Route | Description |\n|:---|:---:|---:|\n| `GET` | `/api/v1/health` | Health Check |\n| `POST` | `/api/v1/translate` | Translate |",
-    "output": "| 方法 | 道路 | 描述 |\n|：---|：---：|---：|\n| `GET`| `/api/v1/health`健康检查 |\n|`POST` |`/api/v1/translate` 翻译 |"
+    "output": "| 方法 | 道路 | 描述 |\n|:---|:---:|---:|\n| `GET`| `/api/v1/health`健康检查 |\n|`POST` |`/api/v1/translate` 翻译 |"
   },
   {
     "target": "zh-Hans",

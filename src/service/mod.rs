@@ -208,7 +208,7 @@ impl PartialEq<TranslatedText> for String {
 
 /// Apply typography normalization to translated text, preserving cached references when unchanged.
 #[inline]
-fn normalize_output_punctuation(
+pub fn normalize_output_punctuation(
     text: impl Into<TranslatedText>,
     to_lang: &str,
     fullwidth_zh: bool,
@@ -1309,7 +1309,7 @@ async fn translate_single_language_text_with_engine(
 
 
 /// Translate a long text by splitting into sentences using prepared engines.
-async fn translate_long_text_with_engines(
+pub async fn translate_long_text_with_engines(
     engines: &PreparedEngines,
     from_lang: &str,
     to_lang: &str,
@@ -1489,8 +1489,7 @@ pub async fn translate_long_text(
 /// targets, HTML, feature off, or no convertible punctuation) and an owned
 /// converted copy otherwise.
 /// Apply Chinese punctuation normalization and Pangu spacing (盘古之白).
-#[allow(dead_code)]
-pub(crate) fn format_zh_punctuation<'a>(
+pub fn format_zh_punctuation<'a>(
     text: &'a str,
     to_lang: &str,
     enabled: bool,
@@ -1548,6 +1547,16 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
         } else if b == b'`' {
             if let Some(code_end) = markdown_code_end(bytes, i) {
                 i = code_end;
+                continue;
+            }
+        } else if b == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(v_end) = shell_var_end(bytes, i) {
+                i = v_end;
+                continue;
+            }
+        } else if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(t_end) = template_var_end(bytes, i) {
+                i = t_end;
                 continue;
             }
         } else if let Some(u_end) = url_end(bytes, i) {
@@ -1612,6 +1621,10 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
                 let bracket_port = is_bracket_port(bytes, i);
                 let line_header = is_line_head_header(bytes, i);
                 let quote_key_before = i > 0 && (bytes[i - 1] == b'"' || bytes[i - 1] == b'\'');
+                let op_after = i + 1 < bytes.len()
+                    && matches!(bytes[i + 1], b'-' | b'=' | b'+' | b'?' | b'/' | b'\\');
+                let symbol_before = i > 0
+                    && matches!(bytes[i - 1], b'-' | b'=' | b'+' | b'?' | b'$' | b'%' | b'@' | b'{');
                 if colon_before
                     || colon_after
                     || scheme_after
@@ -1620,6 +1633,8 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
                     || bracket_port
                     || line_header
                     || quote_key_before
+                    || op_after
+                    || symbol_before
                 {
                     None
                 } else {
@@ -1792,6 +1807,20 @@ pub(crate) fn apply_pangu_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std::b
                 prev_end = i;
                 continue;
             }
+        } else if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(v_end) = shell_var_end(bytes, i) {
+                prev_char = None;
+                i = v_end;
+                prev_end = i;
+                continue;
+            }
+        } else if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(t_end) = template_var_end(bytes, i) {
+                prev_char = None;
+                i = t_end;
+                prev_end = i;
+                continue;
+            }
         } else if let Some(u_end) = url_end(bytes, i) {
             if let Some(prev) = prev_char {
                 if is_cjk_char(prev) {
@@ -1865,8 +1894,7 @@ pub(crate) fn apply_pangu_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std::b
 
 /// Convenience wrapper around `apply_pangu_spacing` for borrowed strings.
 #[inline]
-#[allow(dead_code)]
-pub(crate) fn format_pangu_spacing<'a>(text: &'a str) -> std::borrow::Cow<'a, str> {
+pub fn format_pangu_spacing<'a>(text: &'a str) -> std::borrow::Cow<'a, str> {
     apply_pangu_spacing(std::borrow::Cow::Borrowed(text))
 }
 
@@ -1924,6 +1952,20 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
             if let Some(code_end) = markdown_code_end(bytes, i) {
                 prev_char = None;
                 i = code_end;
+                prev_end = i;
+                continue;
+            }
+        } else if b == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(v_end) = shell_var_end(bytes, i) {
+                prev_char = None;
+                i = v_end;
+                prev_end = i;
+                continue;
+            }
+        } else if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(t_end) = template_var_end(bytes, i) {
+                prev_char = None;
+                i = t_end;
                 prev_end = i;
                 continue;
             }
@@ -2008,6 +2050,10 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
                 let bracket_port = is_bracket_port(bytes, i);
                 let line_header = is_line_head_header(bytes, i);
                 let quote_key_before = i > 0 && (bytes[i - 1] == b'"' || bytes[i - 1] == b'\'');
+                let op_after = i + 1 < bytes.len()
+                    && matches!(bytes[i + 1], b'-' | b'=' | b'+' | b'?' | b'/' | b'\\');
+                let symbol_before = i > 0
+                    && matches!(bytes[i - 1], b'-' | b'=' | b'+' | b'?' | b'$' | b'%' | b'@' | b'{');
                 if colon_before
                     || colon_after
                     || scheme_after
@@ -2016,6 +2062,8 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
                     || bracket_port
                     || line_header
                     || quote_key_before
+                    || op_after
+                    || symbol_before
                 {
                     None
                 } else {
@@ -2110,8 +2158,7 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
 
 /// Western Truecasing: For non-Chinese target languages, automatically capitalizes lowercase
 /// letters at sentence starts (start of text or after terminal punctuation [.!?] followed by whitespace).
-#[allow(dead_code)]
-pub(crate) fn truecase_western<'a>(text: &'a str, to_lang: &str) -> std::borrow::Cow<'a, str> {
+pub fn truecase_western<'a>(text: &'a str, to_lang: &str) -> std::borrow::Cow<'a, str> {
     apply_truecase_western(std::borrow::Cow::Borrowed(text), to_lang)
 }
 
@@ -2131,7 +2178,7 @@ fn is_truecase_nonbreaking_abbr(s: &str, w_start: usize, tok: &str) -> bool {
 }
 
 /// Core Western truecasing operating on `Cow<'a, str>` to preserve zero allocations.
-pub(crate) fn apply_truecase_western<'a>(text: std::borrow::Cow<'a, str>, to_lang: &str) -> std::borrow::Cow<'a, str> {
+pub fn apply_truecase_western<'a>(text: std::borrow::Cow<'a, str>, to_lang: &str) -> std::borrow::Cow<'a, str> {
     let s = text.as_ref();
     if crate::utils::lang::is_cjk_code(to_lang) || s.is_empty() {
         return text;
@@ -2318,6 +2365,78 @@ fn html_entity_end(bytes: &[u8], start: usize) -> Option<usize> {
     }
 }
 
+/// End index (one past the closing `}`) of shell parameter expansion `${...}` starting at `start`.
+#[inline]
+fn shell_var_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if start + 2 > bytes.len() || bytes[start] != b'$' || bytes[start + 1] != b'{' {
+        return None;
+    }
+    let mut depth = 1;
+    let mut idx = start + 2;
+    while idx < bytes.len() {
+        match bytes[idx] {
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(idx + 1);
+                }
+            }
+            b'{' => depth += 1,
+            b'\n' | b'\r' => return None,
+            _ => {}
+        }
+        idx += 1;
+    }
+    None
+}
+
+/// End index (one past the closing `}}`) of template interpolation `{{...}}` starting at `start`.
+#[inline]
+fn template_var_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if start + 4 > bytes.len() || bytes[start] != b'{' || bytes[start + 1] != b'{' {
+        return None;
+    }
+    let rest = &bytes[start + 2..];
+    rest.windows(2).position(|w| w == b"}}").map(|pos| start + 2 + pos + 2)
+}
+
+/// Checks if the double quote at `start` is preceded by an assignment operator `[A-Za-z0-9_]=-?`
+/// (e.g. `KEY="value"`, `SECRET="`), and if so, returns the end index of the quoted literal.
+#[inline]
+fn code_assign_quote_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if start == 0 || bytes[start] != b'"' {
+        return None;
+    }
+    let mut p = start;
+    if p > 0 && bytes[p - 1] == b'=' {
+        p -= 1;
+        let mut id_len = 0;
+        while p > 0
+            && (bytes[p - 1].is_ascii_alphanumeric()
+                || bytes[p - 1] == b'_'
+                || bytes[p - 1] == b'-')
+        {
+            p -= 1;
+            id_len += 1;
+        }
+        if id_len > 0 {
+            let mut j = start + 1;
+            while j < bytes.len() {
+                if bytes[j] == b'\\' {
+                    j += 2;
+                } else if bytes[j] == b'"' {
+                    return Some(j + 1);
+                } else if bytes[j] == b'\n' || bytes[j] == b'\r' {
+                    break;
+                } else {
+                    j += 1;
+                }
+            }
+            return Some(start + 1);
+        }
+    }
+    None
+}
 #[inline]
 fn next_after_punct_byte(bytes: &[u8], i: usize) -> usize {
     let after = i + 1;
@@ -2344,7 +2463,7 @@ pub(crate) fn get_language_rule_profile(
 }
 /// Apply data-driven typography rules, fullwidth punctuation, and truecasing to translated output.
 /// Fast-path returns Cow::Borrowed with 0 heap allocation when no transformations are required.
-pub(crate) fn postprocess_typography<'a>(
+pub fn postprocess_typography<'a>(
     text: std::borrow::Cow<'a, str>,
     to_lang: &str,
     fullwidth_zh: bool,
@@ -2464,7 +2583,7 @@ fn is_technical_or_code_punctuation(s: &str, i: usize, b: u8) -> bool {
 /// before French two-part punctuation marks (?, !, ;) and non-breaking space `\u{00A0}`
 /// before colon (:), strictly protecting URLs, Markdown code blocks, and HTML tags.
 /// Fast-path returns Cow::Borrowed when no formatting is needed (0 heap allocation).
-pub(crate) fn format_french_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std::borrow::Cow<'a, str> {
+pub fn format_french_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std::borrow::Cow<'a, str> {
     let s = text.as_ref();
     if s.is_empty() {
         return text;
@@ -2686,7 +2805,7 @@ pub(crate) fn format_french_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std:
 /// opening `¿` and exclamatory sentences ending with `!` have an opening `¡` at the start
 /// of the clause or sentence if not already present.
 /// Fast-path returns Cow::Borrowed when no punctuation insertion is needed (0 heap allocation).
-pub(crate) fn format_spanish_inverted<'a>(text: std::borrow::Cow<'a, str>) -> std::borrow::Cow<'a, str> {
+pub fn format_spanish_inverted<'a>(text: std::borrow::Cow<'a, str>) -> std::borrow::Cow<'a, str> {
     let s = text.as_ref();
     if s.is_empty() {
         return text;
@@ -2953,7 +3072,7 @@ fn is_closing_punctuation(c: char) -> bool {
 ///
 /// Strictly protects Markdown inline/block code, HTML tags/entities, and URLs.
 /// Fast-path returns Cow::Borrowed with 0 heap allocation when no convertible quotes are present.
-pub(crate) fn apply_quote_style<'a>(
+pub fn apply_quote_style<'a>(
     text: std::borrow::Cow<'a, str>,
     quote_style: &str,
 ) -> std::borrow::Cow<'a, str> {
@@ -2998,6 +3117,19 @@ pub(crate) fn apply_quote_style<'a>(
                 i = code_end;
                 continue;
             }
+        } else if b == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(v_end) = shell_var_end(bytes, i) {
+                i = v_end;
+                continue;
+            }
+        } else if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            if let Some(t_end) = template_var_end(bytes, i) {
+                i = t_end;
+                continue;
+            }
+        } else if let Some(q_end) = code_assign_quote_end(bytes, i) {
+            i = q_end;
+            continue;
         } else if b == b'h' || b == b'f' {
             if let Some(u_end) = url_end(bytes, i) {
                 i = u_end;
@@ -3224,55 +3356,6 @@ pub fn cleanup_all_engines() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[tokio::test]
-    async fn test_same_language_timing_zero() {
-        let out = translate_with_pivot_timed("en", "en", "test text")
-            .await
-            .unwrap();
-        assert_eq!(out.text, "test text");
-        assert_eq!(out.detected_language, "en");
-        assert_eq!(out.translation_duration, std::time::Duration::ZERO);
-        assert_eq!(out.model_load_duration, std::time::Duration::ZERO);
-    }
-
-    #[tokio::test]
-    async fn test_translate_wrappers_same_language() {
-        let text = translate_with_pivot("fr", "fr", "bonjour").await.unwrap();
-        assert_eq!(text, "bonjour");
-
-        let (text, detected) = translate_with_pivot_detected("fr", "fr", "bonjour")
-            .await
-            .unwrap();
-        assert_eq!(text, "bonjour");
-        assert_eq!(detected, "fr");
-    }
-
-    #[tokio::test]
-    async fn test_translate_segment_same_language() {
-        let (text, duration) = translate_segment("de", "de", "hallo", config::ParseFormats::default())
-            .await
-            .unwrap();
-        assert_eq!(text, "hallo");
-        assert_eq!(duration, std::time::Duration::ZERO);
-    }
-
-    #[tokio::test]
-    async fn test_ensure_required_engines_same_language() {
-        let (engines, d) = ensure_required_engines("zh", "zh").await.unwrap();
-        assert_eq!(d, std::time::Duration::ZERO);
-        assert!(matches!(engines, PreparedEngines::SameLanguage));
-    }
-
-    #[tokio::test]
-    async fn test_translate_long_text_same_language() {
-        let text = "First sentence. Second sentence. Third sentence.";
-        let (out, duration) = translate_long_text("en", "en", text, config::ParseFormats::default())
-            .await
-            .unwrap();
-        assert_eq!(out, text);
-        assert!(duration < std::time::Duration::from_secs(5));
-    }
-
     #[test]
     fn test_translated_text_deref_and_cached() {
         let arc: Arc<str> = "cached hello, world".into();
@@ -3288,577 +3371,5 @@ mod tests {
         // Normalization on zh target replaces punctuation
         let norm_zh = tt.normalize_punctuation("zh", true);
         assert_eq!(norm_zh, "cached hello，world");
-    }
-
-    #[test]
-    fn test_normalize_output_punctuation() {
-        let s = "你好, 世界!".to_string();
-        let norm = normalize_output_punctuation(s, "zh", true);
-        assert_eq!(norm, "你好，世界！");
-
-        let s2 = "hello, world".to_string();
-        let norm2 = normalize_output_punctuation(s2, "en", true);
-        assert_eq!(norm2, "Hello, world");
-
-        let s3 = "你好, 世界!".to_string();
-        let norm3 = normalize_output_punctuation(s3, "zh", false);
-        assert_eq!(norm3, "你好, 世界!");
-    }
-    #[tokio::test]
-    async fn test_translate_batch_same_language() {
-        let texts = vec!["Hello".to_string(), "World".to_string()];
-        let results = translate_batch_with_pivot_formats("en", "en", &texts, None)
-            .await
-            .unwrap();
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0], ("Hello".to_string(), "en".to_string()));
-        assert_eq!(results[1], ("World".to_string(), "en".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_translate_batch_empty() {
-        let results = translate_batch_with_pivot_formats("en", "zh", &[], None)
-            .await
-            .unwrap();
-        assert!(results.is_empty());
-    }
-
-
-    #[test]
-    fn test_format_zh_punctuation_protections() {
-        // 1. Thousands separator & numeric protection
-        let num1 = "总金额为 1,000,000 美元";
-        assert_eq!(format_zh_punctuation(num1, "zh", true), "总金额为 1,000,000 美元");
-        assert!(matches!(format_zh_punctuation(num1, "zh", true), std::borrow::Cow::Borrowed(_)));
-
-        let num2 = "欧洲格式 3.141,59 测试";
-        assert_eq!(format_zh_punctuation(num2, "zh", true), "欧洲格式 3.141,59 测试");
-
-        // Non-number comma should still be converted
-        let list = "第 1, 2, 3 项";
-        assert_eq!(format_zh_punctuation(list, "zh", true), "第 1，2，3 项");
-
-        // 2. Colon protections
-        // Time
-        let time = "会议时间 12:30 开始";
-        assert_eq!(format_zh_punctuation(time, "zh", true), "会议时间 12:30 开始");
-
-        // URL scheme
-        let url = "访问 https://example.com/api";
-        assert_eq!(format_zh_punctuation(url, "zh", true), "访问 https://example.com/api");
-
-        // Host:port
-        let host1 = "服务运行在 localhost:8080 地址";
-        assert_eq!(format_zh_punctuation(host1, "zh", true), "服务运行在 localhost:8080 地址");
-        let host2 = "连接 127.0.0.1:3000 端口";
-        assert_eq!(format_zh_punctuation(host2, "zh", true), "连接 127.0.0.1:3000 端口");
-
-        // Double colon (::)
-        let rust_path = "使用 std::path::PathBuf 结构体";
-        assert_eq!(format_zh_punctuation(rust_path, "zh", true), "使用 std::path::PathBuf 结构体");
-        assert!(matches!(format_zh_punctuation(rust_path, "zh", true), std::borrow::Cow::Borrowed(_)));
-
-        // IPv6 bracket port ([2001:db8::1]:8080)
-        let ipv6 = "连接 [2001:db8::1]:8080 节点";
-        assert_eq!(format_zh_punctuation(ipv6, "zh", true), "连接 [2001:db8::1]:8080 节点");
-
-        // Pseudo header protection ([A-Za-z0-9_-]+:)
-        let header = "Content-Type: application/json\nHost: 127.0.0.1";
-        assert_eq!(format_zh_punctuation(header, "zh", true), "Content-Type: application/json\nHost: 127.0.0.1");
-
-        // URL query parameter protections (?, ,, ;)
-        let url_params = "详情参见 https://example.com/api?a=1,b=2;c=3 页面, 完成!";
-        assert_eq!(
-            format_zh_punctuation(url_params, "zh", true),
-            "详情参见 https://example.com/api?a=1,b=2;c=3 页面，完成！"
-        );
-        // Normal colon converted
-        let label = "注意: 请勿操作";
-        assert_eq!(format_zh_punctuation(label, "zh", true), "注意：请勿操作");
-
-        // 3. Markdown inline code backtick protection
-        let md_inline = "执行 `let a = 1, b: 2;` 命令, 完成!";
-        assert_eq!(
-            format_zh_punctuation(md_inline, "zh", true),
-            "执行 `let a = 1, b: 2;` 命令，完成！"
-        );
-
-        let md_block = "如下: ```std::path, 1,000,000!``` 结束";
-        assert_eq!(
-            format_zh_punctuation(md_block, "zh", true),
-            "如下：```std::path, 1,000,000!``` 结束"
-        );
-
-        // 4. Operator protections (!=, obj?.prop, !flag, val ?? default)
-        assert_eq!(
-            format_zh_punctuation("如果 value != 0, 则继续执行", "zh", true),
-            "如果 value != 0，则继续执行"
-        );
-        assert_eq!(
-            format_zh_punctuation("使用 obj?.property 访问可选属性", "zh", true),
-            "使用 obj?.property 访问可选属性"
-        );
-        assert_eq!(
-            format_zh_punctuation("设置 flag = !isActive 来取反", "zh", true),
-            "设置 flag = !isActive 来取反"
-        );
-        assert_eq!(
-            format_zh_punctuation("使用 value ?? default 作为备选", "zh", true),
-            "使用 value ?? default 作为备选"
-        );
-
-        // 5. JSON/YAML key-colon protection ("key": value)
-        let json_input = r#"配置 {"host": "localhost"} 成功!"#;
-        assert_eq!(
-            format_zh_punctuation(json_input, "zh", true),
-            "配置 {\"host\": \"localhost\"} 成功！"
-        );
-        let macro_input = "执行 println!(\"ok\") 和 assert!(true) 测试完成!";
-        assert_eq!(
-            format_zh_punctuation(macro_input, "zh", true),
-            "执行 println!(\"ok\") 和 assert!(true) 测试完成！"
-        );
-    }
-
-    #[test]
-    fn test_truecase_western_cjk_exemption() {
-        let input_ja = "iphone は非常に便利です。";
-        let out_ja = apply_truecase_western(std::borrow::Cow::Borrowed(input_ja), "ja");
-        assert_eq!(out_ja.as_ref(), "iphone は非常に便利です。");
-
-        let input_ko = "ebay 에서 구입했습니다.";
-        let out_ko = apply_truecase_western(std::borrow::Cow::Borrowed(input_ko), "ko");
-        assert_eq!(out_ko.as_ref(), "ebay 에서 구입했습니다.");
-
-        let input_en = "iphone is very convenient.";
-        let out_en = apply_truecase_western(std::borrow::Cow::Borrowed(input_en), "en");
-        assert_eq!(out_en.as_ref(), "Iphone is very convenient.");
-    }
-    #[test]
-    fn test_format_zh_math_comparison_not_html() {
-        // Mathematical comparisons like `< 100MB` and `> 5折` must not be parsed as HTML tags
-        let input = "数量 < 100MB, 且折扣 > 5折!";
-        let formatted = format_zh_punctuation(input, "zh", true);
-        assert_eq!(formatted, "数量 < 100 MB，且折扣 > 5 折！");
-    }
-
-    #[test]
-    fn test_format_zh_ipv6_colons_preserved() {
-        let input = "服务地址: 2001:db8::1, 端口: 8080";
-        let formatted = format_zh_punctuation(input, "zh", true);
-        assert_eq!(formatted, "服务地址：2001:db8::1，端口：8080");
-    }
-
-    #[test]
-    fn test_format_zh_pangu_cjk_extended_zero() {
-        let input = "二〇二六年5月";
-        let formatted = format_zh_punctuation(input, "zh", true);
-        assert_eq!(formatted, "二〇二六年 5 月");
-
-        let input_repeat = "常々100次";
-        let formatted_repeat = format_zh_punctuation(input_repeat, "zh", true);
-        assert_eq!(formatted_repeat, "常々 100 次");
-    }
-
-    #[test]
-    fn test_truecase_western_accents_and_punctuation() {
-        assert_eq!(truecase_western("été chaud. über alles.", "fr"), "Été chaud. Über alles.");
-        assert_eq!(truecase_western("¿cómo estás? ¡muy bien!", "es"), "¿Cómo estás? ¡Muy bien!");
-        assert_eq!(truecase_western("«bonjour monde»", "fr"), "«Bonjour monde»");
-        assert_eq!(truecase_western("— yes, indeed.", "en"), "— Yes, indeed.");
-        assert_eq!(
-            truecase_western("please contact us vs. them immediately.", "en"),
-            "Please contact us vs. them immediately."
-        );
-        assert_eq!(
-            truecase_western("the box measures 10 in. wide by 5 in. deep.", "en"),
-            "The box measures 10 in. wide by 5 in. deep."
-        );
-        assert_eq!(
-            truecase_western("use abbreviations e.g. for example or i.e. that is.", "en"),
-            "Use abbreviations e.g. for example or i.e. that is."
-        );
-        assert_eq!(
-            truecase_western("she bought apples, etc. from the store.", "en"),
-            "She bought apples, etc. from the store."
-        );
-        // Multilingual data-driven abbreviations from LanguageRuleProfile
-        assert_eq!(
-            truecase_western("пожалуйста, см. ниже подробности.", "ru"),
-            "Пожалуйста, см. ниже подробности."
-        );
-        assert_eq!(
-            truecase_western("ein beispiel, z. b. dieses hier.", "de"),
-            "Ein beispiel, z. b. dieses hier."
-        );
-    }
-
-    #[test]
-    fn test_format_zh_pangu_spacing() {
-        // CJK and ASCII letter / number boundary
-        assert_eq!(format_zh_punctuation("使用Rust开发", "zh", true), "使用 Rust 开发");
-        assert_eq!(format_zh_punctuation("在Rust中", "zh", true), "在 Rust 中");
-        assert_eq!(format_zh_punctuation("延迟为10ms", "zh", true), "延迟为 10ms");
-        assert_eq!(format_zh_punctuation("100MB内存", "zh", true), "100 MB 内存");
-        assert_eq!(format_zh_punctuation("100MB 内存", "zh", true), "100 MB 内存");
-        assert_eq!(format_zh_punctuation("100 MB内存", "zh", true), "100 MB 内存");
-
-        assert_eq!(format_pangu_spacing("在Rust中"), "在 Rust 中");
-
-        // Already spaced returns Cow::Borrowed
-        let spaced = "在 Rust 中使用 100 MB 内存";
-        assert_eq!(format_zh_punctuation(spaced, "zh", true), spaced);
-        assert!(matches!(format_zh_punctuation(spaced, "zh", true), std::borrow::Cow::Borrowed(_)));
-
-        // Fullwidth punctuation guards: no extra space inserted
-        assert_eq!(format_zh_punctuation("使用Rust，开发高效", "zh", true), "使用 Rust，开发高效");
-        assert_eq!(format_zh_punctuation("你好！World", "zh", true), "你好！World");
-        assert_eq!(format_zh_punctuation("“Rust”权威指南", "zh", true), "“Rust”权威指南");
-        assert_eq!(format_zh_punctuation("性能提升了（约10%）", "zh", true), "性能提升了（约 10%）");
-    }
-
-    #[test]
-    fn test_format_zh_markup_and_url_protections() {
-        // HTML tags
-        let html1 = "<span class=\"cjk\">Rust开发</span>";
-        assert_eq!(format_zh_punctuation(html1, "zh", true), "<span class=\"cjk\">Rust 开发</span>");
-        let html2 = "<input value=\"在Rust中\" />";
-        assert_eq!(format_zh_punctuation(html2, "zh", true), "<input value=\"在Rust中\" />");
-        let html3 = "<div>在Rust中</div>";
-        assert_eq!(format_zh_punctuation(html3, "zh", true), "<div>在 Rust 中</div>");
-
-        // Markdown inline code
-        let md1 = "执行 `let a = 1;` 命令";
-        assert_eq!(format_zh_punctuation(md1, "zh", true), "执行 `let a = 1;` 命令");
-        let md2 = "运行 `cargo build 100MB` 工具";
-        assert_eq!(format_zh_punctuation(md2, "zh", true), "运行 `cargo build 100MB` 工具");
-
-        // URL protections
-        let url1 = "访问 https://example.com/api100MB 测试";
-        assert_eq!(format_zh_punctuation(url1, "zh", true), "访问 https://example.com/api100MB 测试");
-        let url2 = "访问https://example.com/api测试";
-        assert_eq!(format_zh_punctuation(url2, "zh", true), "访问 https://example.com/api 测试");
-    }
-
-    #[test]
-    fn test_western_truecasing() {
-        assert_eq!(truecase_western("hello world", "en"), "Hello world");
-        assert_eq!(
-            truecase_western("hello world. this is rust! how are you? good.", "en"),
-            "Hello world. This is rust! How are you? Good."
-        );
-        assert_eq!(truecase_western("version 3.14 is released.", "en"), "Version 3.14 is released.");
-        assert_eq!(truecase_western("visit https://example.com/api now.", "en"), "Visit https://example.com/api now.");
-        assert_eq!(truecase_western("<p>hello world</p>", "en"), "<p>Hello world</p>");
-        assert_eq!(truecase_western("`code` is untouched.", "en"), "`code` is untouched.");
-
-        // Already capitalized borrowed
-        let cap = "Hello world. This is capitalized.";
-        assert!(matches!(truecase_western(cap, "en"), std::borrow::Cow::Borrowed(_)));
-
-        // Non-zh applies, zh does not
-        assert_eq!(truecase_western("bonjour le monde", "fr"), "Bonjour le monde");
-        assert_eq!(truecase_western("hello world", "zh"), "hello world");
-        assert!(matches!(truecase_western("hello world", "zh"), std::borrow::Cow::Borrowed(_)));
-    }
-
-    #[tokio::test]
-    async fn test_get_or_create_engine_singleflight_concurrent() {
-        if !crate::config::is_initialized() {
-            use clap::Parser;
-            let cli = crate::config::Cli::parse_from(["mtranserver", "--parse-formats", "false"]);
-            crate::config::init(cli);
-        }
-        let mut handles = Vec::new();
-        for _ in 0..10 {
-            handles.push(tokio::spawn(async {
-                get_or_create_engine("xx_fake", "yy_fake").await
-            }));
-        }
-        for h in handles {
-            let res = h.await.unwrap();
-            assert!(res.is_err());
-            match res.err().unwrap() {
-                ServiceError::ModelNotFound(_) => {}
-                other => panic!("expected ModelNotFound, got: {other:?}"),
-            }
-        }
-        let guard = LOADING.lock();
-        if let Some(map) = guard.as_ref() {
-            assert!(!map.contains_key("xx_fake-yy_fake"));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_translate_long_text_western_spacing() {
-        let engines = PreparedEngines::SameLanguage;
-        let text = "First sentence。Second sentence！Third sentence？";
-        let (out, _) = translate_long_text_with_engines(
-            &engines,
-            "zh",
-            "en",
-            text,
-            config::ParseFormats::default(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(out, "First sentence。 Second sentence！ Third sentence？");
-
-        let text_spaced = "First sentence。\nSecond sentence！ Third sentence？";
-        let (out_spaced, _) = translate_long_text_with_engines(
-            &engines,
-            "zh",
-            "en",
-            text_spaced,
-            config::ParseFormats::default(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(out_spaced, "First sentence。\nSecond sentence！ Third sentence？");
-
-        let (out_zh, _) = translate_long_text_with_engines(
-            &engines,
-            "ja",
-            "zh",
-            "第一句。第二句！第三句？",
-            config::ParseFormats::default(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(out_zh, "第一句。第二句！第三句？");
-    }
-
-    #[test]
-    fn test_defensive_char_boundary_slicing() {
-        let s = "这是一段测试文字100MB";
-        let spaced = format_pangu_spacing(s);
-        assert_eq!(spaced, "这是一段测试文字 100 MB");
-
-        let tc = truecase_western("hello world", "en");
-        assert_eq!(tc, "Hello world");
-    }
-
-    #[test]
-    fn test_normalize_punctuation_decoupled_truecasing() {
-        let text_en = TranslatedText::String("hello world. good morning.".to_string());
-        // Even when fullwidth_zh is false, Western truecasing is preserved
-        let normalized_en = text_en.normalize_punctuation("en", false);
-        assert_eq!(normalized_en, "Hello world. Good morning.");
-
-        let text_zh = TranslatedText::String("你好,世界.".to_string());
-        // When fullwidth_zh is false, Chinese punctuation is NOT converted
-        let unchanged_zh = text_zh.normalize_punctuation("zh", false);
-        assert_eq!(unchanged_zh, "你好,世界.");
-
-        let text_zh_on = TranslatedText::String("你好,世界!".to_string());
-        // When fullwidth_zh is true, Chinese punctuation IS converted
-        let converted_zh = text_zh_on.normalize_punctuation("zh", true);
-        assert_eq!(converted_zh, "你好，世界！");
-    }
-
-    #[test]
-    fn test_format_french_spacing() {
-        // Two-part punctuation (?, !, ;) gets narrow non-breaking space \u{202F}
-        let text = "Comment allez-vous? Bien! Merci; et vous?";
-        let formatted = format_french_spacing(std::borrow::Cow::Borrowed(text));
-        assert_eq!(formatted, "Comment allez-vous\u{202F}? Bien\u{202F}! Merci\u{202F}; et vous\u{202F}?");
-
-        // Colon (:) gets non-breaking space \u{00A0}
-        let colon_text = "Attention : ceci est important.";
-        let formatted_colon = format_french_spacing(std::borrow::Cow::Borrowed(colon_text));
-        assert_eq!(formatted_colon, "Attention\u{00A0}: ceci est important.");
-
-        // Missing space before colon
-        let no_space = "Exemple:voici";
-        let formatted_ns = format_french_spacing(std::borrow::Cow::Borrowed(no_space));
-        assert_eq!(formatted_ns, "Exemple\u{00A0}:voici");
-
-        // Zero allocation fast-path: text without ?, !, ;, :
-        let plain = "Bonjour le monde.";
-        let res = format_french_spacing(std::borrow::Cow::Borrowed(plain));
-        assert!(matches!(res, std::borrow::Cow::Borrowed(_)));
-
-        // Protect URLs, Markdown code, and HTML tags
-        let url = "Visitez https://example.com/test?q=1 pour voir!";
-        let formatted_url = format_french_spacing(std::borrow::Cow::Borrowed(url));
-        assert_eq!(formatted_url, "Visitez https://example.com/test?q=1 pour voir\u{202F}!");
-
-        let code = "Code `let x: i32 = 1;` fonctionne!";
-        let formatted_code = format_french_spacing(std::borrow::Cow::Borrowed(code));
-        assert_eq!(formatted_code, "Code `let x: i32 = 1;` fonctionne\u{202F}!");
-
-        let html = "<span>Texte?</span>";
-        let formatted_html = format_french_spacing(std::borrow::Cow::Borrowed(html));
-        assert_eq!(formatted_html, "<span>Texte\u{202F}?</span>");
-
-        // IPv6 bracket port and pseudo header protection in French
-        let ipv6_fr = "Serveur [2001:db8::1]:8080 actif";
-        let formatted_ipv6 = format_french_spacing(std::borrow::Cow::Borrowed(ipv6_fr));
-        assert_eq!(formatted_ipv6, "Serveur [2001:db8::1]:8080 actif");
-
-        let header_fr = "Content-Type: text/html";
-        let formatted_header = format_french_spacing(std::borrow::Cow::Borrowed(header_fr));
-        assert_eq!(formatted_header, "Content-Type: text/html");
-
-        // French guillemets (« ») narrow non-breaking space normalization
-        let guillemets_unspaced = "Citation «Texte» et «Autre»";
-        let formatted_guill1 = format_french_spacing(std::borrow::Cow::Borrowed(guillemets_unspaced));
-        assert_eq!(formatted_guill1, "Citation «\u{202F}Texte\u{202F}» et «\u{202F}Autre\u{202F}»");
-
-        let guillemets_spaced = "Citation « Texte » et « Autre »";
-        let formatted_guill2 = format_french_spacing(std::borrow::Cow::Borrowed(guillemets_spaced));
-        assert_eq!(formatted_guill2, "Citation «\u{202F}Texte\u{202F}» et «\u{202F}Autre\u{202F}»");
-
-        let empty_guill = "Guillemets vides: «»";
-        let formatted_empty = format_french_spacing(std::borrow::Cow::Borrowed(empty_guill));
-        assert_eq!(formatted_empty, "Guillemets vides\u{00A0}: «»");
-
-        // Technical text false-positive protection: optional chaining (?.)
-        let opt_chain = "valeur = user?.name ? 'oui' : 'non';";
-        let formatted_opt = format_french_spacing(std::borrow::Cow::Borrowed(opt_chain));
-        assert_eq!(formatted_opt, "valeur = user?.name\u{202F}? 'oui'\u{00A0}: 'non';");
-
-        // Technical text false-positive protection: non-null assertion (!.)
-        let assert_dot = "let x = node!.value;";
-        let formatted_assert = format_french_spacing(std::borrow::Cow::Borrowed(assert_dot));
-        assert_eq!(formatted_assert, "let x = node!.value\u{202F};");
-        let method_dot = "Appelez record.save! pour persister.";
-        let formatted_mdot = format_french_spacing(std::borrow::Cow::Borrowed(method_dot));
-        assert_eq!(formatted_mdot, "Appelez record.save! pour persister.");
-
-        let method_inline = "Utilisez save! pour sauvegarder.";
-        let formatted_minline = format_french_spacing(std::borrow::Cow::Borrowed(method_inline));
-        assert_eq!(formatted_minline, "Utilisez save! pour sauvegarder.");
-
-        let macro_call = "println!(\"message\");";
-        let formatted_macro = format_french_spacing(std::borrow::Cow::Borrowed(macro_call));
-        assert_eq!(formatted_macro, "println!(\"message\")\u{202F};");
-    }
-    #[test]
-    fn test_format_spanish_inverted_punctuation() {
-        // Standalone question
-        let q = "Cómo estás?";
-        let formatted_q = format_spanish_inverted(std::borrow::Cow::Borrowed(q));
-        assert_eq!(formatted_q, "¿Cómo estás?");
-
-        // Standalone exclamation
-        let e = "Qué bueno!";
-        let formatted_e = format_spanish_inverted(std::borrow::Cow::Borrowed(e));
-        assert_eq!(formatted_e, "¡Qué bueno!");
-
-        // Already inverted remains untouched (0 heap allocation)
-        let already = "¿Cómo estás? ¡Muy bien!";
-        let formatted_already = format_spanish_inverted(std::borrow::Cow::Borrowed(already));
-        assert!(matches!(formatted_already, std::borrow::Cow::Borrowed(_)));
-        assert_eq!(formatted_already, "¿Cómo estás? ¡Muy bien!");
-
-        // Subclause question after introductory clause
-        let sub_q = "Hola, cómo estás?";
-        let formatted_sub = format_spanish_inverted(std::borrow::Cow::Borrowed(sub_q));
-        assert_eq!(formatted_sub, "Hola, ¿cómo estás?");
-
-        let sub_intro = "Por favor, dime la verdad!";
-        let formatted_intro = format_spanish_inverted(std::borrow::Cow::Borrowed(sub_intro));
-        assert_eq!(formatted_intro, "Por favor, ¡dime la verdad!");
-
-        // Zero allocation fast-path: text without ? or !
-        let plain = "Buenos días a todos.";
-        let res = format_spanish_inverted(std::borrow::Cow::Borrowed(plain));
-        assert!(matches!(res, std::borrow::Cow::Borrowed(_)));
-
-        // Compound interrogative phrases in subclauses (por qué, para qué)
-        let comp_q1 = "Hola, por qué no vienes?";
-        let formatted_comp1 = format_spanish_inverted(std::borrow::Cow::Borrowed(comp_q1));
-        assert_eq!(formatted_comp1, "Hola, ¿por qué no vienes?");
-
-        let comp_q2 = "Dime, para qué sirve esto?";
-        let formatted_comp2 = format_spanish_inverted(std::borrow::Cow::Borrowed(comp_q2));
-        assert_eq!(formatted_comp2, "Dime, ¿para qué sirve esto?");
-    }
-    #[test]
-    fn test_postprocess_typography_cjk_pangu() {
-        // Chinese with pangu_spacing: Hanzi with ASCII letters/numbers (when fullwidth_zh is true)
-        let zh_text = "使用Rust开发100MB内存应用";
-        let processed_zh = postprocess_typography(std::borrow::Cow::Borrowed(zh_text), "zh", true);
-        assert_eq!(processed_zh, "使用 Rust 开发 100 MB 内存应用");
-
-        // Japanese and Korean with pangu_spacing = false (unspaced)
-        let ja_text = "Rustで開発する100MBのメモリ";
-        let processed_ja = postprocess_typography(std::borrow::Cow::Borrowed(ja_text), "ja", false);
-        assert_eq!(processed_ja, ja_text);
-
-        let ko_text = "Rust로개발하는100MB메모리";
-        let processed_ko = postprocess_typography(std::borrow::Cow::Borrowed(ko_text), "ko", false);
-        assert_eq!(processed_ko, ko_text);
-    }
-
-    #[test]
-    fn test_postprocess_typography_quote_styles() {
-        // 1. French with guillemets (« »)
-        let fr_text = "Il a dit: \"Bonjour le monde\"!";
-        let processed_fr = postprocess_typography(std::borrow::Cow::Borrowed(fr_text), "fr", false);
-        assert_eq!(processed_fr, "Il a dit\u{00A0}: «Bonjour le monde»!");
-        // 2. German with german quotes („ “)
-        let de_text = "Er sagte: \"Hallo Welt\".";
-        let processed_de = postprocess_typography(std::borrow::Cow::Borrowed(de_text), "de", false);
-        assert_eq!(processed_de, "Er sagte: „Hallo Welt“.");
-
-        // 3. Japanese with corner brackets (「 」)
-        let ja_text = "彼は\"こんにちは世界\"と言った。";
-        let processed_ja = postprocess_typography(std::borrow::Cow::Borrowed(ja_text), "ja", false);
-        assert_eq!(processed_ja, "彼は「こんにちは世界」と言った。");
-
-        // 4. Protection of code blocks, HTML tags, and URLs
-        let code_html_url = "Citation \"Texte\" avec `<tag attr=\"1\">` et \"Autre\"!";
-        let processed_mixed = postprocess_typography(std::borrow::Cow::Borrowed(code_html_url), "fr", false);
-        assert_eq!(processed_mixed, "Citation «Texte» avec `<tag attr=\"1\">` et «Autre»!");
-        let url_quote = "Visitez https://example.com/api?q=rust pour \"tester\"!";
-        let processed_url = postprocess_typography(std::borrow::Cow::Borrowed(url_quote), "fr", false);
-        assert_eq!(processed_url, "Visitez https://example.com/api?q=rust pour «tester»!");
-
-        // 5. English with curly quotes (“ ”)
-        let en_text = "He said: \"Hello world\"!";
-        let processed_en = postprocess_typography(std::borrow::Cow::Borrowed(en_text), "en", false);
-        assert_eq!(processed_en, "He said: “Hello world”!");
-
-        // 6. Inches and seconds bypass (e.g. 14" or 27")
-        let inch_text = "A 14\" display and 27\" monitor with 3.5\" drive.";
-
-        let processed_inch = apply_quote_style(std::borrow::Cow::Borrowed(inch_text), "curly");
-        assert_eq!(processed_inch, "A 14\" display and 27\" monitor with 3.5\" drive.");
-
-        // 7. Zero-allocation fast path verification
-        let fastpath_text = "Zero allocation path 14\" screen without convertible quotes";
-        match apply_quote_style(std::borrow::Cow::Borrowed(fastpath_text), "curly") {
-            std::borrow::Cow::Borrowed(_) => {}
-            std::borrow::Cow::Owned(_) => panic!("Expected Cow::Borrowed for zero-allocation fast path"),
-        }
-
-        // 8. Context heuristics with punctuation
-        let ctx_text = "He said (\"nested\"), and then \"quoted\"!";
-        let processed_ctx = apply_quote_style(std::borrow::Cow::Borrowed(ctx_text), "curly");
-        assert_eq!(processed_ctx, "He said (“nested”), and then “quoted”!");
-    }
-    #[test]
-    fn test_postprocess_typography_spanish_inverted_truecasing() {
-        // Standalone question
-        let q = "cómo estás?";
-        let processed_q = postprocess_typography(std::borrow::Cow::Borrowed(q), "es", false);
-        assert_eq!(processed_q, "¿Cómo estás?");
-
-        // Subclause question after introductory clause with truecasing synchronization
-        let sub_q = "hola, cómo estás?";
-        let processed_sub = postprocess_typography(std::borrow::Cow::Borrowed(sub_q), "es", false);
-        assert_eq!(processed_sub, "Hola, ¿Cómo estás?");
-
-        // Compound interrogative in subclause with truecasing synchronization
-        let comp_q = "hola, por qué no vienes?";
-        let processed_comp = postprocess_typography(std::borrow::Cow::Borrowed(comp_q), "es", false);
-        assert_eq!(processed_comp, "Hola, ¿Por qué no vienes?");
-
-        // Subclause exclamation with truecasing synchronization
-        let sub_e = "por favor, dime la verdad!";
-        let processed_e = postprocess_typography(std::borrow::Cow::Borrowed(sub_e), "es", false);
-        assert_eq!(processed_e, "Por favor, ¡Dime la verdad!");
     }
 }

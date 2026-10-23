@@ -1,12 +1,11 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fs;
-use std::io::Write;
 use std::thread;
 
 use clap::Parser;
 use mtranserver_lib::engine::markup::split::{
-    split_long_sentence_semantic_with_profile, split_sentences, split_sentences_with_profile,
+    split_long_sentence_semantic_with_profile, split_sentences,
 };
 use mtranserver_lib::engine::markup::{
     extract_inline_markup, extract_unified_inline, InlineParseOptions,
@@ -19,7 +18,6 @@ use mtranserver_lib::engine::sentencepiece::{
 };
 use mtranserver_lib::engine::shortlist::{Shortlist, ShortlistPolicy};
 use mtranserver_lib::engine::tensor::{ops, Tensor2};
-use mtranserver_lib::engine::EngineError;
 use mtranserver_lib::service::detector::InlineLang;
 use mtranserver_lib::utils::cache::{
     clear, compute_key, contains, get, init, invalidate, len, set,

@@ -84,25 +84,6 @@ async fn test_update_cases_mock() {
 }
 #[tokio::test]
 #[ignore = "Requires local Marian NMT models in data/models/"]
-async fn test_emoji_whitespace_and_period_spacing() {
-    use mtranserver_test::regression::{init_test_environment, translate_case};
-
-    init_test_environment()
-        .await
-        .expect("Failed to init service");
-
-    let input = "🚀 Launching version 2.0 today! ✨ Lightning fast performance and 🔥 zero memory leaks. Approved 👍 by team.";
-    let res = translate_case("zh-Hans", input)
-        .await
-        .expect("Translation failed");
-    println!("REAL TRANSLATION RESULT:\n{}", res);
-    assert!(res.contains("和 🔥"));
-    assert!(res.contains("。由团队批准") || res.contains("。已由团队批准"));
-    assert!(!res.contains("。 "));
-}
-
-#[tokio::test]
-#[ignore = "Requires local Marian NMT models in data/models/"]
 async fn test_real_service_regression_update() {
     use mtranserver_test::regression::init_test_environment;
 

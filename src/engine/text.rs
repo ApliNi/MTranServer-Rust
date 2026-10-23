@@ -178,51 +178,70 @@ pub fn normalize_academic_and_special_symbols(text: &str) -> Cow<'_, str> {
 
 
 
-/// Hide emoji characters behind [EE<i>] placeholders.
+/// Hide emoji characters and template interpolation variables `{{...}}` behind `[EE<i>]` placeholders.
 pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
-    // Fast path: emoji codepoints are all >= U+2600. In UTF-8, any code point
-    // >= U+2600 begins with a lead byte >= 0xE2. If all bytes are < 0xE2,
-    // the text cannot contain any emojis, bypassing character iteration.
-    if !text.as_bytes().iter().any(|&b| b >= 0xE2) {
+    let has_emoji_lead = text.as_bytes().iter().any(|&b| b >= 0xE2);
+    let has_template = text.contains("{{");
+    if !has_emoji_lead && !has_template {
         return (Cow::Borrowed(text), vec![]);
     }
 
-    // Single-pass scanner: find the first emoji. If none exists, return borrowed
-    // text without any intermediate allocations or redundant passes.
-    let mut char_indices = text.char_indices();
-    let mut first_emoji_idx = None;
-    let mut first_emoji_char = '\0';
-    for (idx, c) in char_indices.by_ref() {
-        if is_emoji(c) {
-            first_emoji_idx = Some(idx);
-            first_emoji_char = c;
-            break;
-        }
-    }
-
-    let start_idx = match first_emoji_idx {
-        Some(idx) => idx,
-        None => return (Cow::Borrowed(text), vec![]),
-    };
-
+    let bytes = text.as_bytes();
+    let len = bytes.len();
     let mut replacements: Vec<String> = Vec::new();
-    let mut clean = String::with_capacity(text.len() + 16);
-    clean.push_str(&text[..start_idx]);
+    let mut clean = String::with_capacity(len + 16);
+    let mut i = 0;
+    let mut last = 0;
 
-    clean.push_str("[EE0]");
-    replacements.push(first_emoji_char.to_string());
-
-    for (_idx, c) in char_indices {
-        if is_emoji(c) {
-            clean.push_str("[EE");
-            push_usize(&mut clean, replacements.len());
-            clean.push(']');
-            replacements.push(c.to_string());
-        } else {
-            clean.push(c);
+    while i < len {
+        if has_template && bytes[i] == b'{' && i + 1 < len && bytes[i + 1] == b'{' {
+            if let Some(pos) = text[i + 2..].find("}}") {
+                let end = i + 2 + pos + 2;
+                let inner = &text[i + 2..end - 2];
+                if !inner.contains('\n') && !inner.contains('\r') {
+                    if i > last {
+                        clean.push_str(&text[last..i]);
+                    }
+                    clean.push_str("[EE");
+                    push_usize(&mut clean, replacements.len());
+                    clean.push(']');
+                    replacements.push(text[i..end].to_string());
+                    i = end;
+                    last = end;
+                    continue;
+                }
+            }
         }
+
+        if has_emoji_lead && bytes[i] >= 0xE2 {
+            if let Some(c) = text[i..].chars().next() {
+                if is_emoji(c) {
+                    if i > last {
+                        clean.push_str(&text[last..i]);
+                    }
+                    clean.push_str("[EE");
+                    push_usize(&mut clean, replacements.len());
+                    clean.push(']');
+                    replacements.push(c.to_string());
+                    let c_len = c.len_utf8();
+                    i += c_len;
+                    last = i;
+                    continue;
+                }
+            }
+        }
+
+        let c_len = text[i..].chars().next().map_or(1, |c| c.len_utf8());
+        i += c_len;
     }
 
+    if replacements.is_empty() {
+        return (Cow::Borrowed(text), vec![]);
+    }
+
+    if last < len {
+        clean.push_str(&text[last..]);
+    }
     (Cow::Owned(clean), replacements)
 }
 
@@ -997,6 +1016,22 @@ fn push_usize(buf: &mut String, mut n: usize) {
         tmp[..len].reverse();
         // SAFETY: only ASCII digits
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&tmp[..len]) });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hide_and_restore_placeholders() {
+        let input = "set SECRET=\"{{APP_SECRET_KEY}}\" and emoji 👋 done.";
+        let (clean, repls) = hide_emojis(input);
+        assert_eq!(clean, "set SECRET=\"[EE0]\" and emoji [EE1] done.");
+        assert_eq!(repls, vec!["{{APP_SECRET_KEY}}".to_string(), "👋".to_string()]);
+
+        let restored = restore_emojis_with_source_and_spans(&clean, &repls, input, &mut []);
+        assert_eq!(restored, input);
     }
 }
 
