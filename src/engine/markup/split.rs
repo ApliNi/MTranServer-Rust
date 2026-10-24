@@ -746,209 +746,6 @@ pub const DEFAULT_MIN_CHUNK_LEN: usize = 20;
 /// Default minimum chunk character length for CJK languages (ideographic density is ~3x higher).
 pub const DEFAULT_CJK_MIN_CHUNK_LEN: usize = 5;
 
-#[inline]
-fn is_word_boundary_at_split(text: &str, pos: usize) -> bool {
-    match text.get(pos..).and_then(|s| s.chars().next()) {
-        Some(c) => !c.is_alphanumeric() && c != '_',
-        None => true,
-    }
-}
-
-/// Check if a word is recognized as a verb, considering language-specific morphology and exceptions.
-#[inline]
-fn is_predicate_verb_token(word: &str, profile: Option<&LanguageRuleProfile>) -> bool {
-    if word.is_empty() {
-        return false;
-    }
-    if let Some(prof) = profile {
-        if prof.is_predicate_verb(word) {
-            return true;
-        }
-        let len = word.len();
-        if len >= 5 {
-            if word.ends_with("ed") || word.ends_with("ED") {
-                let lower = word.to_ascii_lowercase();
-                if prof.is_non_verb_ed(&lower) {
-                    return false;
-                }
-                return true;
-            }
-            if word.ends_with("ing") || word.ends_with("ING") {
-                let lower = word.to_ascii_lowercase();
-                if prof.is_non_verb_ing(&lower) {
-                    return false;
-                }
-                return true;
-            }
-            if word.ends_with("ize") || word.ends_with("ise") || word.ends_with("ify") {
-                return true;
-            }
-        }
-    }
-
-    // Fallback: check global registry for any registered language verb
-    if RuleRegistry::global().is_predicate_verb(word) {
-        return true;
-    }
-
-    let len = word.len();
-    if len >= 5 {
-        if word.ends_with("ed") || word.ends_with("ED") {
-            const DEFAULT_NON_VERB_ED: &[&str] = &[
-                "naked", "sacred", "hundred", "wicked", "tired", "bed", "red", "sled", "shed",
-            ];
-            for &nv in DEFAULT_NON_VERB_ED {
-                if word.eq_ignore_ascii_case(nv) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if word.ends_with("ing") || word.ends_with("ING") {
-            const DEFAULT_NON_VERB_ING: &[&str] = &[
-                "morning", "evening", "something", "nothing", "anything", "everything",
-                "building", "ceiling", "feeling", "meeting", "meaning", "painting",
-                "training", "wedding", "string", "spring", "king", "ring", "wing", "thing",
-            ];
-            for &nv in DEFAULT_NON_VERB_ING {
-                if word.eq_ignore_ascii_case(nv) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if word.ends_with("ize") || word.ends_with("ise") || word.ends_with("ify") {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Check if a clause segment contains any predicate verb.
-#[inline]
-fn contains_predicate_verb(clause: &str, profile: Option<&LanguageRuleProfile>) -> bool {
-    for raw_word in clause.split_whitespace() {
-        let clean_word = raw_word.trim_matches(|c: char| !c.is_alphabetic());
-        if clean_word.is_empty() {
-            continue;
-        }
-        if is_predicate_verb_token(clean_word, profile) {
-            return true;
-        }
-    }
-    for c in clause.chars() {
-        if super::is_cjk_character(c) {
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            if let Some(prof) = profile {
-                if prof.is_predicate_verb(s) {
-                    return true;
-                }
-            }
-            if RuleRegistry::global().is_predicate_verb(s) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// Guard against treating Oxford comma and parallel noun lists as major clauses (Tier 3).
-#[inline]
-fn is_parallel_coordination_guard(after: &str, profile: Option<&LanguageRuleProfile>) -> bool {
-    let trimmed = after.trim_start_matches(|c: char| {
-        c.is_whitespace()
-            || is_closing_bracket_or_quote(c)
-            || matches!(c, '"' | '\'' | '“' | '”' | '‘' | '’' | '「' | '『' | '«' | '»')
-    });
-
-    // Check coordinating conjunction prefixes across English, German, French, Spanish, Russian
-    let (is_coord, rest_after_conj) = if let Some(rest) = trimmed.strip_prefix("and") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("AND") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("or") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("OR") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("nor") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("NOR") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("und") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("UND") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("oder") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("ODER") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("et") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("ET") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("ou") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("OU") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("y") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("Y") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("o") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("O") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("или") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("Или") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("ИЛИ") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("и") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else if let Some(rest) = trimmed.strip_prefix("И") {
-        if is_word_boundary_at_split(rest, 0) { (true, rest) } else { (false, "") }
-    } else {
-        (false, "")
-    };
-
-    if !is_coord {
-        return false;
-    }
-
-    let rest_clause = rest_after_conj.trim_start();
-    let clause_end = rest_clause
-        .find(|c: char| {
-            matches!(
-                c,
-                ',' | ';'
-                    | ':'
-                    | '.'
-                    | '!'
-                    | '?'
-                    | '\n'
-                    | '\r'
-                    | '—'
-                    | '–'
-                    | '，'
-                    | '。'
-                    | '！'
-                    | '？'
-                    | '；'
-                    | '؟'
-                    | '۔'
-                    | '؛'
-                    | '،'
-                    | '׃'
-            )
-        })
-        .unwrap_or(rest_clause.len());
-    let clause = &rest_clause[..clause_end];
-
-    !contains_predicate_verb(clause, profile)
-}
 
 /// Check if string starts with an English conjunction/clause marker on a word boundary without heap allocation.
 #[inline]
@@ -1125,10 +922,9 @@ fn find_best_semantic_split_candidate(
             let sep_end = consume_while(text, punct_end, |nc| nc.is_whitespace() && nc != '\n' && nc != '\r');
             let is_conj = is_conjunction_clause_marker(text.get(sep_end..).unwrap_or(""), profile)
                 || is_japanese_head_final_clause_marker(text.get(..i).unwrap_or(""));
-            let is_coord_guard = is_parallel_coordination_guard(text.get(sep_end..).unwrap_or(""), profile);
-            let tier = if is_conj && !is_coord_guard {
+            let tier = if is_conj {
                 SemanticSplitTier::ConjunctionClause
-            } else if c == '、' || is_coord_guard {
+            } else if c == '、' {
                 SemanticSplitTier::EnumerationComma
             } else {
                 SemanticSplitTier::MinorComma
@@ -1153,11 +949,8 @@ fn find_best_semantic_split_candidate(
                 let punct_end = consume_while(text, i + 1, is_closing_bracket_or_quote);
                 let sep_end = consume_while(text, punct_end, |nc| nc.is_whitespace() && nc != '\n' && nc != '\r');
                 let is_conj = is_conjunction_clause_marker(text.get(sep_end..).unwrap_or(""), profile);
-                let is_coord_guard = is_parallel_coordination_guard(text.get(sep_end..).unwrap_or(""), profile);
-                let tier = if is_conj && !is_coord_guard {
+                let tier = if is_conj {
                     SemanticSplitTier::ConjunctionClause
-                } else if is_coord_guard {
-                    SemanticSplitTier::EnumerationComma
                 } else {
                     SemanticSplitTier::MinorComma
                 };
@@ -2891,14 +2684,6 @@ mod tests {
     }
 
     #[test]
-    fn test_oxford_comma_and_parallel_nouns_guard() {
-        let text_oxford = "I purchased apples, oranges, and bananas at the supermarket yesterday morning.";
-        let parts = split_long_sentence_semantic(text_oxford, 50);
-        assert_eq!(reassemble_sentences(&parts), text_oxford);
-        assert!(!parts.iter().any(|p| p.text.ends_with("oranges,") && p.separator == " "));
-    }
-
-    #[test]
     fn test_min_chunk_len_avoids_short_fragments() {
         let text = "Hi, this is a detailed explanation of our system architecture and deployment pipeline.";
         let parts = split_long_sentence_semantic(text, 45);
@@ -3046,34 +2831,6 @@ mod tests {
         fuse_discourse_chunks_with_profile(&mut en_sents, 100, None);
         assert_eq!(en_sents.len(), 1);
         assert_eq!(en_sents[0].text, "The system is running. However it needs attention.");
-    }
-
-    #[test]
-    fn test_parallel_coordination_guard_multilingual() {
-        // English: "and" without verb guards against splitting
-        assert!(is_parallel_coordination_guard("and oranges, bananas", None));
-        // English: "and" with predicate verb does not guard
-        assert!(!is_parallel_coordination_guard("and she went home", None));
-
-        // German: "und" / "oder"
-        assert!(is_parallel_coordination_guard("und Orangen, Birnen", None));
-        assert!(is_parallel_coordination_guard("oder Bananen", None));
-        assert!(!is_parallel_coordination_guard("und sie geht nach Hause", None));
-
-        // French: "et" / "ou"
-        assert!(is_parallel_coordination_guard("et des oranges", None));
-        assert!(is_parallel_coordination_guard("ou des bananes", None));
-        assert!(!is_parallel_coordination_guard("et elle va à la maison", None));
-
-        // Spanish: "y" / "o"
-        assert!(is_parallel_coordination_guard("y manzanas", None));
-        assert!(is_parallel_coordination_guard("o peras", None));
-        assert!(!is_parallel_coordination_guard("y ella va a la casa", None));
-
-        // Russian: "и" / "или"
-        assert!(is_parallel_coordination_guard("и апельсины", None));
-        assert!(is_parallel_coordination_guard("или бананы", None));
-        assert!(!is_parallel_coordination_guard("и она идет домой", None));
     }
 
     #[test]

@@ -121,16 +121,13 @@ pub fn mapped_separator<'a>(sep: &'a str, target_lang: &str) -> &'a str {
         .unwrap_or(sep)
 }
 
-/// Normalizes typographical variants, academic symbols, superscripts/subscripts,
-/// and zero-width markers that can trigger byte-fallback tokenization loops.
+/// Normalizes typographical variants, academic symbols, and zero-width markers
+/// that can trigger byte-fallback tokenization loops.
 pub fn normalize_academic_and_special_symbols(text: &str) -> Cow<'_, str> {
     let has_special = text.chars().any(|c| {
         matches!(
             c,
             '∗' | '•' | '‧'
-                | '¹' | '²' | '³'
-                | '⁰'..='⁹'
-                | '₀'..='₉'
                 | '\u{200B}'
                 | '\u{FEFF}'
                 | '\u{2060}'
@@ -147,25 +144,6 @@ pub fn normalize_academic_and_special_symbols(text: &str) -> Cow<'_, str> {
             '∗' | '•' | '‧' => {
                 out.push('*');
             }
-            '¹' => out.push('1'),
-            '²' => out.push('2'),
-            '³' => out.push('3'),
-            '⁴' => out.push('4'),
-            '⁵' => out.push('5'),
-            '⁶' => out.push('6'),
-            '⁷' => out.push('7'),
-            '⁸' => out.push('8'),
-            '⁹' => out.push('9'),
-            '₀' => out.push('0'),
-            '₁' => out.push('1'),
-            '₂' => out.push('2'),
-            '₃' => out.push('3'),
-            '₄' => out.push('4'),
-            '₅' => out.push('5'),
-            '₆' => out.push('6'),
-            '₇' => out.push('7'),
-            '₈' => out.push('8'),
-            '₉' => out.push('9'),
             '\u{200B}' | '\u{FEFF}' | '\u{2060}' => {}
             _ => {
                 out.push(c);
@@ -406,109 +384,6 @@ pub fn restore_emojis_with_source_and_spans<'a>(
         }
     }
 }
-
-/// Language-specific post-processing to clean up model artifacts,
-/// Devanagari transliteration compound stitching, and structural title preservation.
-pub fn postprocess_translation_by_language_with_spans<'a>(
-    text: &'a str,
-    source_text: &str,
-    _source_lang: &str,
-    target_lang: &str,
-    spans: &mut [std::ops::Range<usize>],
-) -> Cow<'a, str> {
-    let mut modified = text.to_string();
-    let mut changed = false;
-
-    let mut apply_one = |cur_str: &str, pos: usize, old_len: usize, rep: &str| -> String {
-        if !spans.is_empty() {
-            let delta = [(pos, old_len, rep.len())];
-            remap_spans(spans, &delta);
-        }
-        let mut new_str = cur_str.to_string();
-        new_str.replace_range(pos..pos + old_len, rep);
-        new_str
-    };
-
-    let profile_opt = crate::engine::rules::RuleRegistry::global().get(target_lang);
-    let preserve_title = profile_opt
-        .as_ref()
-        .map_or(true, |p| p.postprocess().preserve_title_prefix);
-
-    if preserve_title {
-        if let Some(colon_pos) = source_text.find(':') {
-            let prefix = source_text[..colon_pos].trim();
-            if !prefix.is_empty()
-                && prefix.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-                && !prefix.ends_with('s')
-                && !prefix.ends_with('S')
-            {
-                let spurious_colon = format!("{prefix}s:");
-                let spurious_full_colon = format!("{prefix}s：");
-                let target_colon = format!("{prefix}:");
-                let target_full_colon = format!("{prefix}：");
-
-                while let Some(pos) = modified.find(&spurious_colon) {
-                    modified = apply_one(&modified, pos, spurious_colon.len(), &target_colon);
-                    changed = true;
-                }
-                while let Some(pos) = modified.find(&spurious_full_colon) {
-                    modified = apply_one(&modified, pos, spurious_full_colon.len(), &target_full_colon);
-                    changed = true;
-                }
-                let spurious_space = format!("{prefix}s ");
-                let target_space = format!("{prefix} ");
-                if modified.starts_with(&spurious_space) {
-                    modified = apply_one(&modified, 0, spurious_space.len(), &target_space);
-                    changed = true;
-                }
-            }
-        }
-    }
-
-    let mut replace_all = |cur_str: &str, from: &str, to: &str| -> (String, bool) {
-        let mut s = cur_str.to_string();
-        let mut any_done = false;
-        while let Some(pos) = s.find(from) {
-            s = apply_one(&s, pos, from.len(), to);
-            any_done = true;
-        }
-        (s, any_done)
-    };
-
-    if let Some(profile) = profile_opt {
-        for (from, to) in &profile.postprocess().replacements {
-            if modified.contains(from.as_str()) {
-                let (res, c) = replace_all(&modified, from, to);
-                modified = res;
-                changed |= c;
-            }
-        }
-    }
-
-    if changed {
-        Cow::Owned(modified)
-    } else {
-        Cow::Borrowed(text)
-    }
-}
-
-pub fn postprocess_translation_by_language<'a>(
-    text: &'a str,
-    source_text: &str,
-    source_lang: &str,
-    target_lang: &str,
-) -> Cow<'a, str> {
-    let mut dummy_spans = [];
-    postprocess_translation_by_language_with_spans(
-        text,
-        source_text,
-        source_lang,
-        target_lang,
-        &mut dummy_spans,
-    )
-}
-
-
 
 #[inline(always)]
 fn is_emoji(c: char) -> bool {

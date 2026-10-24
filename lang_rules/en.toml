@@ -16,42 +16,6 @@ quote_style = "curly"
 [syntax]
 clustering_gap_threshold = 3
 head_direction = "head_initial"
-predicate_verbs = [
-    "is", "are", "was", "were", "am", "be", "been", "being", "has", "have", "had", "having",
-    "do", "does", "did", "done", "will", "would", "shall", "should", "can", "could", "may",
-    "might", "must", "say", "says", "said", "go", "goes", "went", "gone", "make", "makes",
-    "made", "get", "gets", "got", "gotten", "know", "knows", "knew", "known", "take",
-    "takes", "took", "taken", "see", "sees", "saw", "seen", "come", "comes", "came",
-    "think", "thinks", "thought", "look", "looks", "looked", "want", "wants", "wanted",
-    "give", "gives", "gave", "given", "use", "uses", "used", "find", "finds", "found",
-    "tell", "tells", "told", "ask", "asks", "asked", "work", "works", "worked", "seem",
-    "seems", "seemed", "feel", "feels", "felt", "try", "tries", "tried", "leave", "leaves",
-    "left", "call", "calls", "called", "keep", "keeps", "kept", "hold", "holds", "held",
-    "bring", "brings", "brought", "begin", "begins", "began", "begun", "show", "shows",
-    "showed", "shown", "hear", "hears", "heard", "play", "plays", "played", "run", "runs",
-    "ran", "move", "moves", "moved", "like", "likes", "liked", "live", "lives", "lived",
-    "believe", "believes", "believed", "receive", "receives", "received", "establish",
-    "establishes", "established", "process", "processes", "processed", "defeat", "defeats",
-    "defeated", "provide", "provides", "provided", "include", "includes", "included",
-    "continue", "continues", "continued", "set", "sets", "learn", "learns", "learned",
-    "learnt", "change", "changes", "changed", "lead", "leads", "led", "understand",
-    "understands", "understood", "watch", "watches", "watched", "follow", "follows",
-    "followed", "stop", "stops", "stopped", "create", "creates", "created", "speak",
-    "speaks", "spoke", "spoken", "read", "reads", "allow", "allows", "allowed", "add",
-    "adds", "added", "spend", "spends", "spent", "grow", "grows", "grew", "grown", "open",
-    "opens", "opened", "walk", "walks", "walked", "win", "wins", "won", "offer", "offers",
-    "offered", "buy", "buys", "bought", "wait", "waits", "waited", "sell", "sells", "sold",
-    "build", "builds", "built", "send", "sends", "sent", "stay", "stays", "stayed", "fall",
-    "falls", "fell", "fallen", "cut", "cuts",
-]
-non_verb_ed = [
-    "naked", "sacred", "hundred", "wicked", "tired", "bed", "red", "sled", "shed",
-]
-non_verb_ing = [
-    "morning", "evening", "something", "nothing", "anything", "everything",
-    "building", "ceiling", "feeling", "meeting", "meaning", "painting",
-    "training", "wedding", "string", "spring", "king", "ring", "wing", "thing",
-]
 
 [hyphenation]
 prefixes = [

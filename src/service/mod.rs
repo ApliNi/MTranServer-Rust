@@ -2873,35 +2873,14 @@ pub fn format_spanish_inverted<'a>(text: std::borrow::Cow<'a, str>) -> std::borr
                 };
 
                 if !already_has {
-                    let mut insert_pos = None;
-                    if let Some(&(sep_pos, clause_start)) = clause_starts.last() {
-                        if clause_start < i {
-                            let clause_slice = &s[clause_start..i];
-                            let first_word = extract_first_spanish_word(clause_slice);
-                            let word_before = extract_last_spanish_word(&s[current_sentence_start..sep_pos]);
-                            let sep_ch = s[sep_pos..].chars().next().unwrap_or(',');
-                            let clause_match = if is_question {
-                                starts_with_spanish_compound_interrogative(clause_slice)
-                                    || is_spanish_interrogative(first_word)
-                                    || is_spanish_introductory(word_before)
-                                    || sep_ch == ':'
-                                    || sep_ch == ';'
-                            } else {
-                                is_spanish_exclamatory(first_word)
-                                    || is_spanish_introductory(word_before)
-                                    || sep_ch == ':'
-                                    || sep_ch == ';'
-                            };
-                            if clause_match {
-                                insert_pos = Some(clause_start);
-                            }
-                        }
-                    }
+                    let insert_pos = clause_starts
+                        .last()
+                        .map(|&(_, start)| start)
+                        .filter(|&start| start < i);
 
                     let target_pos = insert_pos.unwrap_or_else(|| {
                         find_sentence_content_start(s, current_sentence_start, i)
                     });
-
                     if target_pos <= i {
                         insertions.push((target_pos, if is_question { '¿' } else { '¡' }));
                     }
@@ -2989,62 +2968,6 @@ fn find_sentence_content_start(s: &str, sentence_start: usize, max_pos: usize) -
     idx.min(max_pos)
 }
 
-#[inline]
-fn extract_first_spanish_word(s: &str) -> &str {
-    let trimmed = s.trim_start();
-    let word_len = trimmed
-        .char_indices()
-        .find(|&(_, c)| c.is_whitespace() || matches!(c, ',' | '.' | '?' | '!' | ':' | ';' | '¿' | '¡' | '(' | ')' | '[' | ']' | '"' | '\''))
-        .map(|(idx, _)| idx)
-        .unwrap_or(trimmed.len());
-    &trimmed[..word_len]
-}
-
-#[inline]
-fn extract_last_spanish_word(s: &str) -> &str {
-    let trimmed = s.trim_end();
-    let word_start = trimmed
-        .char_indices()
-        .rfind(|&(_, c)| c.is_whitespace() || matches!(c, ',' | '.' | '?' | '!' | ':' | ';' | '¿' | '¡' | '(' | ')' | '[' | ']' | '"' | '\''))
-        .map(|(idx, ch)| idx + ch.len_utf8())
-        .unwrap_or(0);
-    &trimmed[word_start..]
-}
-
-/// Matches common Spanish compound interrogative phrases at the beginning of a clause
-/// (e.g. `por qué`, `para qué`, `de dónde`, `a quién`), ensuring that the inverted question mark
-/// `¿` is placed at the start of the interrogative clause rather than falling back to sentence start.
-#[inline]
-fn starts_with_spanish_compound_interrogative(clause: &str) -> bool {
-    if let Some(prof) = crate::engine::rules::RuleRegistry::global().profile("es") {
-        return prof.starts_with_spanish_compound_interrogative(clause);
-    }
-    false
-}
-
-#[inline]
-fn is_spanish_interrogative(word: &str) -> bool {
-    if let Some(prof) = crate::engine::rules::RuleRegistry::global().profile("es") {
-        return prof.is_spanish_interrogative(word);
-    }
-    false
-}
-
-#[inline]
-fn is_spanish_exclamatory(word: &str) -> bool {
-    if let Some(prof) = crate::engine::rules::RuleRegistry::global().profile("es") {
-        return prof.is_spanish_exclamatory(word);
-    }
-    false
-}
-
-#[inline]
-fn is_spanish_introductory(word: &str) -> bool {
-    if let Some(prof) = crate::engine::rules::RuleRegistry::global().profile("es") {
-        return prof.is_spanish_introductory(word);
-    }
-    false
-}
 
 #[inline]
 fn is_opening_punctuation(c: char) -> bool {

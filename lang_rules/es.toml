@@ -11,41 +11,11 @@ no_repeat_ngram_size = 3
 [typography]
 spanish_inverted = true
 quote_style = "curly"
-inverted_compounds = [
-    "por qué", "por que", "para qué", "para que", "por dónde", "por donde", "para dónde", "para donde",
-    "por quién", "por quien", "por quiénes", "por quienes", "para quién", "para quien", "para quiénes", "para quienes",
-    "para cuándo", "para cuando", "de qué", "de que", "de dónde", "de donde", "de quién", "de quien",
-    "de quiénes", "de quienes", "de cuál", "de cual", "de cuáles", "de cuales", "de cuánto", "de cuanto",
-    "desde dónde", "desde donde", "desde cuándo", "desde cuando", "a qué", "a que", "a dónde", "a donde",
-    "a quién", "a quien", "a quiénes", "a quienes", "a cuál", "a cual", "a cuáles", "a cuales",
-    "a cuánto", "a cuanto", "a cuántos", "a cuantos", "a cuántas", "a cuantas", "hacia dónde", "hacia donde",
-    "hasta dónde", "hasta donde", "hasta cuándo", "hasta cuando", "en qué", "en que", "en dónde", "en donde",
-    "con qué", "con que", "con quién", "con quien", "con quiénes", "con quienes", "con cuál", "con cual",
-    "con cuáles", "con cuales", "con cuánto", "con cuanto",
-]
-interrogatives = [
-    "qué", "que", "cómo", "como", "cuándo", "cuando", "dónde", "donde",
-    "quién", "quien", "quiénes", "quienes", "cuál", "cual", "cuáles", "cuales",
-    "por qué", "porque", "adónde", "adonde", "cuánto", "cuanto",
-    "cuánta", "cuanta", "cuántos", "cuantos", "cuántas", "cuantas", "acaso",
-]
-exclamatories = [
-    "qué", "que", "cómo", "como", "cuánto", "cuanto",
-    "cuánta", "cuanta", "cuántos", "cuantos", "vaya", "ojalá", "dios", "cielos",
-]
-introductory_words = [
-    "hola", "oye", "mira", "por favor", "favor", "dime", "dinos",
-    "disculpa", "perdona", "bueno", "pero", "y", "entonces",
-]
 
 
 [syntax]
 clustering_gap_threshold = 3
 head_direction = "head_initial"
-predicate_verbs = [
-    "es", "son", "era", "eran", "fue", "fueron", "tiene", "tienen", "está", "están", "hay",
-]
-
 [discourse]
 discourse_starters = [
     # Pronombres anafóricos y variantes acentuadas
@@ -105,11 +75,3 @@ conditional_end_prefixes = [
 
 [detection]
 distinctive_chars = ['ñ', 'Ñ', '¡', '¿']
-
-[postprocess]
-preserve_title_prefix = true
-replacements = [
-    ["Frambuesa Pi Ltd", "Raspberry Pi Ltd"],
-    ["Frambuesa Pi", "Raspberry Pi"],
-    ["frambuesa pi", "Raspberry Pi"],
-]

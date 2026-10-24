@@ -603,25 +603,15 @@ impl CompiledDetectionModel {
         if let Some(prof) = profiles.get("nb") {
             if let Some(det) = &prof.detection {
                 scand_ae_oe.extend_from_slice(&det.distinctive_chars);
-                for term in &det.substring_terms {
-                    if matches!(term.as_str(), "heter" | "nydelig" | "vakre") {
-                        scand_nb_terms.push(term.clone());
-                    } else {
-                        nb_terms.push(term.clone());
-                    }
-                }
+                nb_terms.extend_from_slice(&det.substring_terms);
+                scand_nb_terms.extend_from_slice(&det.substring_terms);
             }
         }
         if let Some(prof) = profiles.get("da") {
             if let Some(det) = &prof.detection {
                 scand_ae_oe.extend_from_slice(&det.distinctive_chars);
-                for term in &det.substring_terms {
-                    if matches!(term.as_str(), "hedder" | "hvad") {
-                        scand_da_terms.push(term.clone());
-                    } else {
-                        da_terms.push(term.clone());
-                    }
-                }
+                da_terms.extend_from_slice(&det.substring_terms);
+                scand_da_terms.extend_from_slice(&det.substring_terms);
             }
         }
         if let Some(prof) = profiles.get("gl") {

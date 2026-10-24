@@ -1,5 +1,5 @@
 use mtranserver_lib::engine::text::{
-    normalize_academic_and_special_symbols, postprocess_translation_by_language, preprocess_symbols,
+    normalize_academic_and_special_symbols, preprocess_symbols,
 };
 use mtranserver_test::loader::load_json;
 use serde::Deserialize;
@@ -7,15 +7,6 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 struct TypographyCase {
     input: String,
-    expected: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct PostprocessCase {
-    src: String,
-    raw: String,
-    src_lang: String,
-    trg_lang: String,
     expected: String,
 }
 
@@ -42,26 +33,6 @@ fn test_preprocess_symbols_fixtures() {
             "[typography/symbols.json] case #{} failed for input {:?}",
             idx,
             case.input
-        );
-    }
-}
-
-#[test]
-fn test_postprocess_translation_fixtures() {
-    let cases: Vec<PostprocessCase> = load_json("typography/postprocess.json");
-    for (idx, case) in cases.iter().enumerate() {
-        let result = postprocess_translation_by_language(
-            &case.raw,
-            &case.src,
-            &case.src_lang,
-            &case.trg_lang,
-        );
-        assert_eq!(
-            result.as_ref(),
-            case.expected,
-            "[typography/postprocess.json] case #{} failed for raw {:?}",
-            idx,
-            case.raw
         );
     }
 }
@@ -99,6 +70,11 @@ fn test_academic_symbols_fixtures() {
             );
         }
     }
+}
+#[test]
+fn test_preserve_formulas_academic_symbols() {
+    assert_eq!(normalize_academic_and_special_symbols("E=mc²").as_ref(), "E=mc²");
+    assert_eq!(normalize_academic_and_special_symbols("H₂O").as_ref(), "H₂O");
 }
 
 use mtranserver_lib::service::{

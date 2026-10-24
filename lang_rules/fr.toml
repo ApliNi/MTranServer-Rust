@@ -16,9 +16,6 @@ quote_style = "guillemets"
 [syntax]
 clustering_gap_threshold = 3
 head_direction = "head_initial"
-
-predicate_verbs = ["est", "sont", "était", "étaient", "a", "ont", "sera", "fait", "peut", "va"]
-
 [discourse]
 discourse_starters = [
     # Pronoms personnels sujets et objets anaphoriques

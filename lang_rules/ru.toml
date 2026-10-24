@@ -15,9 +15,6 @@ quote_style = "guillemets"
 [syntax]
 clustering_gap_threshold = 3
 head_direction = "head_initial"
-
-predicate_verbs = ["есть", "был", "была", "были", "будет", "может", "идет", "идёт", "пошел", "пошла"]
-
 [discourse]
 discourse_starters = [
     # Third-person anaphoric pronouns (with capitalized variants for non-ASCII safety)

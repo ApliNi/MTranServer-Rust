@@ -8,12 +8,12 @@
   {
     "name": "einstein_mass_energy_equivalence",
     "input": "E=mc²",
-    "expected": "E=mc2"
+    "expected": "E=mc²"
   },
   {
     "name": "chemical_and_footnote_superscripts",
     "input": "H₂O and E=mc² and note¹²³",
-    "expected": "H2O and E=mc2 and note123"
+    "expected": "H₂O and E=mc² and note¹²³"
   },
   {
     "name": "preserve_technical_terms_with_numbers",
@@ -23,6 +23,6 @@
   {
     "name": "mixed_physics_equation",
     "input": "The kinetic energy is Ek=½mv² where v is velocity.",
-    "expected": "The kinetic energy is Ek=½mv2 where v is velocity."
+    "expected": "The kinetic energy is Ek=½mv² where v is velocity."
   }
 ]

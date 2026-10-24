@@ -14,9 +14,6 @@ quote_style = "german"
 [syntax]
 clustering_gap_threshold = 4
 head_direction = "head_final"
-
-predicate_verbs = ["ist", "sind", "war", "waren", "hat", "haben", "wird", "werden", "kann", "muss", "geht", "ging"]
-
 [discourse]
 discourse_starters = [
     # Third-person anaphoric pronouns (nominative, accusative, dative)

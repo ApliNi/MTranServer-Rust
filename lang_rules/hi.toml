@@ -36,12 +36,3 @@ nonbreaking_prefixes = [
 conditional_end_prefixes = [
     "आदि.", "इत्यादि.",
 ]
-
-[postprocess]
-preserve_title_prefix = true
-replacements = [
-    ["रसप बर", "रास्पबेरी"],
-    ["पई पक", "पाई पिको"],
-    ["पई", "पाई"],
-    [" पक", " पिको"],
-]

@@ -20,6 +20,3 @@ connectors = ["to", "of", "and"]
 [syntax]
 clustering_gap_threshold = 3
 head_direction = "head_initial"
-predicate_verbs = ["is", "are", "was", "were", "have", "had", "do", "make", "think", "went"]
-non_verb_ed = ["naked", "sacred", "hundred"]
-non_verb_ing = ["morning", "evening", "something", "ceiling"]

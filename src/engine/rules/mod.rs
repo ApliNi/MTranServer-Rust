@@ -47,8 +47,6 @@ pub struct RawRuleProfile {
     #[serde(default)]
     pub detection: Option<DetectionRules>,
     #[serde(default)]
-    pub postprocess: PostprocessRules,
-    #[serde(default)]
     pub hyphenation: HyphenationRules,
 }
 
@@ -151,32 +149,6 @@ pub struct TypographyRules {
     pub quote_style: Option<String>,
     #[serde(default)]
     pub separators: HashMap<String, String>,
-    #[serde(default)]
-    pub inverted_compounds: Vec<String>,
-    #[serde(default)]
-    pub interrogatives: Vec<String>,
-    #[serde(default)]
-    pub exclamatories: Vec<String>,
-    #[serde(default)]
-    pub introductory_words: Vec<String>,
-}
-
-/// Language-specific postprocessing rules (e.g. title prefix preservation, translation replacements).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PostprocessRules {
-    #[serde(default = "default_true")]
-    pub preserve_title_prefix: bool,
-    #[serde(default)]
-    pub replacements: Vec<(String, String)>,
-}
-
-impl Default for PostprocessRules {
-    fn default() -> Self {
-        Self {
-            preserve_title_prefix: true,
-            replacements: Vec::new(),
-        }
-    }
 }
 /// Language-specific morphology rules for hyphenated compound tokens.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -195,12 +167,6 @@ pub struct SyntaxRules {
     pub clustering_gap_threshold: usize,
     #[serde(default = "default_head_direction")]
     pub head_direction: String,
-    #[serde(default)]
-    pub predicate_verbs: Vec<String>,
-    #[serde(default)]
-    pub non_verb_ed: Vec<String>,
-    #[serde(default)]
-    pub non_verb_ing: Vec<String>,
 }
 
 pub fn default_clustering_gap_threshold() -> usize {
@@ -216,9 +182,6 @@ impl Default for SyntaxRules {
         Self {
             clustering_gap_threshold: default_clustering_gap_threshold(),
             head_direction: default_head_direction(),
-            predicate_verbs: Vec::new(),
-            non_verb_ed: Vec::new(),
-            non_verb_ing: Vec::new(),
         }
     }
 }
@@ -254,16 +217,9 @@ pub(crate) struct RuleIndex {
     discourse_by_first_word: HashMap<String, Vec<String>>,
     discourse_fallback: Vec<String>,
     discourse_by_first_char: HashMap<char, Vec<String>>,
-    pub(crate) predicate_verbs: HashSet<String>,
-    pub(crate) non_verb_ed: HashSet<String>,
-    pub(crate) non_verb_ing: HashSet<String>,
     pub(crate) hyphen_prefixes: HashSet<String>,
     pub(crate) hyphen_suffixes: HashSet<String>,
     pub(crate) hyphen_connectors: HashSet<String>,
-    pub(crate) inverted_compounds: Vec<String>,
-    pub(crate) interrogatives: HashSet<String>,
-    pub(crate) exclamatories: HashSet<String>,
-    pub(crate) introductory_words: HashSet<String>,
 }
 
 #[inline]
@@ -284,8 +240,6 @@ impl RuleIndex {
         discourse_starters: &[String],
         word_boundary: bool,
         hyphenation: &HyphenationRules,
-        syntax: &SyntaxRules,
-        typography: &TypographyRules,
     ) -> Self {
         let mut abbreviation_set = HashSet::with_capacity(nonbreaking_prefixes.len() * 2);
         let mut complex_prefixes = Vec::new();
@@ -357,21 +311,6 @@ impl RuleIndex {
             }
         }
 
-        let predicate_verbs = syntax
-            .predicate_verbs
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
-        let non_verb_ed = syntax
-            .non_verb_ed
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
-        let non_verb_ing = syntax
-            .non_verb_ing
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
         let hyphen_prefixes = hyphenation
             .prefixes
             .iter()
@@ -387,23 +326,6 @@ impl RuleIndex {
             .iter()
             .map(|s| s.to_lowercase())
             .collect();
-        let mut inverted_compounds = typography.inverted_compounds.clone();
-        inverted_compounds.sort_by(|a, b| b.len().cmp(&a.len()));
-        let interrogatives = typography
-            .interrogatives
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
-        let exclamatories = typography
-            .exclamatories
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
-        let introductory_words = typography
-            .introductory_words
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
 
         Self {
             abbreviation_set,
@@ -415,16 +337,9 @@ impl RuleIndex {
             discourse_by_first_word,
             discourse_fallback,
             discourse_by_first_char,
-            predicate_verbs,
-            non_verb_ed,
-            non_verb_ing,
             hyphen_prefixes,
             hyphen_suffixes,
             hyphen_connectors,
-            inverted_compounds,
-            interrogatives,
-            exclamatories,
-            introductory_words,
         }
     }
 }
@@ -450,8 +365,6 @@ pub struct LanguageRuleProfile {
     #[serde(default)]
     pub detection: Option<DetectionRules>,
     #[serde(default)]
-    pub postprocess: PostprocessRules,
-    #[serde(default)]
     pub hyphenation: HyphenationRules,
     #[serde(skip)]
     index: Arc<RuleIndex>,
@@ -470,7 +383,6 @@ impl PartialEq for LanguageRuleProfile {
             && self.typography == other.typography
             && self.syntax == other.syntax
             && self.detection == other.detection
-            && self.postprocess == other.postprocess
             && self.hyphenation == other.hyphenation
     }
 }
@@ -508,8 +420,6 @@ impl LanguageRuleProfile {
             &discourse_starters,
             raw.metadata.word_boundary,
             &raw.hyphenation,
-            &raw.syntax,
-            &raw.typography,
         ));
 
         Ok(Self {
@@ -524,7 +434,6 @@ impl LanguageRuleProfile {
             typography: raw.typography,
             syntax: raw.syntax,
             detection: raw.detection,
-            postprocess: raw.postprocess,
             hyphenation: raw.hyphenation,
             index,
         })
@@ -1013,11 +922,6 @@ impl LanguageRuleProfile {
     }
 
     #[inline]
-    pub fn postprocess(&self) -> &PostprocessRules {
-        &self.postprocess
-    }
-
-    #[inline]
     pub fn hyphenation(&self) -> &HyphenationRules {
         &self.hyphenation
     }
@@ -1056,72 +960,6 @@ impl LanguageRuleProfile {
         false
     }
 
-    /// Check if a word is recognized as a predicate verb in this language.
-    #[inline]
-    pub fn is_predicate_verb(&self, word: &str) -> bool {
-        let lower = word.to_lowercase();
-        self.index.predicate_verbs.contains(&lower)
-    }
-
-    /// Check if word is known non-verb ending in -ed (e.g. "naked", "hundred").
-    #[inline]
-    pub fn is_non_verb_ed(&self, word: &str) -> bool {
-        let lower = word.to_lowercase();
-        self.index.non_verb_ed.contains(&lower)
-    }
-
-    /// Check if word is known non-verb ending in -ing (e.g. "morning", "ceiling").
-    #[inline]
-    pub fn is_non_verb_ing(&self, word: &str) -> bool {
-        let lower = word.to_lowercase();
-        self.index.non_verb_ing.contains(&lower)
-    }
-
-    /// Check if word is a Spanish interrogative word (e.g. "qué", "cómo", "dónde").
-    #[inline]
-    pub fn is_spanish_interrogative(&self, word: &str) -> bool {
-        let lower = word.to_lowercase();
-        self.index.interrogatives.contains(&lower)
-    }
-
-    /// Check if word is a Spanish exclamatory word (e.g. "qué", "cuánto", "ojalá").
-    #[inline]
-    pub fn is_spanish_exclamatory(&self, word: &str) -> bool {
-        let lower = word.to_lowercase();
-        self.index.exclamatories.contains(&lower)
-    }
-
-    /// Check if word is a Spanish introductory conversational word (e.g. "hola", "oye", "mira").
-    #[inline]
-    pub fn is_spanish_introductory(&self, word: &str) -> bool {
-        let lower = word.to_lowercase();
-        self.index.introductory_words.contains(&lower)
-    }
-
-    /// Check if a clause starts with a Spanish compound interrogative (e.g. "por qué", "para qué", "de dónde").
-    #[inline]
-    pub fn starts_with_spanish_compound_interrogative(&self, clause: &str) -> bool {
-        let trimmed = clause.trim_start();
-        for comp in &self.index.inverted_compounds {
-            if trimmed.len() >= comp.len()
-                && trimmed.as_bytes()[..comp.len()].eq_ignore_ascii_case(comp.as_bytes())
-            {
-                let rest = &trimmed[comp.len()..];
-                if rest.is_empty()
-                    || rest.starts_with(char::is_whitespace)
-                    || rest.starts_with(|c: char| {
-                        matches!(
-                            c,
-                            ',' | '.' | '?' | '!' | ':' | ';' | '-' | '—' | ')' | ']' | '}' | '"' | '\''
-                        )
-                    })
-                {
-                    return true;
-                }
-            }
-        }
-        false
-    }
 }
 
 /// Check if a word (without trailing period) is an ambiguous everyday word that could collide
@@ -1409,11 +1247,43 @@ pub fn match_suffix_ignore_case_and_spaces(text: &str, suffix: &str) -> Option<u
     first_match_byte_end.map(|end| end - last_match_byte_start)
 }
 
+/// Compiled global hyphenation rules across profiles for fast lookup.
+#[derive(Debug, Clone, Default)]
+pub struct CompiledHyphenModel {
+    pub prefixes: HashSet<String>,
+    pub suffixes: HashSet<String>,
+    pub connectors: HashSet<String>,
+}
+
+impl CompiledHyphenModel {
+    pub fn from_profiles(profiles: &HashMap<String, Arc<LanguageRuleProfile>>) -> Self {
+        let mut prefixes = HashSet::new();
+        let mut suffixes = HashSet::new();
+        let mut connectors = HashSet::new();
+        for prof in profiles.values() {
+            for p in &prof.hyphenation.prefixes {
+                prefixes.insert(p.to_lowercase());
+            }
+            for s in &prof.hyphenation.suffixes {
+                suffixes.insert(s.to_lowercase());
+            }
+            for c in &prof.hyphenation.connectors {
+                connectors.insert(c.to_lowercase());
+            }
+        }
+        Self {
+            prefixes,
+            suffixes,
+            connectors,
+        }
+    }
+}
+
 /// Thread-safe registry for loaded language rule profiles.
 pub struct RuleRegistry {
     profiles: RwLock<HashMap<String, Arc<LanguageRuleProfile>>>,
     pub detection_model: RwLock<Arc<CompiledDetectionModel>>,
-    pub predicate_verbs: RwLock<Arc<HashSet<String>>>,
+    pub hyphen_model: RwLock<Arc<CompiledHyphenModel>>,
     rules_version: AtomicU64,
 }
 
@@ -1424,7 +1294,7 @@ impl Default for RuleRegistry {
         let reg = Self {
             profiles: RwLock::new(HashMap::new()),
             detection_model: RwLock::new(Arc::new(CompiledDetectionModel::default())),
-            predicate_verbs: RwLock::new(Arc::new(HashSet::new())),
+            hyphen_model: RwLock::new(Arc::new(CompiledHyphenModel::default())),
             rules_version: AtomicU64::new(1),
         };
         reg.load_builtin_profiles();
@@ -1460,20 +1330,15 @@ impl RuleRegistry {
             .collect();
 
         let model = Arc::new(CompiledDetectionModel::from_profiles(&builtins));
-        let mut all_verbs = HashSet::new();
-        for prof in builtins.values() {
-            for v in &prof.syntax.predicate_verbs {
-                all_verbs.insert(v.to_lowercase());
-            }
-        }
+        let hyphen = Arc::new(CompiledHyphenModel::from_profiles(&builtins));
         if let Ok(mut guard) = self.profiles.write() {
             *guard = builtins;
         }
         if let Ok(mut model_guard) = self.detection_model.write() {
             *model_guard = model;
         }
-        if let Ok(mut verb_guard) = self.predicate_verbs.write() {
-            *verb_guard = Arc::new(all_verbs);
+        if let Ok(mut hyphen_guard) = self.hyphen_model.write() {
+            *hyphen_guard = hyphen;
         }
     }
 
@@ -1516,15 +1381,12 @@ impl RuleRegistry {
         if let Ok(mut guard) = self.profiles.write() {
             guard.insert(profile.language.clone(), Arc::new(profile.clone()));
             let model = Arc::new(CompiledDetectionModel::from_profiles(&guard));
+            let hyphen = Arc::new(CompiledHyphenModel::from_profiles(&guard));
             if let Ok(mut model_guard) = self.detection_model.write() {
                 *model_guard = model;
             }
-            if let Ok(mut verb_guard) = self.predicate_verbs.write() {
-                let mut new_verbs = (**verb_guard).clone();
-                for v in &profile.syntax.predicate_verbs {
-                    new_verbs.insert(v.to_lowercase());
-                }
-                *verb_guard = Arc::new(new_verbs);
+            if let Ok(mut hyphen_guard) = self.hyphen_model.write() {
+                *hyphen_guard = hyphen;
             }
         }
     }
@@ -1545,24 +1407,44 @@ impl RuleRegistry {
         self.get(lang)
     }
 
-    /// Check if word is a predicate verb across all registered language profiles with O(1) hash lookup.
-    #[inline]
-    pub fn is_predicate_verb(&self, word: &str) -> bool {
-        let lower = word.to_lowercase();
-        if let Ok(guard) = self.predicate_verbs.read() {
-            guard.contains(&lower)
-        } else {
-            false
-        }
-    }
-
-    /// Check if tokens around hyphen qualify for morphological protection using English / global morphology.
+    /// Check if tokens around hyphen qualify for morphological protection without heap allocation.
     #[inline]
     pub fn is_hyphen_protected(&self, prev: &str, next: &str) -> bool {
-        if let Some(prof) = self.get("en") {
+        if prev.is_empty() || next.is_empty() {
+            return true;
+        }
+        let prev_lower = prev.to_ascii_lowercase();
+        let next_lower = next.to_ascii_lowercase();
+        if prev_lower == next_lower {
+            return true;
+        }
+        let is_alphanumeric_code = |token: &str| {
+            let has_digit = token.chars().any(|c| c.is_ascii_digit());
+            let has_upper = token.chars().any(|c| c.is_ascii_uppercase());
+            has_digit && has_upper && token.chars().all(|c| c.is_ascii_alphanumeric())
+        };
+        if is_alphanumeric_code(prev) || is_alphanumeric_code(next) {
+            return true;
+        }
+        if let Ok(guard) = self.hyphen_model.read() {
+            if guard.prefixes.contains(&prev_lower)
+                || guard.suffixes.contains(&next_lower)
+                || guard.connectors.contains(&prev_lower)
+                || guard.connectors.contains(&next_lower)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if tokens around hyphen qualify for morphological protection under a specific language.
+    #[inline]
+    pub fn is_hyphen_protected_lang(&self, lang: &str, prev: &str, next: &str) -> bool {
+        if let Some(prof) = self.get(lang) {
             prof.is_hyphen_protected(prev, next)
         } else {
-            true
+            self.is_hyphen_protected(prev, next)
         }
     }
 

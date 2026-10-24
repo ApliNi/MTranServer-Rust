@@ -414,13 +414,7 @@ impl TranslationEngine {
             }
         }
 
-        text::postprocess_translation_by_language(
-            &translation,
-            text,
-            &self.source_lang,
-            &self.target_lang,
-        )
-        .into_owned()
+        translation
     }
 
     /// Translate a single plain text segment with token-level cross-attention alignments.
@@ -474,14 +468,6 @@ impl TranslationEngine {
             }
             text::restore_emojis_with_source_and_spans(clean.as_ref(), &emoji_repls, text, &mut src_spans);
         }
-        let out_text = text::postprocess_translation_by_language_with_spans(
-            &out_text,
-            text,
-            &self.source_lang,
-            &self.target_lang,
-            &mut trg_spans,
-        )
-        .into_owned();
 
         (out_text, src_spans, trg_spans, alignments)
     }

@@ -35,12 +35,16 @@ fn test_en_sample_rules() {
     assert!(profile.is_hyphen_protected("pre", "commit"));
     assert!(profile.is_hyphen_protected("gluten", "free"));
     assert!(profile.is_hyphen_protected("word", "word"));
+    assert!(profile.is_hyphen_protected("B2B", "services"));
+    assert!(!profile.is_hyphen_protected("snap", "compacted"));
+    assert!(!profile.is_hyphen_protected("Snap", "Compacted"));
 
-    // Syntax predicate verbs & non-verbs
-    assert!(profile.is_predicate_verb("think"));
-    assert!(profile.is_predicate_verb("WENT"));
-    assert!(profile.is_non_verb_ed("naked"));
-    assert!(profile.is_non_verb_ing("morning"));
+    let reg = mtranserver_lib::engine::rules::RuleRegistry::global();
+    assert!(reg.is_hyphen_protected("pre", "commit"));
+    assert!(reg.is_hyphen_protected("B2B", "solution"));
+    assert!(!reg.is_hyphen_protected("snap", "compacted"));
+    assert!(!reg.is_hyphen_protected("Snap", "Compacted"));
+    assert!(reg.is_hyphen_protected_lang("en", "gluten", "free"));
 }
 
 #[test]
@@ -108,12 +112,6 @@ fn test_es_sample_rules() {
     assert!(profile.is_discourse_chunk_starter("Él llegó a tiempo."));
     assert!(profile.is_discourse_chunk_starter("Además es importante."));
 
-    // Inverted punctuation & conversational phrases
-    assert!(profile.starts_with_spanish_compound_interrogative("por qué no vienes"));
-    assert!(profile.is_spanish_interrogative("cómo"));
-    assert!(profile.is_spanish_exclamatory("ojalá"));
-    assert!(profile.is_spanish_introductory("hola"));
-    assert!(profile.is_predicate_verb("tiene"));
 }
 
 #[test]

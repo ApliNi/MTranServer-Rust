@@ -16,9 +16,6 @@ quote_style = "curly"
 [syntax]
 clustering_gap_threshold = 3
 head_direction = "head_initial"
-
-predicate_verbs = ["是", "有", "做", "作", "为", "成", "看", "说", "给", "去", "来", "要", "想", "用", "能", "会", "到", "发"]
-
 [discourse]
 discourse_starters = [
     # 指示代词与第三人称代词照应
