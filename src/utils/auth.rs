@@ -17,14 +17,6 @@ pub fn token_matches_hash(token: &str, expected_hash: &[u8; 32]) -> bool {
     diff == 0
 }
 
-/// Constant-time token comparison: both sides are hashed with SHA-256 first,
-/// so the folded XOR below runs over fixed-size digests and timing leaks
-/// neither length nor prefix information about the configured token.
-pub fn tokens_equal(a: &str, b: &str) -> bool {
-    let db: [u8; 32] = Sha256::digest(b.as_bytes()).into();
-    token_matches_hash(a, &db)
-}
-
 struct CachedDigest {
     token: String,
     hash: [u8; 32],
@@ -149,14 +141,11 @@ mod tests {
     use axum::http::HeaderValue;
 
     #[test]
-    fn test_token_matches_hash_and_tokens_equal() {
+    fn test_token_matches_hash() {
         let token = "mock_test_token_123";
         let hash: [u8; 32] = Sha256::digest(token.as_bytes()).into();
         assert!(token_matches_hash(token, &hash));
         assert!(!token_matches_hash("wrong_token", &hash));
-
-        assert!(tokens_equal(token, token));
-        assert!(!tokens_equal(token, "wrong_token"));
     }
 
     #[test]

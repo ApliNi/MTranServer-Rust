@@ -163,19 +163,6 @@ fn rearrange_v_heads_into(t: &Tensor2, heads: usize, out: &mut HeadMajorV) {
     }
 }
 
-#[allow(dead_code)]
-fn rearrange_k_heads(t: Tensor2, heads: usize) -> HeadMajorK {
-    let mut out = HeadMajorK::empty();
-    rearrange_k_heads_into(&t, heads, &mut out);
-    out
-}
-
-#[allow(dead_code)]
-fn rearrange_v_heads(t: Tensor2, heads: usize) -> HeadMajorV {
-    let mut out = HeadMajorV::empty();
-    rearrange_v_heads_into(&t, heads, &mut out);
-    out
-}
 /// One encoder layer's resolved weights.
 #[derive(Debug, Clone, Copy)]
 pub struct EncoderLayerWeights<'a> {
@@ -2725,29 +2712,6 @@ fn decoder_forward(
 /// path — plus the f32 bias slice. Every decoder step then runs a single
 /// i8 gemv with fused dequantization/bias (the bergamot production layout),
 /// scanning 4× less weight memory than the previous f32 projection.
-///
-/// Returns `(wq, sb)` with `wq.data[j * d_model + t] = Wemb_i8[shortlist[j]][t]`
-/// and `sb[j]` the corresponding bias.
-#[allow(dead_code)]
-fn gather_shortlist_projection_into(
-    wemb: &Quant8Tensor,
-    bias: Option<&Tensor2>,
-    shortlist: &[u32],
-    out_data: &mut Vec<i8>,
-    out_row_sums: &mut Vec<i32>,
-    out_bias: &mut Vec<f32>,
-) {
-    gather_shortlist_projection_prefix_into(
-        wemb,
-        bias,
-        shortlist,
-        0,
-        out_data,
-        out_row_sums,
-        out_bias,
-    );
-}
-
 fn gather_shortlist_projection_prefix_into(
     wemb: &Quant8Tensor,
     bias: Option<&Tensor2>,
@@ -3048,8 +3012,8 @@ pub const NGRAM_SOFT_DAMPING: f32 = 3.5;
 ///    - Candidate completing an n-gram matched >= 2 times (infinite autoregressive loop tendency):
 ///      - if exempt (e.g. EOS, structural tokens): soft damped (`logit -= 3.5 * match_count`)
 ///      - otherwise: `logit = -1e9` (heavy blocking to eliminate dead loops)
+#[cfg(test)]
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn apply_penalties(
     logit_buf: &mut [f32],
     shortlist_indices: &[u32],
@@ -3068,6 +3032,7 @@ pub(crate) fn apply_penalties(
 }
 
 /// Apply repetition penalty and 2-stage n-gram repetition prevention with explicit token exemptions.
+#[cfg(test)]
 #[inline]
 pub(crate) fn apply_penalties_with_exemptions(
     logit_buf: &mut [f32],
@@ -3341,7 +3306,7 @@ pub(crate) fn apply_adaptive_dynamic_eos_guidance(
 }
 
 /// Backwards-compatible dynamic EOS bias wrapper preserving default parameters (expansion_ratio = 1.0, min_factor = 0.5, max_factor = 2.5).
-#[allow(dead_code)]
+#[cfg(test)]
 #[inline]
 pub(crate) fn apply_dynamic_eos_bias(
     logit_buf: &mut [f32],
@@ -3359,8 +3324,69 @@ pub(crate) fn apply_dynamic_eos_bias(
         2.5,
     );
 }
+/// Beam search hypothesis candidate.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BeamCandidate {
+    pub parent_idx: usize,
+    pub token: u32,
+    pub score: f32,
+    pub norm_score: f32,
+    pub align_src: usize,
+    pub is_eos: bool,
+    pub is_finished_beam: bool,
+}
 
+impl BeamCandidate {
+    #[inline(always)]
+    pub(crate) fn order(&self, other: &Self) -> std::cmp::Ordering {
+        other
+            .norm_score
+            .partial_cmp(&self.norm_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| self.token.cmp(&other.token))
+            .then_with(|| self.parent_idx.cmp(&other.parent_idx))
+    }
+}
 
+/// Locate index of the lowest-ranking candidate in a bounded top-k collection.
+#[inline(always)]
+pub(crate) fn find_worst_candidate_idx(candidates: &[BeamCandidate]) -> usize {
+    let mut worst_idx = 0;
+    for i in 1..candidates.len() {
+        if candidates[i].order(&candidates[worst_idx]) == std::cmp::Ordering::Greater {
+            worst_idx = i;
+        }
+    }
+    worst_idx
+}
+
+/// Try to insert or replace into a bounded top-k candidate list without heap allocations.
+///
+/// Returns `true` if candidate was added or replaced a worse candidate.
+#[inline(always)]
+pub(crate) fn try_push_candidate(
+    cand: BeamCandidate,
+    candidates: &mut Vec<BeamCandidate>,
+    worst_idx: &mut usize,
+    worst_norm: &mut f32,
+    beam_size: usize,
+) -> bool {
+    if candidates.len() < beam_size {
+        candidates.push(cand);
+        if candidates.len() == beam_size {
+            *worst_idx = find_worst_candidate_idx(candidates);
+            *worst_norm = candidates[*worst_idx].norm_score;
+        }
+        true
+    } else if cand.order(&candidates[*worst_idx]) == std::cmp::Ordering::Less {
+        candidates[*worst_idx] = cand;
+        *worst_idx = find_worst_candidate_idx(candidates);
+        *worst_norm = candidates[*worst_idx].norm_score;
+        true
+    } else {
+        false
+    }
+}
 impl Transformer {
     /// Run the full transformer encoder-decoder forward pass with
     /// **autoregressive decoding** inside.
@@ -3883,7 +3909,7 @@ impl Transformer {
                     }
                 }
 
-                fn copy_from(&mut self, parent: &Self, cand: &Candidate, need_align: bool) {
+                fn copy_from(&mut self, parent: &Self, cand: &BeamCandidate, need_align: bool) {
                     self.score = cand.score;
                     self.tokens.clear();
                     self.tokens.extend_from_slice(&parent.tokens);
@@ -3909,16 +3935,6 @@ impl Transformer {
                 }
             }
 
-            struct Candidate {
-                parent_idx: usize,
-                token: u32,
-                score: f32,
-                norm_score: f32,
-                align_src: usize,
-                is_eos: bool,
-                is_finished_beam: bool,
-            }
-
             let mut current_beams: Vec<BeamHypothesis> = (0..beam_size)
                 .map(|_| BeamHypothesis::new(dec_layers, d_model, dyn_limit))
                 .collect();
@@ -3938,7 +3954,7 @@ impl Transformer {
             current_beams[0].kv_cache.reset();
             let mut num_active = 1;
 
-            let mut candidates: Vec<Candidate> = Vec::with_capacity(beam_size * sh_len.min(512) + beam_size);
+            let mut candidates: Vec<BeamCandidate> = Vec::with_capacity(beam_size);
             let mut log_prob_buf = vec![0.0f32; sh_len];
             for _step in 0..dyn_limit {
                 if current_beams[..num_active].iter().all(|b| b.eos_reached) {
@@ -3946,20 +3962,28 @@ impl Transformer {
                 }
 
                 candidates.clear();
+                let mut worst_idx = 0;
+                let mut worst_norm = f32::NEG_INFINITY;
 
                 for (b_idx, beam) in current_beams[..num_active].iter_mut().enumerate() {
                     if beam.eos_reached || beam.tokens.len() >= dyn_limit {
                         let len = beam.tokens.len().max(1);
                         let norm = beam.score / google_length_penalty(len, length_penalty);
-                        candidates.push(Candidate {
-                            parent_idx: b_idx,
-                            token: eos_id,
-                            score: beam.score,
-                            norm_score: norm,
-                            align_src: 0,
-                            is_eos: true,
-                            is_finished_beam: true,
-                        });
+                        try_push_candidate(
+                            BeamCandidate {
+                                parent_idx: b_idx,
+                                token: eos_id,
+                                score: beam.score,
+                                norm_score: norm,
+                                align_src: 0,
+                                is_eos: true,
+                                is_finished_beam: true,
+                            },
+                            &mut candidates,
+                            &mut worst_idx,
+                            &mut worst_norm,
+                            beam_size,
+                        );
                         continue;
                     }
 
@@ -4122,22 +4146,37 @@ impl Transformer {
                     let cur_len = beam.tokens.len() + 1;
                     let lp_factor = google_length_penalty(cur_len, length_penalty);
 
+                    let mut min_lp = if candidates.len() == beam_size {
+                        (worst_norm * lp_factor - beam.score - 1e-4).max(-1e8)
+                    } else {
+                        -1e8
+                    };
+
                     for (j, &tok) in shortlist_indices.iter().enumerate() {
                         let lp = log_prob_buf[j];
-                        if lp < -1e8 {
+                        if lp < min_lp {
                             continue;
                         }
                         let new_score = beam.score + lp;
                         let norm_score = new_score / lp_factor;
-                        candidates.push(Candidate {
-                            parent_idx: b_idx,
-                            token: tok,
-                            score: new_score,
-                            norm_score,
-                            align_src: safe_src,
-                            is_eos: (tok == eos_id),
-                            is_finished_beam: false,
-                        });
+                        if try_push_candidate(
+                            BeamCandidate {
+                                parent_idx: b_idx,
+                                token: tok,
+                                score: new_score,
+                                norm_score,
+                                align_src: safe_src,
+                                is_eos: (tok == eos_id),
+                                is_finished_beam: false,
+                            },
+                            &mut candidates,
+                            &mut worst_idx,
+                            &mut worst_norm,
+                            beam_size,
+                        ) && candidates.len() == beam_size
+                        {
+                            min_lp = (worst_norm * lp_factor - beam.score - 1e-4).max(-1e8);
+                        }
                     }
                 }
 
@@ -4145,23 +4184,7 @@ impl Transformer {
                     break;
                 }
 
-                let k = beam_size.min(candidates.len());
-                if candidates.len() > k {
-                    candidates.select_nth_unstable_by(k - 1, |a, b| {
-                        b.norm_score
-                            .partial_cmp(&a.norm_score)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| a.token.cmp(&b.token))
-                    });
-                    candidates.truncate(k);
-                }
-                candidates.sort_unstable_by(|a, b| {
-                    b.norm_score
-                        .partial_cmp(&a.norm_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| a.token.cmp(&b.token))
-                });
-
+                candidates.sort_unstable_by(|a, b| a.order(b));
                 let next_beams_active = candidates.len();
                 for (cand_idx, cand) in candidates.iter().enumerate() {
                     let parent = &current_beams[cand.parent_idx];
@@ -4221,10 +4244,11 @@ mod tests {
         let mut out_data = Vec::new();
         let mut out_row_sums = Vec::new();
         let mut sb = Vec::new();
-        gather_shortlist_projection_into(
+        gather_shortlist_projection_prefix_into(
             &wemb_q8,
             Some(&bias),
             &[2, 0],
+            0,
             &mut out_data,
             &mut out_row_sums,
             &mut sb,
@@ -4716,6 +4740,183 @@ mod tests {
     }
 
     #[test]
+    fn test_beam_search_candidate_pruning_zero_alloc() {
+        let beam_size = 4;
+        let num_beams = 4;
+        let vocab_size = 20_000;
+        let shortlist_indices: Vec<u32> = (0..vocab_size as u32).collect();
+        let eos_id = 2u32;
+        let lp_factor = google_length_penalty(5, 1.0);
+
+        // Synthetic active beams with varying accumulated scores
+        let beam_scores = [-2.5f32, -1.8, -4.0, -1.2];
+
+        // Deterministic pseudo-random log probabilities for each beam
+        let mut rng = 123456789u64;
+        let next_rand = |r: &mut u64| -> f32 {
+            *r ^= *r << 13;
+            *r ^= *r >> 7;
+            *r ^= *r << 17;
+            ((*r & 0xFFFFFF) as f32) / (0xFFFFFF as f32)
+        };
+
+        let mut all_log_probs = Vec::new();
+        for _ in 0..num_beams {
+            let mut lps = Vec::with_capacity(vocab_size);
+            for _ in 0..vocab_size {
+                let val = -20.0 * next_rand(&mut rng);
+                lps.push(val);
+            }
+            all_log_probs.push(lps);
+        }
+
+        // 1. Naive reference: full vector allocation and full sort
+        let mut naive_candidates = Vec::new();
+        for (b_idx, &b_score) in beam_scores.iter().enumerate() {
+            for (j, &tok) in shortlist_indices.iter().enumerate() {
+                let lp = all_log_probs[b_idx][j];
+                if lp < -1e8 {
+                    continue;
+                }
+                let new_score = b_score + lp;
+                let norm_score = new_score / lp_factor;
+                naive_candidates.push(BeamCandidate {
+                    parent_idx: b_idx,
+                    token: tok,
+                    score: new_score,
+                    norm_score,
+                    align_src: 0,
+                    is_eos: (tok == eos_id),
+                    is_finished_beam: false,
+                });
+            }
+        }
+        naive_candidates.sort_unstable_by(|a, b| a.order(b));
+        naive_candidates.truncate(beam_size);
+
+        // 2. Bounded candidate pruning path: capacity strictly bounded to beam_size
+        let mut bounded_candidates = Vec::with_capacity(beam_size);
+        let mut worst_idx = 0;
+        let mut worst_norm = f32::NEG_INFINITY;
+        let mut candidate_eval_count = 0;
+
+        for (b_idx, &b_score) in beam_scores.iter().enumerate() {
+            let mut min_lp = if bounded_candidates.len() == beam_size {
+                (worst_norm * lp_factor - b_score - 1e-4).max(-1e8)
+            } else {
+                -1e8
+            };
+
+            for (j, &tok) in shortlist_indices.iter().enumerate() {
+                let lp = all_log_probs[b_idx][j];
+                if lp < min_lp {
+                    continue;
+                }
+                candidate_eval_count += 1;
+                let new_score = b_score + lp;
+                let norm_score = new_score / lp_factor;
+                if try_push_candidate(
+                    BeamCandidate {
+                        parent_idx: b_idx,
+                        token: tok,
+                        score: new_score,
+                        norm_score,
+                        align_src: 0,
+                        is_eos: (tok == eos_id),
+                        is_finished_beam: false,
+                    },
+                    &mut bounded_candidates,
+                    &mut worst_idx,
+                    &mut worst_norm,
+                    beam_size,
+                ) && bounded_candidates.len() == beam_size
+                {
+                    min_lp = (worst_norm * lp_factor - b_score - 1e-4).max(-1e8);
+                }
+            }
+        }
+        bounded_candidates.sort_unstable_by(|a, b| a.order(b));
+
+        // 3. Verify correctness & zero heap reallocation
+        assert_eq!(bounded_candidates.len(), beam_size);
+        assert_eq!(bounded_candidates.capacity(), beam_size);
+        assert_eq!(bounded_candidates, naive_candidates);
+        // Pruning skipped > 99.8% of the 80,000 candidates
+        assert!(candidate_eval_count < 100);
+    }
+
+    #[test]
+    fn test_beam_search_candidate_pruning_finished_and_ties() {
+        let beam_size = 3;
+        let mut candidates = Vec::with_capacity(beam_size);
+        let mut worst_idx = 0;
+        let mut worst_norm = f32::NEG_INFINITY;
+
+        // 1. Finished beam with high normalized score
+        let finished = BeamCandidate {
+            parent_idx: 0,
+            token: 2,
+            score: -1.0,
+            norm_score: -1.0,
+            align_src: 0,
+            is_eos: true,
+            is_finished_beam: true,
+        };
+        assert!(try_push_candidate(finished.clone(), &mut candidates, &mut worst_idx, &mut worst_norm, beam_size));
+        assert_eq!(candidates.len(), 1);
+
+        // 2. Active candidates with ties in norm_score
+        let c1 = BeamCandidate {
+            parent_idx: 1,
+            token: 200,
+            score: -2.0,
+            norm_score: -2.0,
+            align_src: 0,
+            is_eos: false,
+            is_finished_beam: false,
+        };
+        let c2 = BeamCandidate {
+            parent_idx: 1,
+            token: 100, // smaller token id preferred on tie
+            score: -2.0,
+            norm_score: -2.0,
+            align_src: 0,
+            is_eos: false,
+            is_finished_beam: false,
+        };
+        assert!(try_push_candidate(c1.clone(), &mut candidates, &mut worst_idx, &mut worst_norm, beam_size));
+        assert!(try_push_candidate(c2.clone(), &mut candidates, &mut worst_idx, &mut worst_norm, beam_size));
+        assert_eq!(candidates.len(), beam_size);
+        assert_eq!(worst_norm, -2.0);
+
+        // Candidate with identical norm_score but even smaller token id: should replace c1
+        let c3 = BeamCandidate {
+            parent_idx: 2,
+            token: 50,
+            score: -2.0,
+            norm_score: -2.0,
+            align_src: 0,
+            is_eos: false,
+            is_finished_beam: false,
+        };
+        assert!(try_push_candidate(c3.clone(), &mut candidates, &mut worst_idx, &mut worst_norm, beam_size));
+        assert_eq!(candidates.len(), beam_size);
+        assert_eq!(candidates.capacity(), beam_size);
+
+        candidates.sort_unstable_by(|a, b| a.order(b));
+        assert_eq!(candidates[0], finished);
+        assert_eq!(candidates[1].token, 50);
+        assert_eq!(candidates[2].token, 100);
+
+        // 3. Shortlist smaller than beam_size
+        let mut small = Vec::with_capacity(beam_size);
+        let mut w_idx = 0;
+        let mut w_norm = f32::NEG_INFINITY;
+        try_push_candidate(c1, &mut small, &mut w_idx, &mut w_norm, beam_size);
+        assert_eq!(small.len(), 1);
+        assert_eq!(small.capacity(), beam_size);
+    }
+    #[test]
     fn test_adaptive_dynamic_eos_guidance_table_driven() {
         struct TestCase {
             source_len: usize,
@@ -5017,8 +5218,10 @@ mod tests {
         let q = Tensor2::from_vec([q_len, d_model], vec![1.0; d_model]);
         let k_t = Tensor2::from_vec([kv_len, d_model], vec![0.0; kv_len * d_model]);
         let v_t = Tensor2::from_vec([kv_len, d_model], vec![0.0; kv_len * d_model]);
-        let k = rearrange_k_heads(k_t, heads);
-        let v = rearrange_v_heads(v_t, heads);
+        let mut k = HeadMajorK::empty();
+        rearrange_k_heads_into(&k_t, heads, &mut k);
+        let mut v = HeadMajorV::empty();
+        rearrange_v_heads_into(&v_t, heads, &mut v);
 
         let wo_weights = Tensor2::from_vec([d_model, d_model], vec![0.0; d_model * d_model]);
         let wo = LinW::F32(&wo_weights);

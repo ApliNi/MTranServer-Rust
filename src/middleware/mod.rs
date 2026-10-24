@@ -6,8 +6,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-const UNAUTHORIZED_BODY: &str = r#"{"error":"Unauthorized"}"#;
-const TOO_MANY_REQUESTS_BODY: &str =
+pub(crate) const UNAUTHORIZED_BODY: &str = r#"{"error":"Unauthorized"}"#;
+pub(crate) const TOO_MANY_REQUESTS_BODY: &str =
     r#"{"error":"Too Many Requests","message":"Too Many Requests"}"#;
 
 #[derive(Deserialize)]
@@ -56,11 +56,12 @@ pub async fn auth_middleware(req: Request, next: Next) -> Result<Response, Statu
 pub async fn error_response_formatter(req: Request, next: Next) -> Result<Response, StatusCode> {
     let response = next.run(req).await;
 
-    let (mut parts, body) = response.into_parts();
-    let status = parts.status;
+    let status = response.status();
     if status.is_success() || status.is_redirection() {
-        return Ok(Response::from_parts(parts, body));
+        return Ok(response);
     }
+
+    let (mut parts, body) = response.into_parts();
 
     if status == StatusCode::NOT_FOUND {
         parts.headers.insert(
@@ -78,13 +79,33 @@ pub async fn error_response_formatter(req: Request, next: Next) -> Result<Respon
         return Ok(Response::from_parts(parts, Body::from(UNAUTHORIZED_BODY)));
     }
 
-    let body_bytes = axum::body::to_bytes(body, 10 * 1024 * 1024)
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        parts.headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("application/json"),
+        );
+        return Ok(Response::from_parts(parts, Body::from(TOO_MANY_REQUESTS_BODY)));
+    }
+
+    if let Some(ct) = parts.headers.get(axum::http::header::CONTENT_TYPE) {
+        if let Ok(ct_str) = ct.to_str() {
+            if !ct_str.contains("json") {
+                return Ok(Response::from_parts(parts, body));
+            }
+        }
+    }
+
+    let body_bytes = axum::body::to_bytes(body, 64 * 1024)
         .await
         .unwrap_or_default();
 
     let Ok(incoming) = serde_json::from_slice::<IncomingError>(&body_bytes) else {
         return Ok(Response::from_parts(parts, Body::from(body_bytes)));
     };
+
+    if incoming.error.is_some() && incoming.message.is_some() {
+        return Ok(Response::from_parts(parts, Body::from(body_bytes)));
+    }
 
     let error = incoming.error.unwrap_or("Internal Server Error");
     let message = incoming.message.unwrap_or(error);

@@ -416,19 +416,8 @@ impl Model {
                         // kernels reuse it across all rows. The one-off scan at
                         // load time is negligible; decoder-only skip list removed
                         // when VNNI replaced the maddubs chains.
-                        let row_sums = if q8_shape.len() == 2 && q8_shape[1] > 0 {
-                            let (n, k) = (q8_shape[0], q8_shape[1]);
-                            Some(
-                                (0..n)
-                                    .map(|j| {
-                                        let mut acc = 0i32;
-                                        for &b in &int8_slice[j * k..(j + 1) * k] {
-                                            acc += b as i32;
-                                        }
-                                        acc * 128
-                                    })
-                                    .collect(),
-                            )
+                        let row_sums = if q8_shape.len() == 2 && q8_shape[0] > 0 && q8_shape[1] > 0 {
+                            Some(crate::engine::tensor::simd::compute_row_sums_vec(int8_slice, q8_shape[0], q8_shape[1]))
                         } else {
                             None
                         };
@@ -462,18 +451,7 @@ impl Model {
                         // straight from these bytes, and embedding lookups dequantize
                         // single rows via `dequant_row`. No eager f32 table is built.
                         let row_sums = if h.shape.len() == 2 && h.shape[0] > 0 && h.shape[1] > 0 {
-                            let (n, k) = (h.shape[0], h.shape[1]);
-                            Some(
-                                (0..n)
-                                    .map(|j| {
-                                        let mut acc = 0i32;
-                                        for &b in &int8_slice[j * k..(j + 1) * k] {
-                                            acc += b as i32;
-                                        }
-                                        acc * 128
-                                    })
-                                    .collect(),
-                            )
+                            Some(crate::engine::tensor::simd::compute_row_sums_vec(int8_slice, h.shape[0], h.shape[1]))
                         } else {
                             None
                         };

@@ -16,7 +16,7 @@ pub struct GoogleRequest {
     pub format: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, PartialEq)]
 #[allow(non_snake_case)]
 pub struct GoogleTranslation {
     pub translatedText: String,
@@ -24,12 +24,12 @@ pub struct GoogleTranslation {
     pub detectedSourceLanguage: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, PartialEq)]
 pub struct GoogleTranslateData {
     pub translations: Vec<GoogleTranslation>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, PartialEq)]
 pub struct GoogleResponse {
     pub data: GoogleTranslateData,
 }
@@ -91,22 +91,24 @@ pub async fn translate_compat(
     )
     .await?;
 
-    let fallback_source = if !body.source.trim().is_empty() {
-        body.source.as_str()
+    let static_source = if source != "auto" {
+        Some(convert_bcp47_to_google(&source).to_string())
     } else {
-        "auto"
+        None
     };
 
     let mut translations = Vec::with_capacity(results.len());
     for (translated, detected) in results {
-        let detected_lang = if source == "auto" && !detected.is_empty() {
-            convert_bcp47_to_google(&detected).to_string()
-        } else {
-            fallback_source.to_string()
+        let detected_lang = match &static_source {
+            Some(s) => Some(s.clone()),
+            None if !detected.is_empty() && detected != "auto" => {
+                Some(convert_bcp47_to_google(&detected).to_string())
+            }
+            None => None,
         };
         translations.push(GoogleTranslation {
             translatedText: translated,
-            detectedSourceLanguage: Some(detected_lang),
+            detectedSourceLanguage: detected_lang,
         });
     }
 
@@ -127,8 +129,12 @@ pub async fn translate_single(
     let (translated, detected_source) =
         service::translate_with_pivot_detected(&source, &target, &query.q).await?;
 
-    let effective_source = if source == "auto" && !detected_source.is_empty() {
-        Cow::Owned(detected_source)
+    let effective_source = if source == "auto" {
+        if detected_source.is_empty() || detected_source == "auto" {
+            Cow::Borrowed("")
+        } else {
+            Cow::Owned(detected_source)
+        }
     } else {
         source
     };
@@ -147,7 +153,7 @@ pub async fn translate_single(
 
 pub(crate) fn convert_bcp47_to_google(lang: &str) -> &str {
     match lang {
-        "zh-Hans" => "zh-CN",
+        "zh-Hans" | "zh" => "zh-CN",
         "zh-Hant" => "zh-TW",
         _ => lang,
     }
@@ -160,6 +166,7 @@ mod tests {
     #[test]
     fn test_convert_bcp47_to_google() {
         assert_eq!(convert_bcp47_to_google("zh-Hans"), "zh-CN");
+        assert_eq!(convert_bcp47_to_google("zh"), "zh-CN");
         assert_eq!(convert_bcp47_to_google("zh-Hant"), "zh-TW");
         assert_eq!(convert_bcp47_to_google("en"), "en");
     }
@@ -230,5 +237,61 @@ mod tests {
         ]))
         .unwrap();
         assert_eq!(json, expected);
+    }
+    #[tokio::test]
+    async fn test_translate_compat_source_language_normalization() {
+        // Explicit "zh" normalized to "zh-CN"
+        let req_zh = GoogleRequest {
+            q: OneOrMany::One("测试".to_string()),
+            target: "zh".to_string(),
+            source: "zh".to_string(),
+            format: None,
+        };
+        let res_zh = translate_compat(Json(req_zh)).await.unwrap();
+        assert_eq!(
+            res_zh.data.translations[0].detectedSourceLanguage.as_deref(),
+            Some("zh-CN")
+        );
+
+        // Explicit "zh-Hans" normalized to "zh-CN"
+        let req_hans = GoogleRequest {
+            q: OneOrMany::One("测试".to_string()),
+            target: "zh".to_string(),
+            source: "zh-Hans".to_string(),
+            format: None,
+        };
+        let res_hans = translate_compat(Json(req_hans)).await.unwrap();
+        assert_eq!(
+            res_hans.data.translations[0].detectedSourceLanguage.as_deref(),
+            Some("zh-CN")
+        );
+
+        // Explicit "zh-Hant" normalized to "zh-TW"
+        let req_hant = GoogleRequest {
+            q: OneOrMany::One("測試".to_string()),
+            target: "zh-Hant".to_string(),
+            source: "zh-Hant".to_string(),
+            format: None,
+        };
+        let res_hant = translate_compat(Json(req_hant)).await.unwrap();
+        assert_eq!(
+            res_hant.data.translations[0].detectedSourceLanguage.as_deref(),
+            Some("zh-TW")
+        );
+
+        // Auto source with empty text results in None (never "auto")
+        let req_auto_empty = GoogleRequest {
+            q: OneOrMany::One(String::new()),
+            target: "en".to_string(),
+            source: "auto".to_string(),
+            format: None,
+        };
+        let res_auto_empty = translate_compat(Json(req_auto_empty)).await.unwrap();
+        assert_eq!(
+            res_auto_empty.data.translations[0].detectedSourceLanguage,
+            None
+        );
+        let serialized = serde_json::to_string(&res_auto_empty.0).unwrap();
+        assert!(!serialized.contains("detectedSourceLanguage"), "Should omit detectedSourceLanguage when None: {serialized}");
     }
 }

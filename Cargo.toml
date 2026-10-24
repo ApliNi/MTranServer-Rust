@@ -17,7 +17,6 @@ path = "src/lib.rs"
 # HTTP server
 axum = { version = "0.8", features = ["macros"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["cors"] }
 hyper = "1"
 tokio = { version = "1", features = [
 	"rt-multi-thread",
@@ -67,18 +66,11 @@ unicode-segmentation = "1.12"
 # Embedded web UI assets
 rust-embed = "8"
 
-# Random
-rand = "0.8"
-
 # Parallelism
 rayon = "1"
 
 # SHA256
 sha2 = "0.10"
-
-
-# Base64
-base64 = "0.22"
 
 # Memory Allocator
 mimalloc = { version = "0.1", default-features = false }

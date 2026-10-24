@@ -300,41 +300,6 @@ pub fn memory_usage() -> usize {
     total_bytes
 }
 
-/// Translation cache handle and utility wrapper.
-pub struct TranslationCache;
-
-impl TranslationCache {
-    #[inline]
-    pub fn get(key: CacheKey) -> Option<std::sync::Arc<str>> {
-        get(key)
-    }
-
-    #[inline]
-    pub fn insert(key: CacheKey, result: impl Into<std::sync::Arc<str>>) {
-        set(key, result);
-    }
-
-    #[inline]
-    pub fn invalidate(key: CacheKey) -> bool {
-        invalidate(key)
-    }
-
-    #[inline]
-    pub fn clear() {
-        clear();
-    }
-
-    #[inline]
-    pub fn len() -> usize {
-        len()
-    }
-
-    #[inline]
-    pub fn is_empty() -> bool {
-        is_empty()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

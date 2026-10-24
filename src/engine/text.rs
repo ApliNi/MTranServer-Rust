@@ -7,6 +7,8 @@
 
 use std::borrow::Cow;
 
+use unicode_segmentation::UnicodeSegmentation;
+
 use crate::utils::lang;
 
 /// One long-text splitting candidate: the literal separator used to split,
@@ -191,19 +193,23 @@ pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
             }
         }
 
-        if has_emoji_lead && bytes[i] >= 0xE2 {
-            if let Some(c) = text[i..].chars().next() {
-                if is_emoji(c) {
-                    if i > last {
-                        clean.push_str(&text[last..i]);
+        if has_emoji_lead {
+            let is_candidate = bytes[i] >= 0xE2 || matches!(bytes[i], b'0'..=b'9' | b'#' | b'*');
+            if is_candidate {
+                if let Some(g) = text[i..].graphemes(true).next() {
+                    if is_emoji_grapheme(g) {
+                        if i > last {
+                            clean.push_str(&text[last..i]);
+                        }
+                        clean.push_str("[EE");
+                        push_usize(&mut clean, replacements.len());
+                        clean.push(']');
+                        replacements.push(g.to_string());
+                        i += g.len();
+                        last = i;
+                        continue;
                     }
-                    clean.push_str("[EE");
-                    push_usize(&mut clean, replacements.len());
-                    clean.push(']');
-                    replacements.push(c.to_string());
-                    let c_len = c.len_utf8();
-                    i += c_len;
-                    last = i;
+                    i += g.len();
                     continue;
                 }
             }
@@ -386,24 +392,27 @@ pub fn restore_emojis_with_source_and_spans<'a>(
 }
 
 #[inline(always)]
-fn is_emoji(c: char) -> bool {
+pub fn is_emoji_char(c: char) -> bool {
     let u = c as u32;
-    if u < 0x2600 {
+    if u < 0x20E3 {
         return false;
     }
-    // Emoji presentation: misc symbols and pictographs, transport and
-    // map symbols (U+1F680-U+1F6FF), supplementals (U+1F900-U+1F9FF)
-    (0x1F300..=0x1F9FF).contains(&u)
-        // Misc symbols, dingbats and arrows (U+2600-U+27BF)
+    (0x1F000..=0x1FBFF).contains(&u)
         || (0x2600..=0x27BF).contains(&u)
-        // Region indicator (U+1F1E6-U+1F1FF)
-        || (0x1F1E6..=0x1F1FF).contains(&u)
-        // Symbols and pictographs extended-A (U+1FA70-U+1FAFF)
-        || (0x1FA70..=0x1FAFF).contains(&u)
-        // Symbols for legacy computing (U+1FB00-U+1FBFF)
-        || (0x1FB00..=0x1FBFF).contains(&u)
-        // Variation selectors (U+FE00-U+FE0F)
-        || (0xFE00..=0xFE0F).contains(&u)
+        || (0x2300..=0x23FF).contains(&u)
+        || (0x2B00..=0x2BFF).contains(&u)
+        || u == 0x20E3
+        || u == 0xFE0F
+}
+
+#[inline(always)]
+pub fn is_emoji_grapheme(g: &str) -> bool {
+    g.chars().any(is_emoji_char)
+}
+
+#[inline(always)]
+pub fn is_emoji(c: char) -> bool {
+    is_emoji_char(c)
 }
 
 /// Fast check whether `text.chars().count() > limit`, avoiding walking characters
@@ -908,5 +917,25 @@ mod tests {
         let restored = restore_emojis_with_source_and_spans(&clean, &repls, input, &mut []);
         assert_eq!(restored, input);
     }
-}
 
+    #[test]
+    fn test_composite_emojis_protection() {
+        let input = "Family 👨‍👩‍👧‍👦, like 👍🏽, China 🇨🇳, keycap 1️⃣, fire ❤️‍🔥, heart ❤️!";
+        let (clean, repls) = hide_emojis(input);
+        assert_eq!(clean, "Family [EE0], like [EE1], China [EE2], keycap [EE3], fire [EE4], heart [EE5]!");
+        assert_eq!(
+            repls,
+            vec![
+                "👨‍👩‍👧‍👦".to_string(),
+                "👍🏽".to_string(),
+                "🇨🇳".to_string(),
+                "1️⃣".to_string(),
+                "❤️‍🔥".to_string(),
+                "❤️".to_string(),
+            ]
+        );
+
+        let restored = restore_emojis_with_source_and_spans(&clean, &repls, input, &mut []);
+        assert_eq!(restored, input);
+    }
+}

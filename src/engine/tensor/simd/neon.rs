@@ -67,10 +67,13 @@ pub unsafe fn matmul_row_neon(
         }
     }
 }
-/// ARM NEON `M×K @ K×N` f32 kernel.
+
+/// ARM NEON `M×K @ K×N` f32 kernel with memory & register blocking.
 ///
-/// 4-wide `float32x4_t` accumulators with fused multiply–accumulate
-/// (`vmlaq_f32`), N-blocked as above. A scalar tail handles `n % 4`.
+/// Output columns are tiled in cache-fitting memory blocks (`N_TILE = 64`),
+/// keeping the B panel cache-resident across all M rows. Within each tile,
+/// an `MR×NR` (4×8) 2D register tile accumulates 8 `float32x4_t` registers
+/// in-flight, streaming K dot products with zero heap allocations.
 #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
 #[target_feature(enable = "neon")]
 pub unsafe fn matmul_neon(
@@ -84,59 +87,354 @@ pub unsafe fn matmul_neon(
     relu: bool,
 ) {
     use std::arch::aarch64::{
-        float32x4_t, vaddq_f32, vdupq_n_f32, vld1q_f32, vmaxq_f32, vmlaq_f32, vst1q_f32,
+        vaddq_f32, vdupq_n_f32, vld1q_f32, vmaxq_f32, vmlaq_f32, vst1q_f32,
     };
 
-    const NR: usize = 4;
-    let groups = n / NR;
-    let tail = n % NR;
-    let mut accs: Vec<float32x4_t> = vec![vdupq_n_f32(0.0); groups];
-    for i in 0..m {
-        let a_row = &a[i * k..(i + 1) * k];
-        let o_row = &mut out[i * n..(i + 1) * n];
-        accs.fill(vdupq_n_f32(0.0));
-        for t in 0..k {
-            let av = vdupq_n_f32(a_row[t]);
-            for (g, ac) in accs.iter_mut().enumerate() {
-                let bv = vld1q_f32(b[t * n + g * NR..].as_ptr());
-                *ac = vmlaq_f32(*ac, av, bv);
-            }
-        }
-        if let Some(bb) = bias {
-            for (g, ac) in accs.iter_mut().enumerate() {
-                *ac = vaddq_f32(*ac, vld1q_f32(bb[g * NR..].as_ptr()));
-            }
-        }
-        for (g, ac) in accs.iter().enumerate() {
-            let mut v = *ac;
-            if relu {
-                v = vmaxq_f32(v, vdupq_n_f32(0.0));
-            }
-            vst1q_f32(o_row[g * NR..].as_mut_ptr(), v);
-        }
-        if tail > 0 {
-            let c = groups * NR;
-            for j in 0..tail {
-                let mut s = 0.0f32;
+    if m == 0 || k == 0 || n == 0 {
+        return;
+    }
+    if m == 1 {
+        matmul_row_neon(a, b, k, n, bias, out, relu);
+        return;
+    }
+
+    const N_TILE: usize = 64;
+    let zero = vdupq_n_f32(0.0);
+    let b_ptr = b.as_ptr();
+    let bias_ptr = bias.map(|bb| bb.as_ptr());
+
+    for j_start in (0..n).step_by(N_TILE) {
+        let j_len = (n - j_start).min(N_TILE);
+        let n_blocks8 = j_len / 8;
+        let n_rem8 = j_len % 8;
+        let n_blocks4 = n_rem8 / 4;
+        let tail = n_rem8 % 4;
+
+        let mut i = 0;
+        // 4-row register tile (MR = 4, NR = 8)
+        while i + 3 < m {
+            let a0 = a.as_ptr().add(i * k);
+            let a1 = a.as_ptr().add((i + 1) * k);
+            let a2 = a.as_ptr().add((i + 2) * k);
+            let a3 = a.as_ptr().add((i + 3) * k);
+
+            let o0 = out.as_mut_ptr().add(i * n);
+            let o1 = out.as_mut_ptr().add((i + 1) * n);
+            let o2 = out.as_mut_ptr().add((i + 2) * n);
+            let o3 = out.as_mut_ptr().add((i + 3) * n);
+
+            for blk in 0..n_blocks8 {
+                let col = j_start + blk * 8;
+                let mut c00 = zero;
+                let mut c01 = zero;
+                let mut c10 = zero;
+                let mut c11 = zero;
+                let mut c20 = zero;
+                let mut c21 = zero;
+                let mut c30 = zero;
+                let mut c31 = zero;
+
                 for t in 0..k {
-                    s += a_row[t] * b[t * n + c + j];
+                    let av0 = vdupq_n_f32(*a0.add(t));
+                    let av1 = vdupq_n_f32(*a1.add(t));
+                    let av2 = vdupq_n_f32(*a2.add(t));
+                    let av3 = vdupq_n_f32(*a3.add(t));
+
+                    let bp = b_ptr.add(t * n + col);
+                    let bv0 = vld1q_f32(bp);
+                    let bv1 = vld1q_f32(bp.add(4));
+
+                    c00 = vmlaq_f32(c00, av0, bv0);
+                    c01 = vmlaq_f32(c01, av0, bv1);
+                    c10 = vmlaq_f32(c10, av1, bv0);
+                    c11 = vmlaq_f32(c11, av1, bv1);
+                    c20 = vmlaq_f32(c20, av2, bv0);
+                    c21 = vmlaq_f32(c21, av2, bv1);
+                    c30 = vmlaq_f32(c30, av3, bv0);
+                    c31 = vmlaq_f32(c31, av3, bv1);
                 }
-                let s = if let Some(bb) = bias {
-                    s + bb[c + j]
-                } else {
-                    s
-                };
-                o_row[c + j] = if relu && s > 0.0 {
-                    s
-                } else if relu {
-                    0.0
-                } else {
-                    s
-                };
+
+                if let Some(bp) = bias_ptr {
+                    let b0 = vld1q_f32(bp.add(col));
+                    let b1 = vld1q_f32(bp.add(col + 4));
+                    c00 = vaddq_f32(c00, b0);
+                    c01 = vaddq_f32(c01, b1);
+                    c10 = vaddq_f32(c10, b0);
+                    c11 = vaddq_f32(c11, b1);
+                    c20 = vaddq_f32(c20, b0);
+                    c21 = vaddq_f32(c21, b1);
+                    c30 = vaddq_f32(c30, b0);
+                    c31 = vaddq_f32(c31, b1);
+                }
+
+                if relu {
+                    c00 = vmaxq_f32(c00, zero);
+                    c01 = vmaxq_f32(c01, zero);
+                    c10 = vmaxq_f32(c10, zero);
+                    c11 = vmaxq_f32(c11, zero);
+                    c20 = vmaxq_f32(c20, zero);
+                    c21 = vmaxq_f32(c21, zero);
+                    c30 = vmaxq_f32(c30, zero);
+                    c31 = vmaxq_f32(c31, zero);
+                }
+
+                vst1q_f32(o0.add(col), c00);
+                vst1q_f32(o0.add(col + 4), c01);
+                vst1q_f32(o1.add(col), c10);
+                vst1q_f32(o1.add(col + 4), c11);
+                vst1q_f32(o2.add(col), c20);
+                vst1q_f32(o2.add(col + 4), c21);
+                vst1q_f32(o3.add(col), c30);
+                vst1q_f32(o3.add(col + 4), c31);
+            }
+
+            if n_blocks4 > 0 {
+                let col = j_start + n_blocks8 * 8;
+                let mut c0 = zero;
+                let mut c1 = zero;
+                let mut c2 = zero;
+                let mut c3 = zero;
+
+                for t in 0..k {
+                    let av0 = vdupq_n_f32(*a0.add(t));
+                    let av1 = vdupq_n_f32(*a1.add(t));
+                    let av2 = vdupq_n_f32(*a2.add(t));
+                    let av3 = vdupq_n_f32(*a3.add(t));
+                    let bv = vld1q_f32(b_ptr.add(t * n + col));
+
+                    c0 = vmlaq_f32(c0, av0, bv);
+                    c1 = vmlaq_f32(c1, av1, bv);
+                    c2 = vmlaq_f32(c2, av2, bv);
+                    c3 = vmlaq_f32(c3, av3, bv);
+                }
+
+                if let Some(bp) = bias_ptr {
+                    let b = vld1q_f32(bp.add(col));
+                    c0 = vaddq_f32(c0, b);
+                    c1 = vaddq_f32(c1, b);
+                    c2 = vaddq_f32(c2, b);
+                    c3 = vaddq_f32(c3, b);
+                }
+
+                if relu {
+                    c0 = vmaxq_f32(c0, zero);
+                    c1 = vmaxq_f32(c1, zero);
+                    c2 = vmaxq_f32(c2, zero);
+                    c3 = vmaxq_f32(c3, zero);
+                }
+
+                vst1q_f32(o0.add(col), c0);
+                vst1q_f32(o1.add(col), c1);
+                vst1q_f32(o2.add(col), c2);
+                vst1q_f32(o3.add(col), c3);
+            }
+
+            if tail > 0 {
+                let col = j_start + n_blocks8 * 8 + n_blocks4 * 4;
+                for j in 0..tail {
+                    let mut s0 = 0.0f32;
+                    let mut s1 = 0.0f32;
+                    let mut s2 = 0.0f32;
+                    let mut s3 = 0.0f32;
+                    for t in 0..k {
+                        let bv = *b_ptr.add(t * n + col + j);
+                        s0 += *a0.add(t) * bv;
+                        s1 += *a1.add(t) * bv;
+                        s2 += *a2.add(t) * bv;
+                        s3 += *a3.add(t) * bv;
+                    }
+                    if let Some(bp) = bias_ptr {
+                        let bb = *bp.add(col + j);
+                        s0 += bb;
+                        s1 += bb;
+                        s2 += bb;
+                        s3 += bb;
+                    }
+                    *o0.add(col + j) = if relu { s0.max(0.0) } else { s0 };
+                    *o1.add(col + j) = if relu { s1.max(0.0) } else { s1 };
+                    *o2.add(col + j) = if relu { s2.max(0.0) } else { s2 };
+                    *o3.add(col + j) = if relu { s3.max(0.0) } else { s3 };
+                }
+            }
+            i += 4;
+        }
+
+        // 2-row register tile (MR = 2, NR = 8)
+        while i + 1 < m {
+            let a0 = a.as_ptr().add(i * k);
+            let a1 = a.as_ptr().add((i + 1) * k);
+            let o0 = out.as_mut_ptr().add(i * n);
+            let o1 = out.as_mut_ptr().add((i + 1) * n);
+
+            for blk in 0..n_blocks8 {
+                let col = j_start + blk * 8;
+                let mut c00 = zero;
+                let mut c01 = zero;
+                let mut c10 = zero;
+                let mut c11 = zero;
+
+                for t in 0..k {
+                    let av0 = vdupq_n_f32(*a0.add(t));
+                    let av1 = vdupq_n_f32(*a1.add(t));
+                    let bp = b_ptr.add(t * n + col);
+                    let bv0 = vld1q_f32(bp);
+                    let bv1 = vld1q_f32(bp.add(4));
+
+                    c00 = vmlaq_f32(c00, av0, bv0);
+                    c01 = vmlaq_f32(c01, av0, bv1);
+                    c10 = vmlaq_f32(c10, av1, bv0);
+                    c11 = vmlaq_f32(c11, av1, bv1);
+                }
+
+                if let Some(bp) = bias_ptr {
+                    let b0 = vld1q_f32(bp.add(col));
+                    let b1 = vld1q_f32(bp.add(col + 4));
+                    c00 = vaddq_f32(c00, b0);
+                    c01 = vaddq_f32(c01, b1);
+                    c10 = vaddq_f32(c10, b0);
+                    c11 = vaddq_f32(c11, b1);
+                }
+
+                if relu {
+                    c00 = vmaxq_f32(c00, zero);
+                    c01 = vmaxq_f32(c01, zero);
+                    c10 = vmaxq_f32(c10, zero);
+                    c11 = vmaxq_f32(c11, zero);
+                }
+
+                vst1q_f32(o0.add(col), c00);
+                vst1q_f32(o0.add(col + 4), c01);
+                vst1q_f32(o1.add(col), c10);
+                vst1q_f32(o1.add(col + 4), c11);
+            }
+
+            if n_blocks4 > 0 {
+                let col = j_start + n_blocks8 * 8;
+                let mut c0 = zero;
+                let mut c1 = zero;
+
+                for t in 0..k {
+                    let av0 = vdupq_n_f32(*a0.add(t));
+                    let av1 = vdupq_n_f32(*a1.add(t));
+                    let bv = vld1q_f32(b_ptr.add(t * n + col));
+
+                    c0 = vmlaq_f32(c0, av0, bv);
+                    c1 = vmlaq_f32(c1, av1, bv);
+                }
+
+                if let Some(bp) = bias_ptr {
+                    let b = vld1q_f32(bp.add(col));
+                    c0 = vaddq_f32(c0, b);
+                    c1 = vaddq_f32(c1, b);
+                }
+
+                if relu {
+                    c0 = vmaxq_f32(c0, zero);
+                    c1 = vmaxq_f32(c1, zero);
+                }
+
+                vst1q_f32(o0.add(col), c0);
+                vst1q_f32(o1.add(col), c1);
+            }
+
+            if tail > 0 {
+                let col = j_start + n_blocks8 * 8 + n_blocks4 * 4;
+                for j in 0..tail {
+                    let mut s0 = 0.0f32;
+                    let mut s1 = 0.0f32;
+                    for t in 0..k {
+                        let bv = *b_ptr.add(t * n + col + j);
+                        s0 += *a0.add(t) * bv;
+                        s1 += *a1.add(t) * bv;
+                    }
+                    if let Some(bp) = bias_ptr {
+                        let bb = *bp.add(col + j);
+                        s0 += bb;
+                        s1 += bb;
+                    }
+                    *o0.add(col + j) = if relu { s0.max(0.0) } else { s0 };
+                    *o1.add(col + j) = if relu { s1.max(0.0) } else { s1 };
+                }
+            }
+            i += 2;
+        }
+
+        // 1-row remainder (MR = 1, NR = 8)
+        if i < m {
+            let a0 = a.as_ptr().add(i * k);
+            let o0 = out.as_mut_ptr().add(i * n);
+
+            for blk in 0..n_blocks8 {
+                let col = j_start + blk * 8;
+                let mut c00 = zero;
+                let mut c01 = zero;
+
+                for t in 0..k {
+                    let av0 = vdupq_n_f32(*a0.add(t));
+                    let bp = b_ptr.add(t * n + col);
+                    let bv0 = vld1q_f32(bp);
+                    let bv1 = vld1q_f32(bp.add(4));
+
+                    c00 = vmlaq_f32(c00, av0, bv0);
+                    c01 = vmlaq_f32(c01, av0, bv1);
+                }
+
+                if let Some(bp) = bias_ptr {
+                    let b0 = vld1q_f32(bp.add(col));
+                    let b1 = vld1q_f32(bp.add(col + 4));
+                    c00 = vaddq_f32(c00, b0);
+                    c01 = vaddq_f32(c01, b1);
+                }
+
+                if relu {
+                    c00 = vmaxq_f32(c00, zero);
+                    c01 = vmaxq_f32(c01, zero);
+                }
+
+                vst1q_f32(o0.add(col), c00);
+                vst1q_f32(o0.add(col + 4), c01);
+            }
+
+            if n_blocks4 > 0 {
+                let col = j_start + n_blocks8 * 8;
+                let mut c0 = zero;
+
+                for t in 0..k {
+                    let av0 = vdupq_n_f32(*a0.add(t));
+                    let bv = vld1q_f32(b_ptr.add(t * n + col));
+                    c0 = vmlaq_f32(c0, av0, bv);
+                }
+
+                if let Some(bp) = bias_ptr {
+                    let b = vld1q_f32(bp.add(col));
+                    c0 = vaddq_f32(c0, b);
+                }
+
+                if relu {
+                    c0 = vmaxq_f32(c0, zero);
+                }
+
+                vst1q_f32(o0.add(col), c0);
+            }
+
+            if tail > 0 {
+                let col = j_start + n_blocks8 * 8 + n_blocks4 * 4;
+                for j in 0..tail {
+                    let mut s0 = 0.0f32;
+                    for t in 0..k {
+                        let bv = *b_ptr.add(t * n + col + j);
+                        s0 += *a0.add(t) * bv;
+                    }
+                    if let Some(bp) = bias_ptr {
+                        s0 += *bp.add(col + j);
+                    }
+                    *o0.add(col + j) = if relu { s0.max(0.0) } else { s0 };
+                }
             }
         }
     }
 }
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 pub unsafe fn quantize_row_neon(data: &[f32], qa: f32, out: &mut [i8]) {
@@ -203,6 +501,7 @@ pub unsafe fn quantize_row_neon(data: &[f32], qa: f32, out: &mut [i8]) {
         *dst.add(off + j) = r.clamp(-127, 127) as i8;
     }
 }
+
 /// ARM NEON `i8×i8 → i32` gemm kernel.
 ///
 /// The i8×i8 → i16 widening (vmull_s8) followed by i32 accumulation

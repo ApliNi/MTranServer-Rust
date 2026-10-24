@@ -84,6 +84,35 @@ fn test_remap_spans_with_emojis() {
 }
 
 #[test]
+fn test_remap_spans_with_composite_emojis() {
+    let raw = "Team 👨‍👩‍👧‍👦 win 👍🏽 next";
+    let (hidden, repls) = hide_emojis(raw);
+    assert_eq!(hidden, "Team [EE0] win [EE1] next");
+    assert_eq!(repls, vec!["👨‍👩‍👧‍👦".to_string(), "👍🏽".to_string()]);
+
+    let ee0_start = 5;
+    let ee0_end = 10;
+    let ee1_start = 15;
+    let ee1_end = 20;
+    let mut spans = vec![
+        0..4,               // "Team"
+        ee0_start..ee0_end, // "[EE0]"
+        11..14,             // "win"
+        ee1_start..ee1_end, // "[EE1]"
+        21..25,             // "next"
+    ];
+
+    let restored = restore_emojis_with_spans(&hidden, &repls, &mut spans);
+    assert_eq!(restored, raw);
+
+    let bytes = restored.as_bytes();
+    assert_eq!(&bytes[spans[0].clone()], b"Team");
+    assert_eq!(&bytes[spans[1].clone()], "👨‍👩‍👧‍👦".as_bytes());
+    assert_eq!(&bytes[spans[2].clone()], b"win");
+    assert_eq!(&bytes[spans[3].clone()], "👍🏽".as_bytes());
+    assert_eq!(&bytes[spans[4].clone()], b"next");
+}
+#[test]
 fn test_tag_aware_spans_data_driven() {
     let cases: Vec<TagSpanCase> = load_json("text/tag_spans.json");
     for (idx, case) in cases.iter().enumerate() {

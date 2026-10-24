@@ -6,8 +6,9 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use std::time::Instant;
+use parking_lot::RwLock;
 
 #[derive(Default)]
 struct RegionStats {
@@ -15,15 +16,23 @@ struct RegionStats {
     calls: AtomicU64,
 }
 
-static CELLS: LazyLock<Mutex<BTreeMap<&'static str, RegionStats>>> =
-    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static CELLS: LazyLock<RwLock<BTreeMap<&'static str, RegionStats>>> =
+    LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 fn record(name: &'static str, ns: u64) {
-    if let Ok(mut map) = CELLS.lock() {
-        let stats = map.entry(name).or_default();
-        stats.total_ns.fetch_add(ns, Ordering::Relaxed);
-        stats.calls.fetch_add(1, Ordering::Relaxed);
+    {
+        let map = CELLS.read();
+        if let Some(stats) = map.get(name) {
+            stats.total_ns.fetch_add(ns, Ordering::Relaxed);
+            stats.calls.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
     }
+
+    let mut map = CELLS.write();
+    let stats = map.entry(name).or_default();
+    stats.total_ns.fetch_add(ns, Ordering::Relaxed);
+    stats.calls.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Accumulates the elapsed nanoseconds of the scoped region into `name` and
@@ -60,9 +69,7 @@ pub fn dump() {
     if !enabled() {
         return;
     }
-    let Ok(map) = CELLS.lock() else {
-        return;
-    };
+    let map = CELLS.write();
     println!("[prof] region                                   total_ms      calls  ms/call");
     let mut rows: Vec<(&'static str, u64, u64)> = Vec::new();
     for (&name, stats) in map.iter() {
@@ -84,5 +91,53 @@ pub fn dump() {
     for stats in map.values() {
         stats.total_ns.store(0, Ordering::Relaxed);
         stats.calls.store(0, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_profiling_lifecycle_and_concurrency() {
+        set_enabled(false);
+        assert!(!enabled());
+
+        let res = scope("test_disabled", || 42);
+        assert_eq!(res, 42);
+
+        set_enabled(true);
+        assert!(enabled());
+
+        let res = scope("test_enabled", || 100);
+        assert_eq!(res, 100);
+
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    for _ in 0..50 {
+                        scope("test_concurrent", || {
+                            std::hint::black_box(1 + 1);
+                        });
+                    }
+                });
+            }
+        });
+
+        {
+            let map = CELLS.read();
+            let stats = map.get("test_concurrent").unwrap();
+            assert_eq!(stats.calls.load(Ordering::Relaxed), 400);
+        }
+
+        dump();
+
+        {
+            let map = CELLS.read();
+            let stats = map.get("test_concurrent").unwrap();
+            assert_eq!(stats.calls.load(Ordering::Relaxed), 0);
+        }
+
+        set_enabled(false);
     }
 }

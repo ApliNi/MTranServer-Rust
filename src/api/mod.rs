@@ -25,6 +25,7 @@ pub enum ApiError {
 #[derive(Serialize)]
 struct ApiErrorBody<'a> {
     error: &'a str,
+    message: &'a str,
 }
 
 impl IntoResponse for ApiError {
@@ -39,7 +40,17 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, std::borrow::Cow::Owned(msg))
             }
         };
-        (status, Json(ApiErrorBody { error: message.as_ref() })).into_response()
+        if status == StatusCode::UNAUTHORIZED {
+            (
+                status,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                crate::middleware::UNAUTHORIZED_BODY,
+            )
+                .into_response()
+        } else {
+            let s = message.as_ref();
+            (status, Json(ApiErrorBody { error: s, message: s })).into_response()
+        }
     }
 }
 

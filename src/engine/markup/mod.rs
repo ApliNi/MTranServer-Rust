@@ -6,9 +6,7 @@
 //! inline markup spans are projected onto target text with full context retention
 //! and nested tag tree validity, matching the Firefox Translations (Bergamot) architecture.
 
-pub mod html;
 pub mod inline;
-pub mod markdown;
 pub mod split;
 pub mod document;
 

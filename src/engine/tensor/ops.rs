@@ -1065,6 +1065,9 @@ pub fn softmax_into(x: &Tensor2, out: &mut Tensor2) {
 #[inline]
 pub fn softmax_inplace(x: &mut Tensor2) {
     let d = x.shape[1];
+    if d == 0 || x.data.is_empty() {
+        return;
+    }
     let rows = x.data.len() / d;
     softmax_scores_inplace(&mut x.data, rows, d);
 }
@@ -1685,5 +1688,29 @@ mod tests {
         let mut t_mut = t.clone();
         softmax_inplace(&mut t_mut);
         assert_eq!(t_mut.data, sm.data);
+    }
+
+    #[test]
+    fn test_softmax_empty_tensor() {
+        for shape in [[0, 0], [0, 5], [5, 0]] {
+            let mut t = Tensor2::zeros(shape);
+            t.softmax_inplace();
+            assert_eq!(t.shape, shape);
+            assert!(t.data.is_empty());
+
+            let sm = t.softmax();
+            assert_eq!(sm.shape, shape);
+            assert!(sm.data.is_empty());
+
+            let mut out = Tensor2::zeros([1, 1]);
+            t.softmax_into(&mut out);
+            assert_eq!(out.shape, shape);
+            assert!(out.data.is_empty());
+        }
+
+        let mut default_t = Tensor2::default();
+        default_t.softmax_inplace();
+        assert_eq!(default_t.shape, [0, 0]);
+        assert!(default_t.data.is_empty());
     }
 }

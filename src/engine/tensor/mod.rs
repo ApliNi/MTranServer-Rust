@@ -419,13 +419,13 @@ impl Tensor2 {
                     &local_buf[..]
                 }
             };
-            if m == 1 {
-                #[cfg(target_arch = "x86_64")]
-                if crate::utils::arch::has_avxvnni() {
-                    unsafe {
-                        with_vnni_prebiased(buf_ref, k, |xb_buf| {
+            #[cfg(target_arch = "x86_64")]
+            if crate::utils::arch::has_avxvnni() {
+                unsafe {
+                    simd::vnni::with_vnni_prebiased(buf_ref, m, k, |xb_slice| {
+                        if m == 1 {
                             simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_buf,
+                                xb_slice,
                                 buf_ref,
                                 &w1.data,
                                 k,
@@ -437,7 +437,7 @@ impl Tensor2 {
                                 false,
                             );
                             simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_buf,
+                                xb_slice,
                                 buf_ref,
                                 &w2.data,
                                 k,
@@ -448,16 +448,12 @@ impl Tensor2 {
                                 denom2,
                                 false,
                             );
-                        });
-                    }
-                } else if crate::utils::arch::has_avx2() {
-                    unsafe {
-                        with_avx2_prebiased(buf_ref, k, |lo_buf, hi_buf| {
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_buf,
-                                hi_buf,
+                        } else {
+                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
+                                xb_slice,
                                 buf_ref,
                                 &w1.data,
+                                m,
                                 k,
                                 n1,
                                 bias_slice1,
@@ -466,11 +462,11 @@ impl Tensor2 {
                                 denom1,
                                 false,
                             );
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_buf,
-                                hi_buf,
+                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
+                                xb_slice,
                                 buf_ref,
                                 &w2.data,
+                                m,
                                 k,
                                 n2,
                                 bias_slice2,
@@ -479,62 +475,96 @@ impl Tensor2 {
                                 denom2,
                                 false,
                             );
-                        });
-                    }
-                } else {
-                    let row_fn = matmul_row_i8_dispatch();
-                    unsafe {
-                        row_fn(
-                            buf_ref,
-                            &w1.data,
-                            k,
-                            n1,
-                            bias_slice1,
-                            row_sums1,
-                            &mut out1.data,
-                            denom1,
-                            false,
-                        );
-                        row_fn(
-                            buf_ref,
-                            &w2.data,
-                            k,
-                            n2,
-                            bias_slice2,
-                            row_sums2,
-                            &mut out2.data,
-                            denom2,
-                            false,
-                        );
-                    }
+                        }
+                    });
                 }
-                #[cfg(not(target_arch = "x86_64"))]
-                {
-                    let row_fn = matmul_row_i8_dispatch();
-                    unsafe {
-                        row_fn(
-                            buf_ref,
-                            &w1.data,
-                            k,
-                            n1,
-                            bias_slice1,
-                            row_sums1,
-                            &mut out1.data,
-                            denom1,
-                            false,
-                        );
-                        row_fn(
-                            buf_ref,
-                            &w2.data,
-                            k,
-                            n2,
-                            bias_slice2,
-                            row_sums2,
-                            &mut out2.data,
-                            denom2,
-                            false,
-                        );
-                    }
+            } else if crate::utils::arch::has_avx2() {
+                unsafe {
+                    simd::avx2::with_avx2_prebiased(buf_ref, m, k, |lo_slice, hi_slice| {
+                        if m == 1 {
+                            simd::avx2::matmul_row_i8_avx2_prebiased(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w1.data,
+                                k,
+                                n1,
+                                bias_slice1,
+                                row_sums1,
+                                &mut out1.data,
+                                denom1,
+                                false,
+                            );
+                            simd::avx2::matmul_row_i8_avx2_prebiased(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w2.data,
+                                k,
+                                n2,
+                                bias_slice2,
+                                row_sums2,
+                                &mut out2.data,
+                                denom2,
+                                false,
+                            );
+                        } else {
+                            simd::avx2::matmul_i8_avx2_prebiased_split(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w1.data,
+                                m,
+                                k,
+                                n1,
+                                bias_slice1,
+                                row_sums1,
+                                &mut out1.data,
+                                denom1,
+                                false,
+                            );
+                            simd::avx2::matmul_i8_avx2_prebiased_split(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w2.data,
+                                m,
+                                k,
+                                n2,
+                                bias_slice2,
+                                row_sums2,
+                                &mut out2.data,
+                                denom2,
+                                false,
+                            );
+                        }
+                    });
+                }
+            } else if m == 1 {
+                let row_fn = matmul_row_i8_dispatch();
+                unsafe {
+                    row_fn(
+                        buf_ref,
+                        &w1.data,
+                        k,
+                        n1,
+                        bias_slice1,
+                        row_sums1,
+                        &mut out1.data,
+                        denom1,
+                        false,
+                    );
+                    row_fn(
+                        buf_ref,
+                        &w2.data,
+                        k,
+                        n2,
+                        bias_slice2,
+                        row_sums2,
+                        &mut out2.data,
+                        denom2,
+                        false,
+                    );
                 }
             } else {
                 unsafe {
@@ -564,8 +594,62 @@ impl Tensor2 {
                     );
                 }
             }
-        });
-        out1.shape = [m, n1];
+            #[cfg(not(target_arch = "x86_64"))]
+            if m == 1 {
+                let row_fn = matmul_row_i8_dispatch();
+                unsafe {
+                    row_fn(
+                        buf_ref,
+                        &w1.data,
+                        k,
+                        n1,
+                        bias_slice1,
+                        row_sums1,
+                        &mut out1.data,
+                        denom1,
+                        false,
+                    );
+                    row_fn(
+                        buf_ref,
+                        &w2.data,
+                        k,
+                        n2,
+                        bias_slice2,
+                        row_sums2,
+                        &mut out2.data,
+                        denom2,
+                        false,
+                    );
+                }
+            } else {
+                unsafe {
+                    matmul_i8_split(
+                        buf_ref,
+                        &w1.data,
+                        m,
+                        k,
+                        n1,
+                        bias_slice1,
+                        row_sums1,
+                        &mut out1.data,
+                        denom1,
+                        false,
+                    );
+                    matmul_i8_split(
+                        buf_ref,
+                        &w2.data,
+                        m,
+                        k,
+                        n2,
+                        bias_slice2,
+                        row_sums2,
+                        &mut out2.data,
+                        denom2,
+                        false,
+                    );
+                }
+            }
+        });        out1.shape = [m, n1];
         out2.shape = [m, n2];
     }
 
@@ -652,13 +736,13 @@ impl Tensor2 {
                     &local_buf[..]
                 }
             };
-            if m == 1 {
-                #[cfg(target_arch = "x86_64")]
-                if crate::utils::arch::has_avxvnni() {
-                    unsafe {
-                        with_vnni_prebiased(buf_ref, k, |xb_buf| {
+            #[cfg(target_arch = "x86_64")]
+            if crate::utils::arch::has_avxvnni() {
+                unsafe {
+                    simd::vnni::with_vnni_prebiased(buf_ref, m, k, |xb_slice| {
+                        if m == 1 {
                             simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_buf,
+                                xb_slice,
                                 buf_ref,
                                 &w1.data,
                                 k,
@@ -670,7 +754,7 @@ impl Tensor2 {
                                 false,
                             );
                             simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_buf,
+                                xb_slice,
                                 buf_ref,
                                 &w2.data,
                                 k,
@@ -682,7 +766,7 @@ impl Tensor2 {
                                 false,
                             );
                             simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_buf,
+                                xb_slice,
                                 buf_ref,
                                 &w3.data,
                                 k,
@@ -693,16 +777,12 @@ impl Tensor2 {
                                 denom3,
                                 false,
                             );
-                        });
-                    }
-                } else if crate::utils::arch::has_avx2() {
-                    unsafe {
-                        with_avx2_prebiased(buf_ref, k, |lo_buf, hi_buf| {
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_buf,
-                                hi_buf,
+                        } else {
+                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
+                                xb_slice,
                                 buf_ref,
                                 &w1.data,
+                                m,
                                 k,
                                 n1,
                                 bias_slice1,
@@ -711,11 +791,11 @@ impl Tensor2 {
                                 denom1,
                                 false,
                             );
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_buf,
-                                hi_buf,
+                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
+                                xb_slice,
                                 buf_ref,
                                 &w2.data,
+                                m,
                                 k,
                                 n2,
                                 bias_slice2,
@@ -724,11 +804,11 @@ impl Tensor2 {
                                 denom2,
                                 false,
                             );
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_buf,
-                                hi_buf,
+                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
+                                xb_slice,
                                 buf_ref,
                                 &w3.data,
+                                m,
                                 k,
                                 n3,
                                 bias_slice3,
@@ -737,84 +817,134 @@ impl Tensor2 {
                                 denom3,
                                 false,
                             );
-                        });
-                    }
-                } else {
-                    let row_fn = matmul_row_i8_dispatch();
-                    unsafe {
-                        row_fn(
-                            buf_ref,
-                            &w1.data,
-                            k,
-                            n1,
-                            bias_slice1,
-                            row_sums1,
-                            &mut out1.data,
-                            denom1,
-                            false,
-                        );
-                        row_fn(
-                            buf_ref,
-                            &w2.data,
-                            k,
-                            n2,
-                            bias_slice2,
-                            row_sums2,
-                            &mut out2.data,
-                            denom2,
-                            false,
-                        );
-                        row_fn(
-                            buf_ref,
-                            &w3.data,
-                            k,
-                            n3,
-                            bias_slice3,
-                            row_sums3,
-                            &mut out3.data,
-                            denom3,
-                            false,
-                        );
-                    }
+                        }
+                    });
                 }
-                #[cfg(not(target_arch = "x86_64"))]
-                {
-                    let row_fn = matmul_row_i8_dispatch();
-                    unsafe {
-                        row_fn(
-                            buf_ref,
-                            &w1.data,
-                            k,
-                            n1,
-                            bias_slice1,
-                            row_sums1,
-                            &mut out1.data,
-                            denom1,
-                            false,
-                        );
-                        row_fn(
-                            buf_ref,
-                            &w2.data,
-                            k,
-                            n2,
-                            bias_slice2,
-                            row_sums2,
-                            &mut out2.data,
-                            denom2,
-                            false,
-                        );
-                        row_fn(
-                            buf_ref,
-                            &w3.data,
-                            k,
-                            n3,
-                            bias_slice3,
-                            row_sums3,
-                            &mut out3.data,
-                            denom3,
-                            false,
-                        );
-                    }
+            } else if crate::utils::arch::has_avx2() {
+                unsafe {
+                    simd::avx2::with_avx2_prebiased(buf_ref, m, k, |lo_slice, hi_slice| {
+                        if m == 1 {
+                            simd::avx2::matmul_row_i8_avx2_prebiased(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w1.data,
+                                k,
+                                n1,
+                                bias_slice1,
+                                row_sums1,
+                                &mut out1.data,
+                                denom1,
+                                false,
+                            );
+                            simd::avx2::matmul_row_i8_avx2_prebiased(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w2.data,
+                                k,
+                                n2,
+                                bias_slice2,
+                                row_sums2,
+                                &mut out2.data,
+                                denom2,
+                                false,
+                            );
+                            simd::avx2::matmul_row_i8_avx2_prebiased(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w3.data,
+                                k,
+                                n3,
+                                bias_slice3,
+                                row_sums3,
+                                &mut out3.data,
+                                denom3,
+                                false,
+                            );
+                        } else {
+                            simd::avx2::matmul_i8_avx2_prebiased_split(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w1.data,
+                                m,
+                                k,
+                                n1,
+                                bias_slice1,
+                                row_sums1,
+                                &mut out1.data,
+                                denom1,
+                                false,
+                            );
+                            simd::avx2::matmul_i8_avx2_prebiased_split(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w2.data,
+                                m,
+                                k,
+                                n2,
+                                bias_slice2,
+                                row_sums2,
+                                &mut out2.data,
+                                denom2,
+                                false,
+                            );
+                            simd::avx2::matmul_i8_avx2_prebiased_split(
+                                lo_slice,
+                                hi_slice,
+                                buf_ref,
+                                &w3.data,
+                                m,
+                                k,
+                                n3,
+                                bias_slice3,
+                                row_sums3,
+                                &mut out3.data,
+                                denom3,
+                                false,
+                            );
+                        }
+                    });
+                }
+            } else if m == 1 {
+                let row_fn = matmul_row_i8_dispatch();
+                unsafe {
+                    row_fn(
+                        buf_ref,
+                        &w1.data,
+                        k,
+                        n1,
+                        bias_slice1,
+                        row_sums1,
+                        &mut out1.data,
+                        denom1,
+                        false,
+                    );
+                    row_fn(
+                        buf_ref,
+                        &w2.data,
+                        k,
+                        n2,
+                        bias_slice2,
+                        row_sums2,
+                        &mut out2.data,
+                        denom2,
+                        false,
+                    );
+                    row_fn(
+                        buf_ref,
+                        &w3.data,
+                        k,
+                        n3,
+                        bias_slice3,
+                        row_sums3,
+                        &mut out3.data,
+                        denom3,
+                        false,
+                    );
                 }
             } else {
                 unsafe {
@@ -856,8 +986,85 @@ impl Tensor2 {
                     );
                 }
             }
-        });
-        out1.shape = [m, n1];
+            #[cfg(not(target_arch = "x86_64"))]
+            if m == 1 {
+                let row_fn = matmul_row_i8_dispatch();
+                unsafe {
+                    row_fn(
+                        buf_ref,
+                        &w1.data,
+                        k,
+                        n1,
+                        bias_slice1,
+                        row_sums1,
+                        &mut out1.data,
+                        denom1,
+                        false,
+                    );
+                    row_fn(
+                        buf_ref,
+                        &w2.data,
+                        k,
+                        n2,
+                        bias_slice2,
+                        row_sums2,
+                        &mut out2.data,
+                        denom2,
+                        false,
+                    );
+                    row_fn(
+                        buf_ref,
+                        &w3.data,
+                        k,
+                        n3,
+                        bias_slice3,
+                        row_sums3,
+                        &mut out3.data,
+                        denom3,
+                        false,
+                    );
+                }
+            } else {
+                unsafe {
+                    matmul_i8_split(
+                        buf_ref,
+                        &w1.data,
+                        m,
+                        k,
+                        n1,
+                        bias_slice1,
+                        row_sums1,
+                        &mut out1.data,
+                        denom1,
+                        false,
+                    );
+                    matmul_i8_split(
+                        buf_ref,
+                        &w2.data,
+                        m,
+                        k,
+                        n2,
+                        bias_slice2,
+                        row_sums2,
+                        &mut out2.data,
+                        denom2,
+                        false,
+                    );
+                    matmul_i8_split(
+                        buf_ref,
+                        &w3.data,
+                        m,
+                        k,
+                        n3,
+                        bias_slice3,
+                        row_sums3,
+                        &mut out3.data,
+                        denom3,
+                        false,
+                    );
+                }
+            }
+        });        out1.shape = [m, n1];
         out2.shape = [m, n2];
         out3.shape = [m, n3];
     }
@@ -1082,81 +1289,6 @@ pub(crate) unsafe fn prepare_uninit_vec<T: Copy>(vec: &mut Vec<T>, len: usize) {
         vec.reserve(len - vec.len());
     }
     vec.set_len(len);
-}
-#[cfg(target_arch = "x86_64")]
-thread_local! {
-    static VNNI_PREBIASED_SCRATCH: std::cell::RefCell<Vec<std::arch::x86_64::__m256i>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-    static AVX2_PREBIASED_SCRATCH: std::cell::RefCell<(
-        Vec<std::arch::x86_64::__m256i>,
-        Vec<std::arch::x86_64::__m256i>,
-    )> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[allow(clippy::needless_range_loop)]
-unsafe fn with_vnni_prebiased<R, F: FnOnce(&[std::arch::x86_64::__m256i]) -> R>(
-    x: &[i8],
-    k: usize,
-    f: F,
-) -> R {
-    use std::arch::x86_64::*;
-    const BLK: usize = 32;
-    let blocks = k / BLK;
-    let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
-
-    VNNI_PREBIASED_SCRATCH.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        if buf.len() < blocks {
-            buf.resize(blocks, _mm256_setzero_si256());
-        }
-        for b in 0..blocks {
-            let off = b * BLK;
-            let xv = _mm256_loadu_si256(x.as_ptr().add(off) as *const __m256i);
-            buf[b] = _mm256_add_epi8(xv, x_bias_vec);
-        }
-        f(&buf[..blocks])
-    })
-}
-
-/// Pre-biases activation vector `x` (+128) and unpacks into low/high 4-bit nibbles for AVX2 dot products,
-/// utilizing thread-local buffers to eliminate stack frame footprint and repeated heap allocations.
-///
-/// # Safety
-/// Requires AVX2 CPU features. `k` must be a multiple of 32 and `x.len() >= k`.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[allow(clippy::needless_range_loop)]
-unsafe fn with_avx2_prebiased<
-    R,
-    F: FnOnce(&[std::arch::x86_64::__m256i], &[std::arch::x86_64::__m256i]) -> R,
->(
-    x: &[i8],
-    k: usize,
-    f: F,
-) -> R {
-    use std::arch::x86_64::*;
-    const BLK: usize = 32;
-    let blocks = k / BLK;
-    let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
-    let nibble_mask = _mm256_set1_epi8(0x0F);
-
-    AVX2_PREBIASED_SCRATCH.with(|cell| {
-        let (lo_buf, hi_buf) = &mut *cell.borrow_mut();
-        if lo_buf.len() < blocks {
-            lo_buf.resize(blocks, _mm256_setzero_si256());
-            hi_buf.resize(blocks, _mm256_setzero_si256());
-        }
-        for b in 0..blocks {
-            let off = b * BLK;
-            let xv = _mm256_loadu_si256(x.as_ptr().add(off) as *const __m256i);
-            let xb = _mm256_add_epi8(xv, x_bias_vec);
-            lo_buf[b] = _mm256_and_si256(xb, nibble_mask);
-            hi_buf[b] = _mm256_and_si256(_mm256_srli_epi16::<4>(xb), nibble_mask);
-        }
-        f(&lo_buf[..blocks], &hi_buf[..blocks])
-    })
 }
 // Per-thread scratch for the single-row quantized matmul's activation
 // buffer (`i8_quantize_into`), so the decode loop's several quantized

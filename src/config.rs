@@ -1,5 +1,6 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::Arc;
+use parking_lot::RwLock;
 
 use clap::builder::BoolishValueParser;
 use clap::Parser;
@@ -345,7 +346,7 @@ impl std::str::FromStr for ParseFormats {
         let mut html = false;
         let mut md = false;
 
-        for part in lower.split(|c| c == ',' || c == '+') {
+        for part in lower.split([',', '+']) {
             match part.trim() {
                 "html" => html = true,
                 "md" => md = true,
@@ -489,7 +490,7 @@ fn parse_interval_secs(value: Option<&str>) -> Option<u64> {
 }
 
 /// Global server configuration pointer.
-static CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
+static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 
 /// Initialize the global config from CLI args and environment variables.
 pub fn init(cli: Cli) {
@@ -567,48 +568,38 @@ pub fn init(cli: Cli) {
         bench_qps_input_length: cli.bench_qps_input_length,
     };
 
-    let ptr = Box::into_raw(Box::new(cfg));
+    let cfg = Arc::new(cfg);
     #[cfg(not(test))]
     {
-        if CONFIG
-            .compare_exchange(
-                std::ptr::null_mut(),
-                ptr,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_err()
-        {
-            // SAFETY: `ptr` was created by `Box::into_raw` above and never exposed.
-            let _ = unsafe { Box::from_raw(ptr) };
+        let mut guard = CONFIG.write();
+        if guard.is_some() {
             panic!("config::init called twice in the same process");
         }
+        *guard = Some(cfg);
     }
     #[cfg(test)]
     {
-        CONFIG.swap(ptr, Ordering::AcqRel);
+        *CONFIG.write() = Some(cfg);
     }
 }
 
 /// Check whether the global config has been initialized.
 pub fn is_initialized() -> bool {
-    !CONFIG.load(Ordering::Acquire).is_null()
+    CONFIG.read().is_some()
 }
 
 /// Get the global config. Panics if not initialized.
-pub fn get() -> &'static Config {
-    let ptr = CONFIG.load(Ordering::Acquire);
-    if ptr.is_null() {
-        panic!("Config not initialized. Call config::init() first.");
-    }
-    // SAFETY: The pointer is initialized from a leaked Box and remains valid for the static lifetime.
-    unsafe { &*ptr }
+pub fn get() -> Arc<Config> {
+    CONFIG
+        .read()
+        .as_ref()
+        .cloned()
+        .expect("Config not initialized. Call config::init() first.")
 }
 
 #[doc(hidden)]
 pub fn set_for_testing(cfg: Config) {
-    let ptr = Box::into_raw(Box::new(cfg));
-    CONFIG.swap(ptr, Ordering::AcqRel);
+    *CONFIG.write() = Some(Arc::new(cfg));
 }
 
 #[cfg(test)]
@@ -769,7 +760,7 @@ mod tests {
         let cfg = get();
         assert_eq!(cfg.port, "8989");
 
-        let mut test_cfg = cfg.clone();
+        let mut test_cfg = (*cfg).clone();
         test_cfg.port = "9999".to_string();
         set_for_testing(test_cfg);
         assert!(is_initialized());

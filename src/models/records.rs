@@ -297,19 +297,48 @@ pub async fn download_model(
     version: Option<&str>,
 ) -> Result<(), String> {
     let cfg = config::get();
-    let lang_pair_dir = cfg.model_dir.join(format!("{}_{}", from_lang, to_lang));
-    tokio::fs::create_dir_all(&lang_pair_dir)
+    let pair_name = format!("{}_{}", from_lang, to_lang);
+    let lang_pair_dir = cfg.model_dir.join(&pair_name);
+    let staging_dir = cfg.model_dir.join(format!(".{pair_name}.staging"));
+
+    if staging_dir.exists() {
+        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+    }
+    tokio::fs::create_dir_all(&staging_dir)
         .await
-        .map_err(|e| format!("Failed to create model dir: {}", e))?;
+        .map_err(|e| format!("Failed to create staging dir: {}", e))?;
 
     let downloader = Downloader::new();
-    let downloaded =
-        download_model_to_dir(&downloader, &lang_pair_dir, from_lang, to_lang, version).await?;
+    let existing = if lang_pair_dir.exists() {
+        Some(lang_pair_dir.as_path())
+    } else {
+        None
+    };
 
-    // Persist version info for the updater
-    write_installed_version(&lang_pair_dir, &downloaded).await?;
+    let download_res = download_model_to_dir(
+        &downloader,
+        &staging_dir,
+        from_lang,
+        to_lang,
+        version,
+        existing,
+    )
+    .await;
 
-    Ok(())
+    let downloaded = match download_res {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+            return Err(e);
+        }
+    };
+
+    if let Err(e) = write_installed_version(&staging_dir, &downloaded).await {
+        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+        return Err(e);
+    }
+
+    crate::models::download::swap_dir_atomic(&staging_dir, &lang_pair_dir).await
 }
 
 /// Core download logic: fetch model files for a language pair into the given
@@ -323,10 +352,11 @@ pub async fn download_model(
 /// (either newly downloaded or already up-to-date).
 pub(crate) async fn download_model_to_dir(
     downloader: &Downloader,
-    lang_pair_dir: &Path,
+    target_dir: &Path,
     from_lang: &str,
     to_lang: &str,
     version: Option<&str>,
+    existing_dir: Option<&Path>,
 ) -> Result<HashMap<String, String>, String> {
     let records = records().ok_or("Records not initialized")?;
 
@@ -367,7 +397,7 @@ pub(crate) async fn download_model_to_dir(
         matched = target_records;
     }
 
-    tokio::fs::create_dir_all(lang_pair_dir)
+    tokio::fs::create_dir_all(target_dir)
         .await
         .map_err(|e| format!("Failed to create model dir: {}", e))?;
 
@@ -376,16 +406,32 @@ pub(crate) async fn download_model_to_dir(
     for &record in &matched {
         let filename = &record.attachment.filename;
         let file_url = format!("{}/{}", ATTACHMENTS_BASE_URL, record.attachment.location);
-        let compressed_path = lang_pair_dir.join(filename);
         let decompressed_filename = filename.trim_end_matches(".zst");
-        let decompressed_path = lang_pair_dir.join(decompressed_filename);
+        let decompressed_path = target_dir.join(decompressed_filename);
+
+        // Reuse unchanged file from existing_dir via hard link or copy
+        if !decompressed_path.exists() {
+            if let Some(src_dir) = existing_dir {
+                let src_path = src_dir.join(decompressed_filename);
+                if src_path.exists() {
+                    let mut matched_hash = false;
+                    if let (Some(expected), Ok(actual)) = (&record.decompressed_hash, compute_file_hash(&src_path).await) {
+                        matched_hash = *expected == actual;
+                    }
+                    if matched_hash {
+                        if tokio::fs::hard_link(&src_path, &decompressed_path).await.is_err() {
+                            let _ = tokio::fs::copy(&src_path, &decompressed_path).await;
+                        }
+                    }
+                }
+            }
+        }
 
         let needs_download = if decompressed_path.exists() {
             match &record.decompressed_hash {
                 Some(expected_hash) => {
                     compute_file_hash(&decompressed_path).await? != *expected_hash
                 }
-                // No hash to check: trust the existing file (same as before).
                 None => false,
             }
         } else {
@@ -397,32 +443,15 @@ pub(crate) async fn download_model_to_dir(
             continue;
         }
 
-        downloader.download(&file_url, &compressed_path).await?;
-
-        if filename.ends_with(".zst") {
-            if let Err(e) = downloader
-                .decompress(&compressed_path, &decompressed_path)
-                .await
-            {
-                let _ = tokio::fs::remove_file(&compressed_path).await;
-                let _ = tokio::fs::remove_file(&decompressed_path).await;
-                return Err(e);
-            }
-            let _ = tokio::fs::remove_file(&compressed_path).await;
-        }
-        // Verify the produced file before registering its version; otherwise a
-        // corrupt download would be pinned as "latest" and never re-fetched.
-        if let Some(expected_hash) = &record.decompressed_hash {
-            let local_hash = compute_file_hash(&decompressed_path).await?;
-            if local_hash != *expected_hash {
-                let _ = tokio::fs::remove_file(&decompressed_path).await;
-                let _ = tokio::fs::remove_file(&compressed_path).await;
-                return Err(format!(
-                    "Hash mismatch for {} (expected {}, got {})",
-                    decompressed_filename, expected_hash, local_hash
-                ));
-            }
-        }
+        downloader
+            .download_stream_decompressed(
+                &file_url,
+                &decompressed_path,
+                filename.ends_with(".zst"),
+                record.decompressed_size.map(|s| s as u64),
+                record.decompressed_hash.as_deref(),
+            )
+            .await?;
 
         downloaded_versions.insert(record.file_type.clone(), record.version.clone());
     }
@@ -504,29 +533,7 @@ pub async fn get_model_files(
     Ok(files)
 }
 
-async fn compute_file_hash(path: &Path) -> Result<String, String> {
-    use sha2::Digest;
-    use tokio::io::AsyncReadExt;
-
-    // Stream in chunks instead of loading the whole (tens-of-MB) file.
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_err(|e| format!("Failed to open file for hash {}: {e}", path.display()))?;
-    let mut hasher = sha2::Sha256::new();
-    let mut buf = vec![0u8; 256 * 1024];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .await
-            .map_err(|e| format!("Failed to read file for hash {}: {e}", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let hash = hasher.finalize();
-    Ok(hash.iter().map(|b| format!("{:02x}", b)).collect())
-}
+use super::download::compute_file_hash;
 
 /// Compare two version strings using semantic versioning rules.
 pub(crate) use crate::utils::compare_versions;
@@ -588,6 +595,9 @@ pub async fn installed_pairs(model_dir: &Path) -> Vec<(String, String)> {
     while let Ok(Some(entry)) = entries.next_entry().await {
         let file_name = entry.file_name().to_string_lossy().into_owned();
         if !entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        if file_name.starts_with('.') {
             continue;
         }
         let Some(sep) = file_name.find('_') else {
@@ -862,5 +872,37 @@ mod tests {
         let langs = super::get_supported_languages();
         assert!(langs.contains(&"zh-Hans".to_string()));
         assert!(!langs.contains(&"zh".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_installed_pairs_ignores_staging_and_bak() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "mtran_test_installed_pairs_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let valid_pair = temp_dir.join("en_es");
+        let staging_pair = temp_dir.join(".en_es.staging");
+        let bak_pair = temp_dir.join(".en_es.bak");
+        let invalid = temp_dir.join("invalid");
+
+        tokio::fs::create_dir_all(&valid_pair).await.unwrap();
+        tokio::fs::write(valid_pair.join("model.bin"), b"model").await.unwrap();
+
+        tokio::fs::create_dir_all(&staging_pair).await.unwrap();
+        tokio::fs::write(staging_pair.join("model.bin"), b"staging model").await.unwrap();
+
+        tokio::fs::create_dir_all(&bak_pair).await.unwrap();
+        tokio::fs::write(bak_pair.join("model.bin"), b"bak model").await.unwrap();
+
+        tokio::fs::create_dir_all(&invalid).await.unwrap();
+
+        let pairs = super::installed_pairs(&temp_dir).await;
+        assert_eq!(pairs, vec![("en".to_string(), "es".to_string())]);
+
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
     }
 }

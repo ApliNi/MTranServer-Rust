@@ -442,16 +442,6 @@ fn truncate_by_utf8_bytes(text: &str, max_bytes: usize) -> &str {
     &text[..end]
 }
 
-#[inline]
-pub fn is_traditional_feature_char(c: char) -> bool {
-    crate::engine::rules::detect::is_traditional_char(c)
-}
-
-#[inline]
-pub fn is_simplified_feature_char(c: char) -> bool {
-    crate::engine::rules::detect::is_simplified_char(c)
-}
-
 /// Distinguish Traditional Chinese (`zh-Hant`) from Simplified Chinese (`zh-Hans`)
 /// based on statistical hits of distinctive feature characters.
 #[inline]
@@ -535,7 +525,7 @@ pub fn get_valid_content_start_index(text: &str) -> usize {
     text.char_indices()
         .find(|(_, c)| c.is_alphabetic() || c.is_numeric())
         .map(|(i, _)| i)
-        .unwrap_or(0)
+        .unwrap_or(text.len())
 }
 
 
@@ -795,5 +785,26 @@ mod tests {
         // The character boundary at <= 15 is 14 bytes. It must truncate cleanly to 14 bytes without UB.
         let boundary_cross = InlineLang::new("abcdefghijklmn中");
         assert_eq!(boundary_cross.as_str(), "abcdefghijklmn");
+    }
+
+    #[tokio::test]
+    async fn test_pure_punctuation_fast_path() {
+        // Pure punctuation / symbols should return text.len() to trigger fast path
+        assert_eq!(get_valid_content_start_index("---===---"), 9);
+        assert_eq!(get_valid_content_start_index("!@#$%^&*()_+"), 12);
+        assert_eq!(get_valid_content_start_index("   "), 3);
+        assert_eq!(get_valid_content_start_index(""), 0);
+
+        // Leading symbols with content should return index of first alphanumeric character
+        assert_eq!(get_valid_content_start_index("---Hello"), 3);
+        assert_eq!(get_valid_content_start_index("...123"), 3);
+        assert_eq!(get_valid_content_start_index("你好世界"), 0);
+
+        // Fast path detection returns default "en" without running full heavy detectors
+        assert_eq!(detect_language("---===---").await, "en");
+        assert_eq!(detect_language("!@#$%^&*()_+").await, "en");
+        let (lang, conf) = detect_language_with_confidence("......", 0.5).await;
+        assert_eq!(lang, "en");
+        assert_eq!(conf, 0.0);
     }
 }

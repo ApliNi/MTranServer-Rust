@@ -688,6 +688,11 @@ pub fn remap_spans_to_sentences(sentences: &mut [SplitSentence<'_>], spans: &[Ma
                     local_span.target_range = None;
                     sentences[i].inline_spans.push(local_span);
                 }
+            } else if !overlapped && start_idx == 0 && !sentences.is_empty() {
+                let mut local_span = span.clone();
+                local_span.source_range = 0..0;
+                local_span.target_range = None;
+                sentences[0].inline_spans.push(local_span);
             }
         }
     }
@@ -2056,6 +2061,27 @@ mod tests {
         assert_eq!(sents[2].inline_spans.iter().find(|s| s.open_markup == "<b>").unwrap().source_range, 0..5);
         assert_eq!(sents[2].inline_spans.iter().filter(|s| s.open_markup == "<p2/>").count(), 1);
         assert_eq!(sents[2].inline_spans.iter().find(|s| s.open_markup == "<p2/>").unwrap().source_range, 15..15);
+    }
+
+    #[test]
+    fn test_remap_spans_leading_whitespace_paired_tags() {
+        let mut sentences = vec![
+            SplitSentence::from_borrowed("Hello world.", 6..18, " "),
+            SplitSentence::from_borrowed("Second sentence.", 19..35, ""),
+        ];
+        // Paired tag entirely in leading whitespace [0..6]
+        let leading_span = MarkupSpan::new_paired(0..6, "<span>".to_string(), "</span>".to_string(), 0);
+        // Self-closing tag in leading whitespace [2..2]
+        let point_span = MarkupSpan::new_self_closing(2, "<br/>".to_string(), 0);
+
+        remap_spans_to_sentences(&mut sentences, &[leading_span, point_span]);
+
+        assert_eq!(sentences[0].inline_spans.len(), 2);
+        // Both spans mapped to start of sentences[0] (0..0)
+        assert_eq!(sentences[0].inline_spans[0].open_markup, "<span>");
+        assert_eq!(sentences[0].inline_spans[0].source_range, 0..0);
+        assert_eq!(sentences[0].inline_spans[1].open_markup, "<br/>");
+        assert_eq!(sentences[0].inline_spans[1].source_range, 0..0);
     }
 
     #[test]

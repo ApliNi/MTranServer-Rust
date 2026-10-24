@@ -79,7 +79,7 @@ mod server {
 
     pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let cfg = crate::config::get();
-        let app = crate::api::create_router(cfg);
+        let app = crate::api::create_router(&cfg);
 
         let host = if cfg.host.contains(':') && !cfg.host.starts_with('[') {
             format!("[{}]", cfg.host)

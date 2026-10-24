@@ -23,14 +23,21 @@ use std::sync::{LazyLock, OnceLock};
 pub use scalar::quantize_row_scalar;
 
 #[cfg(target_arch = "x86_64")]
-pub use avx2::quantize_row_avx2;
+pub use avx2::{
+    matmul_i8_avx2_prebiased, matmul_i8_avx2_prebiased_split, quantize_row_avx2,
+    with_avx2_prebiased,
+};
+
+#[cfg(target_arch = "x86_64")]
+pub use vnni::{
+    matmul_i8_avxvnni_prebiased, matmul_i8_avxvnni_prebiased_split, with_vnni_prebiased,
+};
 
 #[cfg(target_arch = "x86_64")]
 pub use sse41::{quantize_row_sse2, quantize_row_sse41};
 
 #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
 pub use neon::quantize_row_neon;
-
 /// Single-row (m == 1) matmul with bias: `out[j] = bias[j] + Σ_t h[t]·b[t·n+j]`.
 ///
 /// `b` is a `[k, n]` row-major matrix (the shortlist's transposed gather of
@@ -185,16 +192,16 @@ const GEMM_PARALLEL_WORK_BUSY: u64 = 16_000_000;
 
 /// Smallest chunk a split is allowed to produce. Must keep enough rows to
 /// amortise the panel layout.
-const GEMM_MIN_ROWS: usize = 16;
+pub(crate) const GEMM_MIN_ROWS: usize = 16;
 
 /// Count of concurrent `m`-splits currently in flight across all threads.
 /// When non-zero, subsequent matmuls use a much higher work threshold before
 /// splitting so one multi-threaded encode does not cascade into thrashing
 /// the rayon pool.
-static ACTIVE_SPLITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(crate) static ACTIVE_SPLITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 #[inline]
-fn gemm_should_split(m: usize, k: usize, n: usize) -> bool {
+pub(crate) fn gemm_should_split(m: usize, k: usize, n: usize) -> bool {
     if m < 2 * GEMM_MIN_ROWS {
         return false;
     }
@@ -208,7 +215,7 @@ fn gemm_should_split(m: usize, k: usize, n: usize) -> bool {
     work >= threshold && rayon::current_num_threads() > 1
 }
 
-struct SplitGuard;
+pub(crate) struct SplitGuard;
 impl Drop for SplitGuard {
     fn drop(&mut self) {
         ACTIVE_SPLITS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
@@ -391,8 +398,8 @@ pub fn quantize_row(data: &[f32], qa: f32, out: &mut [i8]) {
 ///
 /// Hoisted to model load time (see [`crate::engine::tensor::Quant8Tensor::row_sums`]) so the
 /// kernels never rescan the weights at call time.
-pub(crate) fn compute_row_sums(w: &[i8], n: usize, k: usize) -> std::borrow::Cow<'_, [i32]> {
-    let rows: Vec<i32> = (0..n)
+pub(crate) fn compute_row_sums_vec(w: &[i8], n: usize, k: usize) -> Vec<i32> {
+    (0..n)
         .map(|j| {
             let wr = &w[j * k..(j + 1) * k];
             let mut acc: i32 = 0;
@@ -401,6 +408,9 @@ pub(crate) fn compute_row_sums(w: &[i8], n: usize, k: usize) -> std::borrow::Cow
             }
             acc * 128
         })
-        .collect();
-    std::borrow::Cow::Owned(rows)
+        .collect()
+}
+
+pub(crate) fn compute_row_sums(w: &[i8], n: usize, k: usize) -> std::borrow::Cow<'static, [i32]> {
+    std::borrow::Cow::Owned(compute_row_sums_vec(w, n, k))
 }

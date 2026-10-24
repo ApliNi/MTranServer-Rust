@@ -730,7 +730,7 @@ async fn load_and_register_engine(
             &vocab_src,
             &vocab_trg,
             if config::is_initialized() {
-                EngineConfig::from_config(config::get())
+                EngineConfig::from_config(&config::get())
             } else {
                 EngineConfig::default()
             },

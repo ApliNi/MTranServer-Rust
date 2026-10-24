@@ -130,151 +130,62 @@ async fn check_and_update(model_dir: &Path, from_lang: &str, to_lang: &str) {
         to_lang
     );
 
-    if let Err(e) = download_and_swap(&pair_dir, from_lang, to_lang).await {
+    if let Err(e) = download_and_swap(model_dir, from_lang, to_lang).await {
         tracing::warn!("{} -> {}: update failed: {}", from_lang, to_lang, e);
     }
 }
 
-/// Download the latest model files to a temporary directory, then move them
-/// over the old files and evict the running engine.
-async fn download_and_swap(pair_dir: &Path, from_lang: &str, to_lang: &str) -> Result<(), String> {
-    let tmp_dir = pair_dir.join(".update");
-    // Start from a clean temp dir (a previous interrupted run may have left files).
-    if tmp_dir.exists() {
-        tokio::fs::remove_dir_all(&tmp_dir)
-            .await
-            .map_err(|e| format!("Failed to clean temp dir: {}", e))?;
+/// Download the latest model files to a staging directory, then atomically
+/// swap the staging directory into place and evict the running engine.
+async fn download_and_swap(model_dir: &Path, from_lang: &str, to_lang: &str) -> Result<(), String> {
+    let pair_name = format!("{}_{}", from_lang, to_lang);
+    let pair_dir = model_dir.join(&pair_name);
+    let staging_dir = model_dir.join(format!(".{pair_name}.staging"));
+
+    if staging_dir.exists() {
+        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
     }
-    tokio::fs::create_dir_all(&tmp_dir)
+    tokio::fs::create_dir_all(&staging_dir)
         .await
-        .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        .map_err(|e| format!("Failed to create staging dir: {e}"))?;
 
     let downloader = Downloader::new();
 
-    // Phase 1: download all files into the temp dir. Files whose hash already
-    // matches are skipped, but since tmp_dir is empty this always downloads.
-    let downloaded = records::download_model_to_dir(
+    let download_res = records::download_model_to_dir(
         &downloader,
-        &tmp_dir,
+        &staging_dir,
         from_lang,
         to_lang,
-        None, // latest version
+        None,
+        Some(&pair_dir),
     )
-    .await?;
+    .await;
 
-    // Phase 2: every decompressed file should now be inside tmp_dir.
-    // download_model_to_dir skips files whose hash already matches, but the
-    // temp dir was freshly cleared, so every expected file was written.
-    // Phase 2.5: evict the running engine before replacing files so that
-    // Windows file locks from mmap and background readers are dropped.
+    let downloaded = match download_res {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+            return Err(e);
+        }
+    };
+
+    if let Err(e) = records::write_installed_version(&staging_dir, &downloaded).await {
+        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+        return Err(e);
+    }
+
     crate::service::evict_engine(from_lang, to_lang);
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-    // Phase 3: move the new files over the old ones. The decompressed
-    // filenames in tmp_dir are the canonical model file names.
-    let mut moved: Vec<String> = Vec::new();
-    let mut entries = tokio::fs::read_dir(&tmp_dir)
-        .await
-        .map_err(|e| format!("Failed to read temp dir: {}", e))?;
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !entry
-            .file_type()
-            .await
-            .map(|t| t.is_file())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        let src = tmp_dir.join(&name);
-        let dst = pair_dir.join(&name);
-        move_into_place(&src, &dst, &name).await?;
-        moved.push(name);
-    }
+    crate::models::download::swap_dir_atomic(&staging_dir, &pair_dir).await?;
 
-    // Phase 4: persist the new version metadata.
-    records::write_installed_version(pair_dir, &downloaded).await?;
-
-    // Phase 5: ensure any racing re-loads are refreshed.
     crate::service::evict_engine(from_lang, to_lang);
     tracing::info!(
-        "{} -> {}: updated {} files (swapped to v{:?})",
+        "{} -> {}: atomically updated model (swapped to v{:?})",
         from_lang,
         to_lang,
-        moved.len(),
         downloaded
     );
 
-    // Phase 6: clean up the temp dir.
-    if tmp_dir.exists() {
-        let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-    }
-
     Ok(())
-}
-
-/// Replace `dst` with `src`, tolerating an existing destination file.
-///
-/// On Unix `std::fs::rename` atomically replaces existing files, so there is
-/// no window where the model directory lacks the file. Windows cannot rename
-/// onto an existing open file, so instead of deleting the old file first
-/// (which would leave a long no-file window while the multi-MB download is
-/// renamed in), the old file is renamed to a `.bak` sibling — a fast metadata
-/// operation that frees the destination name almost immediately — and only
-/// then is the new file moved in. A crash between the two steps leaves the
-/// `.bak` behind (the next swap cleans it up); the no-file window is a few
-/// metadata operations wide, not a full download.
-async fn move_into_place(src: &Path, dst: &Path, name: &str) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        tokio::fs::rename(src, dst)
-            .await
-            .map_err(|e| format!("Failed to move {} into place: {}", name, e))
-    }
-    #[cfg(not(unix))]
-    {
-        let bak = {
-            let mut p = dst.as_os_str().to_owned();
-            p.push(".bak");
-            std::path::PathBuf::from(p)
-        };
-        if dst.exists() {
-            let _ = tokio::fs::remove_file(&bak).await;
-            let mut renamed = false;
-            let mut last_err = None;
-            for _ in 0..5 {
-                match tokio::fs::rename(dst, &bak).await {
-                    Ok(()) => {
-                        renamed = true;
-                        break;
-                    }
-                    Err(e) => {
-                        last_err = Some(e);
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                    }
-                }
-            }
-            if !renamed {
-                return Err(format!(
-                    "Failed to move old {} out of place: {}",
-                    name,
-                    last_err.map(|e| e.to_string()).unwrap_or_default()
-                ));
-            }
-        }
-        if let Err(e) = tokio::fs::rename(src, dst).await {
-            // Best-effort rollback so the pair directory keeps a usable model
-            // even when the move-in fails.
-            if !dst.exists() && tokio::fs::rename(&bak, dst).await.is_err() {
-                tracing::error!(
-                    "Failed to restore {} from .bak after failed swap: {}",
-                    name,
-                    e
-                );
-            }
-            return Err(format!("Failed to move {} into place: {}", name, e));
-        }
-        let _ = tokio::fs::remove_file(&bak).await;
-        Ok(())
-    }
 }

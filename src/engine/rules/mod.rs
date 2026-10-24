@@ -599,91 +599,9 @@ impl LanguageRuleProfile {
                     }
                 }
             }
-
-            for prefix in &self.index.complex_prefixes {
-                let prefix_no_dot = prefix.strip_suffix('.').unwrap_or(prefix);
-
-                if prefix.contains(' ') {
-                    let text_up_no_dot = text_up_to_pos.strip_suffix('.').unwrap_or(text_up_to_pos);
-                    if ends_with_ignore_case(text_up_to_pos, prefix)
-                        || ends_with_ignore_case(text_up_no_dot, prefix_no_dot)
-                        || starts_with_ignore_case(text_from_word_start, prefix)
-                    {
-                        return true;
-                    }
-                    if let Some(matched_len) = match_prefix_len_ignore_case(text_from_word_start, prefix_no_dot) {
-                        if text_from_word_start[matched_len..].starts_with('.') {
-                            return true;
-                        }
-                    }
-                } else {
-                    let left_boundary = word_start == 0
-                        || text[..word_start]
-                            .chars()
-                            .next_back()
-                            .map_or(true, |c| !c.is_alphanumeric());
-                    if !left_boundary {
-                        continue;
-                    }
-
-                    let right_boundary = token.ends_with('.')
-                        || text[end..].starts_with('.')
-                        || end >= text.len()
-                        || text[end..]
-                            .chars()
-                            .next()
-                            .map_or(true, |c| !c.is_alphanumeric());
-                    if !right_boundary {
-                        continue;
-                    }
-
-                    let matches_token = eq_ignore_case(token, prefix)
-                        || (!token_no_dot.is_empty()
-                            && !prefix_no_dot.is_empty()
-                            && eq_ignore_case(token_no_dot, prefix_no_dot));
-
-                    if matches_token
-                        && is_valid_abbreviation_context(text, word_start, end, token, prefix_no_dot)
-                    {
-                        return true;
-                    }
-
-                    if prefix.contains('.') {
-                        if let Some(matched_len) = match_prefix_len_ignore_case(text_from_word_start, prefix) {
-                            let prefix_end = word_start + matched_len;
-                            let prefix_token = &text[word_start..prefix_end];
-                            if is_valid_abbreviation_context(
-                                text,
-                                word_start,
-                                prefix_end,
-                                prefix_token,
-                                prefix_no_dot,
-                            ) {
-                                return true;
-                            }
-                        }
-                        if let Some(matched_len) = match_prefix_len_ignore_case(text_from_word_start, prefix_no_dot) {
-                            if text_from_word_start[matched_len..].starts_with('.') {
-                                let prefix_end = word_start + matched_len + 1;
-                                let prefix_token = &text[word_start..prefix_end];
-                                if is_valid_abbreviation_context(
-                                    text,
-                                    word_start,
-                                    prefix_end,
-                                    prefix_token,
-                                    prefix_no_dot,
-                                ) {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return false;
         }
 
-        for prefix in &self.nonbreaking_prefixes {
+        for prefix in &self.index.complex_prefixes {
             let prefix_no_dot = prefix.strip_suffix('.').unwrap_or(prefix);
 
             if prefix.contains(' ') {

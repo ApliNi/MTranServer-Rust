@@ -536,30 +536,16 @@ thread_local! {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn matmul_i8_avxvnni(
+#[inline]
+pub unsafe fn with_vnni_prebiased<R, F: FnOnce(&[std::arch::x86_64::__m256i]) -> R>(
     x: &[i8],
-    w: &[i8],
     m: usize,
     k: usize,
-    n: usize,
-    bias: Option<&[f32]>,
-    row_sums: Option<&[i32]>,
-    out: &mut [f32],
-    denom: f32,
-    relu: bool,
-) {
+    f: F,
+) -> R {
     use std::arch::x86_64::*;
-
-    const N_TILE: usize = 64;
     const BLK: usize = 32;
     let blocks = k / BLK;
-    let fallback: std::borrow::Cow<[i32]> = match row_sums {
-        Some(rs) if rs.len() >= n => std::borrow::Cow::Borrowed(&rs[..n]),
-        _ => compute_row_sums(w, n, k),
-    };
-    let wsums: &[i32] = &fallback;
-
     let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
     let total_blocks = m * blocks;
     VNNI_XB_BUF.with(|cell| {
@@ -576,37 +562,146 @@ pub unsafe fn matmul_i8_avxvnni(
                 row_dest[b] = _mm256_add_epi8(xv, x_bias_vec);
             }
         }
-        let xb_slice = &buf[..total_blocks];
+        f(&buf[..total_blocks])
+    })
+}
 
-        for j_start in (0..n).step_by(N_TILE) {
-            let j_len = (n - j_start).min(N_TILE);
-            let w_tile = &w[j_start * k..(j_start + j_len) * k];
-            let bias_tile = bias.map(|b| &b[j_start..j_start + j_len]);
-            let rs_tile = Some(&wsums[j_start..j_start + j_len]);
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn matmul_i8_avxvnni_prebiased(
+    xb_slice: &[std::arch::x86_64::__m256i],
+    x: &[i8],
+    w: &[i8],
+    m: usize,
+    k: usize,
+    n: usize,
+    bias: Option<&[f32]>,
+    row_sums: Option<&[i32]>,
+    out: &mut [f32],
+    denom: f32,
+    relu: bool,
+) {
+    const N_TILE: usize = 64;
+    const BLK: usize = 32;
+    let blocks = k / BLK;
+    let fallback: std::borrow::Cow<[i32]> = match row_sums {
+        Some(rs) if rs.len() >= n => std::borrow::Cow::Borrowed(&rs[..n]),
+        _ => compute_row_sums(w, n, k),
+    };
+    let wsums: &[i32] = &fallback;
 
-            let mut i = 0;
-            while i + 1 < m {
-                let xb0 = &xb_slice[i * blocks..(i + 1) * blocks];
-                let xb1 = &xb_slice[(i + 1) * blocks..(i + 2) * blocks];
-                let xr0 = &x[i * k..(i + 1) * k];
-                let xr1 = &x[(i + 1) * k..(i + 2) * k];
-                let (top, bottom) = out.split_at_mut((i + 1) * n);
-                let out_r0 = &mut top[i * n + j_start..i * n + j_start + j_len];
-                let out_r1 = &mut bottom[j_start..j_start + j_len];
-                matmul_2rows_i8_avxvnni(
-                    xb0, xb1, xr0, xr1, w_tile, k, j_len, bias_tile, rs_tile, out_r0, out_r1,
-                    denom, relu,
-                );
-                i += 2;
-            }
-            if i < m {
-                let xb = &xb_slice[i * blocks..(i + 1) * blocks];
-                let xr = &x[i * k..(i + 1) * k];
-                let out_row = &mut out[i * n + j_start..i * n + j_start + j_len];
-                matmul_row_i8_avxvnni_prebiased(
-                    xb, xr, w_tile, k, j_len, bias_tile, rs_tile, out_row, denom, relu,
-                );
-            }
+    for j_start in (0..n).step_by(N_TILE) {
+        let j_len = (n - j_start).min(N_TILE);
+        let w_tile = &w[j_start * k..(j_start + j_len) * k];
+        let bias_tile = bias.map(|b| &b[j_start..j_start + j_len]);
+        let rs_tile = Some(&wsums[j_start..j_start + j_len]);
+
+        let mut i = 0;
+        while i + 1 < m {
+            let xb0 = &xb_slice[i * blocks..(i + 1) * blocks];
+            let xb1 = &xb_slice[(i + 1) * blocks..(i + 2) * blocks];
+            let xr0 = &x[i * k..(i + 1) * k];
+            let xr1 = &x[(i + 1) * k..(i + 2) * k];
+            let (top, bottom) = out.split_at_mut((i + 1) * n);
+            let out_r0 = &mut top[i * n + j_start..i * n + j_start + j_len];
+            let out_r1 = &mut bottom[j_start..j_start + j_len];
+            matmul_2rows_i8_avxvnni(
+                xb0, xb1, xr0, xr1, w_tile, k, j_len, bias_tile, rs_tile, out_r0, out_r1,
+                denom, relu,
+            );
+            i += 2;
         }
+        if i < m {
+            let xb = &xb_slice[i * blocks..(i + 1) * blocks];
+            let xr = &x[i * k..(i + 1) * k];
+            let out_row = &mut out[i * n + j_start..i * n + j_start + j_len];
+            matmul_row_i8_avxvnni_prebiased(
+                xb, xr, w_tile, k, j_len, bias_tile, rs_tile, out_row, denom, relu,
+            );
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn matmul_i8_avxvnni_prebiased_parallel_recursive(
+    xb: &[std::arch::x86_64::__m256i],
+    x: &[i8],
+    w: &[i8],
+    m: usize,
+    k: usize,
+    n: usize,
+    bias: Option<&[f32]>,
+    row_sums: Option<&[i32]>,
+    out: &mut [f32],
+    denom: f32,
+    relu: bool,
+) {
+    if m < 2 * super::GEMM_MIN_ROWS {
+        matmul_i8_avxvnni_prebiased(xb, x, w, m, k, n, bias, row_sums, out, denom, relu);
+        return;
+    }
+    let m_mid = m / 2;
+    let blocks = k / 32;
+    let (xb_top, xb_bot) = xb.split_at(m_mid * blocks);
+    let (x_top, x_bot) = x.split_at(m_mid * k);
+    let (o_top, o_bot) = out.split_at_mut(m_mid * n);
+    rayon::join(
+        || {
+            matmul_i8_avxvnni_prebiased_parallel_recursive(
+                xb_top, x_top, w, m_mid, k, n, bias, row_sums, o_top, denom, relu,
+            )
+        },
+        || {
+            matmul_i8_avxvnni_prebiased_parallel_recursive(
+                xb_bot, x_bot, w, m - m_mid, k, n, bias, row_sums, o_bot, denom, relu,
+            )
+        },
+    );
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+pub unsafe fn matmul_i8_avxvnni_prebiased_split(
+    xb: &[std::arch::x86_64::__m256i],
+    x: &[i8],
+    w: &[i8],
+    m: usize,
+    k: usize,
+    n: usize,
+    bias: Option<&[f32]>,
+    row_sums: Option<&[i32]>,
+    out: &mut [f32],
+    denom: f32,
+    relu: bool,
+) {
+    if super::gemm_should_split(m, k, n) {
+        super::ACTIVE_SPLITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let _guard = super::SplitGuard;
+        matmul_i8_avxvnni_prebiased_parallel_recursive(
+            xb, x, w, m, k, n, bias, row_sums, out, denom, relu,
+        );
+    } else {
+        matmul_i8_avxvnni_prebiased(xb, x, w, m, k, n, bias, row_sums, out, denom, relu);
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn matmul_i8_avxvnni(
+    x: &[i8],
+    w: &[i8],
+    m: usize,
+    k: usize,
+    n: usize,
+    bias: Option<&[f32]>,
+    row_sums: Option<&[i32]>,
+    out: &mut [f32],
+    denom: f32,
+    relu: bool,
+) {
+    with_vnni_prebiased(x, m, k, |xb_slice| {
+        matmul_i8_avxvnni_prebiased(xb_slice, x, w, m, k, n, bias, row_sums, out, denom, relu);
     });
 }

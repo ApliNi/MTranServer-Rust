@@ -738,4 +738,122 @@ mod fused_add_layer_norm_tests {
         assert_eq!(t.cols(), 4);
         assert_eq!(t.shape, [5, 4]);
     }
+
+    #[test]
+    fn test_quantized_matmul_pair_multi_row_matches_individual() {
+        let mut rng = 987654321u64;
+        let mut rand_f = || {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (rng >> 33) as f32 / (u32::MAX as f32) - 0.5
+        };
+
+        for &(m, k, n1, n2) in &[
+            (1usize, 32usize, 32usize, 48usize),
+            (2, 32, 64, 32),
+            (5, 64, 48, 64),
+            (16, 64, 64, 64),
+            (33, 64, 96, 64),
+        ] {
+            let x_data: Vec<f32> = (0..m * k).map(|_| rand_f()).collect();
+            let w1_data: Vec<i8> = (0..n1 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
+            let w2_data: Vec<i8> = (0..n2 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
+            let b1_data: Vec<f32> = (0..n1).map(|_| rand_f() * 0.1).collect();
+            let b2_data: Vec<f32> = (0..n2).map(|_| rand_f() * 0.1).collect();
+
+            let x = Tensor2::from_vec([m, k], x_data);
+            let rs1 = crate::engine::tensor::simd::compute_row_sums(&w1_data, n1, k).into_owned();
+            let rs2 = crate::engine::tensor::simd::compute_row_sums(&w2_data, n2, k).into_owned();
+            let w1 = Quant8Tensor { shape: vec![n1, k], data: w1_data.into(), quant_mult: 64.0, row_sums: Some(rs1) };
+            let w2 = Quant8Tensor { shape: vec![n2, k], data: w2_data.into(), quant_mult: 64.0, row_sums: Some(rs2) };
+            let bias1 = Tensor2::from_vec([1, n1], b1_data);
+            let bias2 = Tensor2::from_vec([1, n2], b2_data);
+
+            let qa = 50.0f32;
+
+            // With bias
+            let mut p_out1 = Tensor2::zeros([m, n1]);
+            let mut p_out2 = Tensor2::zeros([m, n2]);
+            x.quantized_matmul_pair_into(&w1, Some(&bias1), &mut p_out1, &w2, Some(&bias2), &mut p_out2, qa);
+
+            let mut ind_out1 = Tensor2::zeros([m, n1]);
+            let mut ind_out2 = Tensor2::zeros([m, n2]);
+            x.quantized_matmul_biased_into(&w1, qa, Some(&bias1), &mut ind_out1);
+            x.quantized_matmul_biased_into(&w2, qa, Some(&bias2), &mut ind_out2);
+
+            assert_eq!(p_out1.data, ind_out1.data, "pair out1 mismatch at m={m} k={k} n1={n1}");
+            assert_eq!(p_out2.data, ind_out2.data, "pair out2 mismatch at m={m} k={k} n2={n2}");
+
+            // Without bias
+            let mut p_out1_nobias = Tensor2::zeros([m, n1]);
+            let mut p_out2_nobias = Tensor2::zeros([m, n2]);
+            x.quantized_matmul_pair_into(&w1, None, &mut p_out1_nobias, &w2, None, &mut p_out2_nobias, qa);
+
+            let mut ind_out1_nobias = Tensor2::zeros([m, n1]);
+            let mut ind_out2_nobias = Tensor2::zeros([m, n2]);
+            x.quantized_matmul_biased_into(&w1, qa, None, &mut ind_out1_nobias);
+            x.quantized_matmul_biased_into(&w2, qa, None, &mut ind_out2_nobias);
+
+            assert_eq!(p_out1_nobias.data, ind_out1_nobias.data, "pair out1 (nobias) mismatch at m={m}");
+            assert_eq!(p_out2_nobias.data, ind_out2_nobias.data, "pair out2 (nobias) mismatch at m={m}");
+        }
+    }
+
+    #[test]
+    fn test_quantized_matmul_triple_multi_row_matches_individual() {
+        let mut rng = 543216789u64;
+        let mut rand_f = || {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (rng >> 33) as f32 / (u32::MAX as f32) - 0.5
+        };
+
+        for &(m, k, n1, n2, n3) in &[
+            (1usize, 32usize, 32usize, 48usize, 32usize),
+            (2, 32, 48, 32, 64),
+            (7, 64, 32, 64, 48),
+            (18, 64, 64, 48, 64),
+            (35, 64, 64, 64, 64),
+        ] {
+            let x_data: Vec<f32> = (0..m * k).map(|_| rand_f()).collect();
+            let w1_data: Vec<i8> = (0..n1 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
+            let w2_data: Vec<i8> = (0..n2 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
+            let w3_data: Vec<i8> = (0..n3 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
+            let b1_data: Vec<f32> = (0..n1).map(|_| rand_f() * 0.1).collect();
+            let b2_data: Vec<f32> = (0..n2).map(|_| rand_f() * 0.1).collect();
+            let b3_data: Vec<f32> = (0..n3).map(|_| rand_f() * 0.1).collect();
+
+            let x = Tensor2::from_vec([m, k], x_data);
+            let rs1 = crate::engine::tensor::simd::compute_row_sums(&w1_data, n1, k).into_owned();
+            let rs2 = crate::engine::tensor::simd::compute_row_sums(&w2_data, n2, k).into_owned();
+            let rs3 = crate::engine::tensor::simd::compute_row_sums(&w3_data, n3, k).into_owned();
+            let w1 = Quant8Tensor { shape: vec![n1, k], data: w1_data.into(), quant_mult: 64.0, row_sums: Some(rs1) };
+            let w2 = Quant8Tensor { shape: vec![n2, k], data: w2_data.into(), quant_mult: 64.0, row_sums: Some(rs2) };
+            let w3 = Quant8Tensor { shape: vec![n3, k], data: w3_data.into(), quant_mult: 64.0, row_sums: Some(rs3) };
+            let bias1 = Tensor2::from_vec([1, n1], b1_data);
+            let bias2 = Tensor2::from_vec([1, n2], b2_data);
+            let bias3 = Tensor2::from_vec([1, n3], b3_data);
+
+            let qa = 48.0f32;
+
+            let mut t_out1 = Tensor2::zeros([m, n1]);
+            let mut t_out2 = Tensor2::zeros([m, n2]);
+            let mut t_out3 = Tensor2::zeros([m, n3]);
+            x.quantized_matmul_triple_into(
+                &w1, Some(&bias1), &mut t_out1,
+                &w2, Some(&bias2), &mut t_out2,
+                &w3, Some(&bias3), &mut t_out3,
+                qa,
+            );
+
+            let mut ind_out1 = Tensor2::zeros([m, n1]);
+            let mut ind_out2 = Tensor2::zeros([m, n2]);
+            let mut ind_out3 = Tensor2::zeros([m, n3]);
+            x.quantized_matmul_biased_into(&w1, qa, Some(&bias1), &mut ind_out1);
+            x.quantized_matmul_biased_into(&w2, qa, Some(&bias2), &mut ind_out2);
+            x.quantized_matmul_biased_into(&w3, qa, Some(&bias3), &mut ind_out3);
+
+            assert_eq!(t_out1.data, ind_out1.data, "triple out1 mismatch at m={m} k={k} n1={n1}");
+            assert_eq!(t_out2.data, ind_out2.data, "triple out2 mismatch at m={m} k={k} n2={n2}");
+            assert_eq!(t_out3.data, ind_out3.data, "triple out3 mismatch at m={m} k={k} n3={n3}");
+        }
+    }
 }

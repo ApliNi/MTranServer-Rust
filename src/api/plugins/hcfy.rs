@@ -63,7 +63,7 @@ static BCP47_TO_HCFY: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::
     m
 });
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct HcfyRequest {
     /// Accepted for API compatibility; the handler never reads it.
     #[allow(dead_code)]
@@ -73,7 +73,7 @@ pub struct HcfyRequest {
     pub source: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct HcfyResponse {
     pub text: String,
     pub from: String,
@@ -168,6 +168,7 @@ pub async fn translate(Json(mut body): Json<HcfyRequest>) -> Result<Json<HcfyRes
             }
         })
         .collect();
+    validate_batch(&paragraphs)?;
 
     let raw_results = service::translate_batch_with_pivot_formats(
         &detected_source,
@@ -222,5 +223,31 @@ mod tests {
             "en"
         };
         assert_eq!(detected, "ja");
+    }
+    #[tokio::test]
+    async fn test_hcfy_paragraph_batch_limit() {
+        let overflow_text = "line\n".repeat(600);
+        let req = HcfyRequest {
+            name: None,
+            text: overflow_text,
+            source: Some("英语".to_string()),
+            destination: vec!["英语".to_string()],
+        };
+        let err = translate(Json(req)).await.unwrap_err();
+        match err {
+            ApiError::BadRequest(msg) => {
+                assert!(msg.contains("Batch too large: 601 items (max 512)"), "Unexpected message: {msg}");
+            }
+            other => panic!("Expected BadRequest, got {other:?}"),
+        }
+
+        let valid_req = HcfyRequest {
+            name: None,
+            text: "hello\nworld".to_string(),
+            source: Some("英语".to_string()),
+            destination: vec!["英语".to_string()],
+        };
+        let res = translate(Json(valid_req)).await.unwrap();
+        assert_eq!(res.result, Some(vec!["hello".to_string(), "world".to_string()]));
     }
 }

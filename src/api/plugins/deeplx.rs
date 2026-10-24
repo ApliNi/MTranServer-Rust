@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use axum::Json;
-use rand::Rng;
+use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::api::plugins::{deserialize_null_default, parse_source_lang, parse_target_lang};
@@ -36,7 +36,10 @@ pub async fn translate(
 
     match service::translate_with_pivot_detected(&source_lang, &target_lang, &body.text).await {
         Ok((data, detected)) => {
-            let id: i64 = rand::thread_rng().gen_range(0..10000000000);
+            let id = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| (d.as_nanos() % 10_000_000_000) as i64)
+                .unwrap_or(0);
             let effective_source = if !detected.is_empty() {
                 Cow::Owned(detected)
             } else if source_lang != "auto" {

@@ -16,5 +16,35 @@
     "borrowed": true,
     "replacements": ["😊", "🚀"],
     "hidden": "keep [EE99] and [EEabc] untouched"
+  },
+  {
+    "input": "family 👨‍👩‍👧‍👦 at home",
+    "borrowed": false,
+    "replacements": ["👨‍👩‍👧‍👦"],
+    "hidden": "family [EE0] at home"
+  },
+  {
+    "input": "thumbs up 👍🏽 nicely done",
+    "borrowed": false,
+    "replacements": ["👍🏽"],
+    "hidden": "thumbs up [EE0] nicely done"
+  },
+  {
+    "input": "flags 🇨🇳 and 🇺🇸 together",
+    "borrowed": false,
+    "replacements": ["🇨🇳", "🇺🇸"],
+    "hidden": "flags [EE0] and [EE1] together"
+  },
+  {
+    "input": "step 1️⃣, step 2️⃣, and #️⃣",
+    "borrowed": false,
+    "replacements": ["1️⃣", "2️⃣", "#️⃣"],
+    "hidden": "step [EE0], step [EE1], and [EE2]"
+  },
+  {
+    "input": "burning ❤️‍🔥 and red ❤️ hearts",
+    "borrowed": false,
+    "replacements": ["❤️‍🔥", "❤️"],
+    "hidden": "burning [EE0] and red [EE1] hearts"
   }
 ]
