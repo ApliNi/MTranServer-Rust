@@ -27,6 +27,8 @@ use super::{
 /// are partitioned into individual sentences for neural machine translation.
 pub const DEFAULT_SENTENCE_SPLIT_THRESHOLD: usize = 50;
 
+/// Maximum allowed nesting depth for recursive document translation (blockquotes and nested HTML blocks).
+pub const MAX_DOCUMENT_DEPTH: usize = 16;
 /// Recognized standard HTML block-level tag names that form structural document boundaries.
 #[inline]
 pub fn is_html_block_tag(tag_name: &str) -> bool {
@@ -371,7 +373,7 @@ pub fn translate_document_with_alignment_dyn(
     translate_fn: &mut AlignmentTranslateFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::sequential_single(translate_fn);
-    translate_document_internal(doc, parse_formats, &mut handler)
+    translate_document_internal(doc, parse_formats, &mut handler, 0)
 }
 
 /// Translate a composite document (Markdown + HTML + Frontmatter + Tables + Code Fences)
@@ -394,7 +396,7 @@ pub fn translate_document_with_alignment_parallel_dyn(
     translate_fn: &AlignmentTranslateSyncFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::parallel_single(translate_fn);
-    translate_document_internal(doc, parse_formats, &mut handler)
+    translate_document_internal(doc, parse_formats, &mut handler, 0)
 }
 
 /// Translate a composite document (Markdown + HTML + Frontmatter + Tables + Code Fences)
@@ -420,7 +422,7 @@ pub fn translate_document_dual_dyn(
     align_fn: &mut AlignmentTranslateFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::sequential_dual(plain_fn, align_fn);
-    translate_document_internal(doc, parse_formats, &mut handler)
+    translate_document_internal(doc, parse_formats, &mut handler, 0)
 }
 /// Translate a composite document sequentially using dual-track translation with explicit languages.
 pub fn translate_document_dual_with_languages<P, A>(
@@ -442,7 +444,7 @@ where
     if let Some(tl) = target_lang {
         handler = handler.with_target_lang(tl);
     }
-    translate_document_internal(doc, parse_formats, &mut handler)
+    translate_document_internal(doc, parse_formats, &mut handler, 0)
 }
 
 
@@ -495,7 +497,7 @@ where
     if let Some(tl) = target_lang {
         handler = handler.with_target_lang(tl);
     }
-    translate_document_internal(doc, parse_formats, &mut handler)
+    translate_document_internal(doc, parse_formats, &mut handler, 0)
 }
 
 pub fn translate_document_dual_parallel_dyn(
@@ -505,7 +507,7 @@ pub fn translate_document_dual_parallel_dyn(
     align_fn: &AlignmentTranslateSyncFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::parallel_dual(plain_fn, align_fn);
-    translate_document_internal(doc, parse_formats, &mut handler)
+    translate_document_internal(doc, parse_formats, &mut handler, 0)
 }
 
 /// Translate a document with a pre-configured [`TranslateHandler`].
@@ -514,16 +516,21 @@ pub fn translate_document_with_handler(
     parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
 ) -> String {
-    translate_document_internal(doc, parse_formats, handler)
+    translate_document_internal(doc, parse_formats, handler, 0)
 }
 
 fn translate_document_internal(
     doc: &str,
     parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
+    depth: usize,
 ) -> String {
     if doc.is_empty() {
         return String::new();
+    }
+
+    if depth >= MAX_DOCUMENT_DEPTH {
+        return translate_translatable_content(doc, parse_formats, handler);
     }
 
     if parse_formats.is_empty() {
@@ -549,7 +556,7 @@ fn translate_document_internal(
                             lang: l,
                             target_lang: tl,
                         };
-                        translate_block(block, parse_formats, &mut h)
+                        translate_block(block, parse_formats, &mut h, depth)
                     })
                     .collect();
                 return pieces.concat();
@@ -567,7 +574,7 @@ fn translate_document_internal(
                             lang: l,
                             target_lang: tl,
                         };
-                        translate_block(block, parse_formats, &mut h)
+                        translate_block(block, parse_formats, &mut h, depth)
                     })
                     .collect();
                 return pieces.concat();
@@ -578,7 +585,7 @@ fn translate_document_internal(
 
     let mut out = String::with_capacity(doc.len() + 64);
     for block in blocks {
-        out.push_str(&translate_block(block, parse_formats, handler));
+        out.push_str(&translate_block(block, parse_formats, handler, depth));
     }
 
     out
@@ -588,6 +595,7 @@ fn translate_block(
     block: DocumentBlock,
     parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
+    depth: usize,
 ) -> String {
     let mut out = String::new();
     match block {
@@ -630,11 +638,11 @@ fn translate_block(
         }
         DocumentBlock::Blockquote { raw } => {
             let translated_bq =
-                translate_blockquote_block(&raw, parse_formats, handler);
+                translate_blockquote_block(&raw, parse_formats, handler, depth);
             out.push_str(&translated_bq);
         }
         DocumentBlock::HtmlBlock { raw } => {
-            let translated_html = translate_html_block(&raw, parse_formats, handler);
+            let translated_html = translate_html_block(&raw, parse_formats, handler, depth);
             out.push_str(&translated_html);
         }
     }
@@ -781,6 +789,7 @@ fn translate_blockquote_block(
     raw: &str,
     parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
+    depth: usize,
 ) -> String {
     let lines = split_lines_with_endings(raw);
     let mut stripped = String::with_capacity(raw.len());
@@ -798,7 +807,7 @@ fn translate_blockquote_block(
     }
 
     let translated_inner =
-        translate_document_internal(&stripped, parse_formats, &mut handler.reborrow());
+        translate_document_internal(&stripped, parse_formats, &mut handler.reborrow(), depth + 1);
 
     // Re-apply `> ` prefix to each line
     let translated_lines = split_lines_with_endings(&translated_inner);
@@ -824,6 +833,7 @@ fn translate_html_block(
     raw: &str,
     parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
+    depth: usize,
 ) -> String {
     let trimmed = raw.trim_start();
     if trimmed.starts_with("<!--")
@@ -857,6 +867,7 @@ fn translate_html_block(
                             &mut text_buf,
                             parse_formats,
                             handler,
+                            depth,
                         );
                         out.push_str(tag_str);
                         i = tag_end;
@@ -885,7 +896,7 @@ fn translate_html_block(
     }
 
     // Flush any remaining text buffer
-    flush_html_text_buffer(&mut out, &mut text_buf, parse_formats, handler);
+    flush_html_text_buffer(&mut out, &mut text_buf, parse_formats, handler, depth);
     out
 }
 
@@ -895,6 +906,7 @@ fn flush_html_text_buffer(
     text_buf: &mut String,
     parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
+    depth: usize,
 ) {
     if text_buf.is_empty() {
         return;
@@ -909,7 +921,7 @@ fn flush_html_text_buffer(
     // Check if the text inside the HTML block has Markdown sub-blocks (e.g. lists, blank-line separated paragraphs)
     if contains_markdown_blocks(text_buf) {
         let translated =
-            translate_document_internal(text_buf, parse_formats, &mut handler.reborrow());
+            translate_document_internal(text_buf, parse_formats, &mut handler.reborrow(), depth + 1);
         out.push_str(&translated);
     } else {
         let translated =
@@ -2052,5 +2064,31 @@ The Example Registrar team
         assert_eq!(segments[0], "Name: Alice");
         assert_eq!(segments[1], "City: Paris");
         assert_eq!(res, "TR(Name:) TR(Alice)\nTR(City:) TR(Paris)\n");
+    }
+
+    #[test]
+    fn test_document_blockquote_recursion_depth_limit() {
+        let mut doc = String::new();
+        for _ in 0..50 {
+            doc.push_str("> ");
+        }
+        doc.push_str("Deep quote\n");
+
+        let res = translate_document_with_alignment(&doc, ParseFormats::default(), mock_translate);
+        assert!(res.contains("TR(Deep) TR(quote)"));
+        let gt_count = res.chars().filter(|&c| c == '>').count();
+        assert!(gt_count >= MAX_DOCUMENT_DEPTH);
+    }
+
+    #[test]
+    fn test_document_deep_nesting_no_stack_overflow() {
+        let mut doc = String::new();
+        for _ in 0..2000 {
+            doc.push_str("> ");
+        }
+        doc.push_str("Nested\n");
+
+        let res = translate_document_with_alignment(&doc, ParseFormats::default(), mock_translate);
+        assert!(res.contains("TR(Nested)"));
     }
 }

@@ -525,121 +525,70 @@ fn tier0_fast_bypass(text: &str) -> Option<&'static str> {
         return Some("en");
     }
 
-    // CLI Commands - must match real tool invocation patterns and subcommands
-    // to avoid false positives with natural language words (e.g., Spanish 'cargo', Turkish 'git', Norwegian 'tar', Spanish 'sudo')
-    if starts_with_any(
-        trimmed,
-        &[
-            "curl -",
-            "curl http://",
-            "curl https://",
-            "curl \"http",
-            "curl 'http",
-            "git checkout ",
-            "git commit ",
-            "git push ",
-            "git pull ",
-            "git status",
-            "git clone ",
-            "git add ",
-            "git diff ",
-            "git log",
-            "git branch",
-            "git merge ",
-            "git rebase ",
-            "git reset ",
-            "git stash",
-            "git remote",
-            "git init",
-            "git config ",
-            "git --",
-            "docker run ",
-            "docker build ",
-            "docker compose ",
-            "docker ps",
-            "docker exec ",
-            "docker images",
-            "docker stop ",
-            "docker rm ",
-            "docker --",
-            "npm install",
-            "npm run ",
-            "npm i ",
-            "npm start",
-            "npm test",
-            "npm build",
-            "npm publish",
-            "npm init",
-            "npm update",
-            "npm --",
-            "pip install ",
-            "pip uninstall ",
-            "pip list",
-            "pip freeze",
-            "pip --",
-            "cargo build",
-            "cargo test",
-            "cargo run",
-            "cargo check",
-            "cargo clippy",
-            "cargo update",
-            "cargo publish",
-            "cargo new ",
-            "cargo init",
-            "cargo --",
-            "sudo apt ",
-            "sudo apt-get ",
-            "sudo systemctl ",
-            "sudo docker ",
-            "sudo rm ",
-            "sudo chmod ",
-            "sudo chown ",
-            "sudo mkdir ",
-            "sudo cp ",
-            "sudo mv ",
-            "sudo service ",
-            "sudo --",
-            "kubectl get ",
-            "kubectl apply ",
-            "kubectl describe ",
-            "kubectl delete ",
-            "kubectl logs ",
-            "kubectl exec ",
-            "kubectl --",
-            "yarn add ",
-            "yarn install",
-            "yarn run ",
-            "yarn build",
-            "yarn start",
-            "yarn test",
-            "yarn --",
-            "pnpm add ",
-            "pnpm install",
-            "pnpm run ",
-            "pnpm build",
-            "pnpm start",
-            "pnpm test",
-            "pnpm --",
-            "systemctl start ",
-            "systemctl stop ",
-            "systemctl restart ",
-            "systemctl status ",
-            "systemctl enable ",
-            "systemctl disable ",
-            "systemctl --",
-            "tar -",
-            "tar x",
-            "tar c",
-            "tar t",
-            "tar z",
-            "apt install ",
-            "apt update",
-            "apt upgrade",
-            "apt-get install ",
-            "apt-get update",
-        ],
-    ) {
-        return Some("en");
+    // CLI Commands - fast dispatch by first word to avoid false positives and eliminate linear scanning
+    if let Some((tool, rest)) = trimmed.split_once(' ') {
+        let is_cli = match tool {
+            "curl" => starts_with_any(rest, &["-", "http://", "https://", "\"http", "'http"]),
+            "git" => starts_with_any(
+                rest,
+                &[
+                    "checkout ", "commit ", "push ", "pull ", "status", "clone ", "add ",
+                    "diff ", "log", "branch", "merge ", "rebase ", "reset ", "stash", "remote",
+                    "init", "config ", "--",
+                ],
+            ),
+            "docker" => starts_with_any(
+                rest,
+                &[
+                    "run ", "build ", "compose ", "ps", "exec ", "images", "stop ", "rm ", "--",
+                ],
+            ),
+            "npm" => starts_with_any(
+                rest,
+                &[
+                    "install", "run ", "i ", "start", "test", "build", "publish", "init",
+                    "update", "--",
+                ],
+            ),
+            "pip" => starts_with_any(rest, &["install ", "uninstall ", "list", "freeze", "--"]),
+            "cargo" => starts_with_any(
+                rest,
+                &[
+                    "build", "test", "run", "check", "clippy", "update", "publish", "new ",
+                    "init", "--",
+                ],
+            ),
+            "sudo" => starts_with_any(
+                rest,
+                &[
+                    "apt ", "apt-get ", "systemctl ", "docker ", "rm ", "chmod ", "chown ",
+                    "mkdir ", "cp ", "mv ", "service ", "--",
+                ],
+            ),
+            "kubectl" => starts_with_any(
+                rest,
+                &["get ", "apply ", "describe ", "delete ", "logs ", "exec ", "--"],
+            ),
+            "yarn" => starts_with_any(
+                rest,
+                &["add ", "install", "run ", "build", "start", "test", "--"],
+            ),
+            "pnpm" => starts_with_any(
+                rest,
+                &["add ", "install", "run ", "build", "start", "test", "--"],
+            ),
+            "systemctl" => starts_with_any(
+                rest,
+                &["start ", "stop ", "restart ", "status ", "enable ", "disable ", "--"],
+            ),
+            "tar" => starts_with_any(rest, &["-", "x", "c", "t", "z"]),
+            "apt" => starts_with_any(rest, &["install ", "update", "upgrade"]),
+            "apt-get" => starts_with_any(rest, &["install ", "update"]),
+            _ => false,
+        };
+        if is_cli {
+            return Some("en");
+        }
     }
 
     // HTTP / Network / Log headers
@@ -1324,5 +1273,44 @@ mod tests {
         assert_eq!(detect_text_language("Hello world"), "en");
         assert_eq!(detect_text_language("こんにちは世界"), "ja");
         assert_eq!(detect_text_language("你好世界"), "zh-Hans");
+    }
+
+    #[test]
+    fn test_tier0_cli_dispatch() {
+        let cli_samples = [
+            "curl -v https://example.com",
+            "git status",
+            "git checkout main",
+            "docker run -it ubuntu",
+            "npm install express",
+            "pip install requests",
+            "cargo build --release",
+            "sudo apt update",
+            "kubectl get pods",
+            "yarn add lodash",
+            "pnpm test",
+            "systemctl restart nginx",
+            "tar -xzvf archive.tar.gz",
+            "apt upgrade",
+            "apt-get install curl",
+        ];
+        for cmd in cli_samples {
+            assert_eq!(tier0_fast_bypass(cmd), Some("en"), "Failed for CLI: {cmd}");
+        }
+
+        let non_cli = [
+            "cargo",
+            "git",
+            "docker",
+            "tar",
+            "cargo un paquete en el auto",
+            "git git git",
+            "curl",
+            "kubectl",
+            "sudo",
+        ];
+        for text in non_cli {
+            assert_ne!(tier0_fast_bypass(text), Some("en"), "False positive for: {text}");
+        }
     }
 }

@@ -119,6 +119,8 @@ pub fn is_recognized_inline_tag(tag_name: &str) -> bool {
 pub fn extract_unified_inline(text: &str) -> (String, Vec<MarkupSpan>) {
     extract_inline_markup(text, InlineParseOptions::default())
 }
+/// Maximum allowed nesting depth for recursive inline markup extraction.
+pub const MAX_INLINE_DEPTH: usize = 32;
 
 /// Extract inline markup annotations according to configured format options.
 ///
@@ -145,6 +147,12 @@ fn extract_inline_impl(
 ) -> (String, Vec<MarkupSpan>) {
     let mut plain = String::with_capacity(text.len());
     let mut spans = Vec::with_capacity(4);
+
+    if depth >= MAX_INLINE_DEPTH {
+        plain.push_str(text);
+        return (plain, spans);
+    }
+
     let bytes = text.as_bytes();
     let len = bytes.len();
     let mut i = 0;
@@ -1038,5 +1046,39 @@ mod tests {
         assert!(is_recognized_inline_tag("span"));
         assert!(!is_recognized_inline_tag("div"));
         assert!(!is_recognized_inline_tag("table"));
+    }
+
+    #[test]
+    fn test_inline_recursion_depth_limit() {
+        let depth = 50;
+        let mut text = String::new();
+        for _ in 0..depth {
+            text.push_str("<b>");
+        }
+        text.push_str("nested");
+        for _ in 0..depth {
+            text.push_str("</b>");
+        }
+
+        let (plain, spans) = extract_unified_inline(&text);
+        assert_eq!(spans.len(), MAX_INLINE_DEPTH);
+        assert!(plain.contains("<b>"));
+        assert!(plain.contains("nested"));
+    }
+
+    #[test]
+    fn test_inline_deep_nesting_no_stack_overflow() {
+        let depth = 5000;
+        let mut text = String::with_capacity(depth * 7 + 10);
+        for _ in 0..depth {
+            text.push_str("<i>");
+        }
+        text.push_str("deep");
+        for _ in 0..depth {
+            text.push_str("</i>");
+        }
+        let (plain, spans) = extract_unified_inline(&text);
+        assert_eq!(spans.len(), MAX_INLINE_DEPTH);
+        assert!(plain.contains("deep"));
     }
 }

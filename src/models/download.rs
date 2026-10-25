@@ -299,6 +299,35 @@ fn part_path_for(final_path: &Path) -> Result<PathBuf, String> {
     Ok(final_path.with_file_name(format!("{name}.part")))
 }
 
+#[allow(dead_code)]
+pub(crate) fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut last_err = None;
+    for _ in 0..5 {
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("rename failed")))
+}
+
+pub(crate) async fn rename_with_retry_async(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut last_err = None;
+    for _ in 0..5 {
+        match tokio::fs::rename(from, to).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = Some(e);
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("rename failed")))
+}
+
 pub(crate) fn rename_atomic_sync(part_path: &Path, final_path: &Path) -> Result<(), String> {
     #[cfg(not(windows))]
     {
@@ -320,52 +349,15 @@ pub(crate) fn rename_atomic_sync(part_path: &Path, final_path: &Path) -> Result<
                 std::path::PathBuf::from(p)
             };
             let _ = std::fs::remove_file(&bak);
-            let mut renamed_to_bak = false;
-            let mut last_err = None;
-            for _ in 0..5 {
-                match std::fs::rename(final_path, &bak) {
-                    Ok(()) => {
-                        renamed_to_bak = true;
-                        break;
-                    }
-                    Err(e) => {
-                        last_err = Some(e);
-                        std::thread::sleep(std::time::Duration::from_millis(50));
-                    }
-                }
-            }
-            if !renamed_to_bak {
+            if let Err(e) = rename_with_retry(final_path, &bak) {
                 return Err(format!(
-                    "Failed to move old {} out of place: {}",
-                    final_path.display(),
-                    last_err.map(|e| e.to_string()).unwrap_or_default()
+                    "Failed to move old {} out of place: {e}",
+                    final_path.display()
                 ));
             }
 
-            let mut renamed_part = false;
-            let mut part_err = None;
-            for _ in 0..5 {
-                match std::fs::rename(part_path, final_path) {
-                    Ok(()) => {
-                        renamed_part = true;
-                        break;
-                    }
-                    Err(e) => {
-                        part_err = Some(e);
-                        std::thread::sleep(std::time::Duration::from_millis(50));
-                    }
-                }
-            }
-
-            if !renamed_part {
-                let mut restored = false;
-                for _ in 0..5 {
-                    if std::fs::rename(&bak, final_path).is_ok() {
-                        restored = true;
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
+            if let Err(part_err) = rename_with_retry(part_path, final_path) {
+                let restored = rename_with_retry(&bak, final_path).is_ok();
                 if !restored {
                     tracing::error!(
                         "Failed to restore {} from .bak after failed swap",
@@ -374,17 +366,16 @@ pub(crate) fn rename_atomic_sync(part_path: &Path, final_path: &Path) -> Result<
                 }
                 let _ = std::fs::remove_file(part_path);
                 return Err(format!(
-                    "Failed to move {} into place at {}: {}",
+                    "Failed to move {} into place at {}: {part_err}",
                     part_path.display(),
-                    final_path.display(),
-                    part_err.map(|e| e.to_string()).unwrap_or_default()
+                    final_path.display()
                 ));
             }
 
             let _ = std::fs::remove_file(&bak);
             Ok(())
         } else {
-            std::fs::rename(part_path, final_path).map_err(|e| {
+            rename_with_retry(part_path, final_path).map_err(|e| {
                 let _ = std::fs::remove_file(part_path);
                 format!(
                     "Failed to move {} into place at {}: {e}",
@@ -446,7 +437,7 @@ pub(crate) async fn swap_dir_atomic(staging_dir: &Path, target_dir: &Path) -> Re
                 .await
                 .map_err(|e| format!("Failed to create parent dir: {e}"))?;
         }
-        return tokio::fs::rename(staging_dir, target_dir)
+        return rename_with_retry_async(staging_dir, target_dir)
             .await
             .map_err(|e| {
                 format!(
@@ -467,37 +458,21 @@ pub(crate) async fn swap_dir_atomic(staging_dir: &Path, target_dir: &Path) -> Re
         let _ = tokio::fs::remove_dir_all(&backup_dir).await;
     }
 
-    let mut last_err = None;
-    let mut renamed_to_backup = false;
-    for _ in 0..5 {
-        match tokio::fs::rename(target_dir, &backup_dir).await {
-            Ok(()) => {
-                renamed_to_backup = true;
-                break;
-            }
-            Err(e) => {
-                last_err = Some(e);
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-            }
-        }
-    }
-
-    if !renamed_to_backup {
+    if let Err(e) = rename_with_retry_async(target_dir, &backup_dir).await {
         return Err(format!(
-            "Failed to rename target {} to backup {}: {}",
+            "Failed to rename target {} to backup {}: {e}",
             target_dir.display(),
-            backup_dir.display(),
-            last_err.map_or_else(|| "unknown error".to_string(), |e| e.to_string())
+            backup_dir.display()
         ));
     }
 
-    match tokio::fs::rename(staging_dir, target_dir).await {
+    match rename_with_retry_async(staging_dir, target_dir).await {
         Ok(()) => {
             let _ = tokio::fs::remove_dir_all(&backup_dir).await;
             Ok(())
         }
         Err(e) => {
-            let rollback = tokio::fs::rename(&backup_dir, target_dir).await;
+            let rollback = rename_with_retry_async(&backup_dir, target_dir).await;
             Err(format!(
                 "Failed to rename staging {} to {}: {e} (rollback status: {rollback:?})",
                 staging_dir.display(),
@@ -506,6 +481,7 @@ pub(crate) async fn swap_dir_atomic(staging_dir: &Path, target_dir: &Path) -> Re
         }
     }
 }
+
 
 struct ChannelReader {
     rx: tokio::sync::mpsc::Receiver<Result<Bytes, String>>,
@@ -868,5 +844,27 @@ mod tests {
         assert!(err.is_err());
         assert!(!output_bad.exists());
         assert!(!temp.path().join("bad_hash.bin.part").exists());
+    }
+
+    #[test]
+    fn test_rename_with_retry_basic() {
+        let temp = TempDirGuard::new("rename_retry");
+        let src = temp.path().join("src.txt");
+        let dst = temp.path().join("dst.txt");
+        std::fs::write(&src, b"hello retry").unwrap();
+        rename_with_retry(&src, &dst).unwrap();
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"hello retry");
+    }
+
+    #[tokio::test]
+    async fn test_rename_with_retry_async_basic() {
+        let temp = TempDirGuard::new("rename_retry_async");
+        let src = temp.path().join("src.txt");
+        let dst = temp.path().join("dst.txt");
+        tokio::fs::write(&src, b"hello async retry").await.unwrap();
+        rename_with_retry_async(&src, &dst).await.unwrap();
+        assert!(!src.exists());
+        assert_eq!(tokio::fs::read(&dst).await.unwrap(), b"hello async retry");
     }
 }

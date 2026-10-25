@@ -740,6 +740,37 @@ mod fused_add_layer_norm_tests {
     }
 
     #[test]
+    fn test_prepare_uninit_vec_and_tensor() {
+        let mut v: Vec<f32> = Vec::new();
+        unsafe {
+            prepare_uninit_vec(&mut v, 10);
+        }
+        assert_eq!(v.len(), 10);
+        assert!(v.iter().all(|&x| x == 0.0));
+
+        v[0] = 42.0;
+        unsafe {
+            prepare_uninit_vec(&mut v, 20);
+        }
+        assert_eq!(v.len(), 20);
+        assert_eq!(v[0], 42.0);
+        assert!(v[10..].iter().all(|&x| x == 0.0));
+
+        unsafe {
+            prepare_uninit_vec(&mut v, 5);
+        }
+        assert_eq!(v.len(), 5);
+        assert_eq!(v[0], 42.0);
+
+        let mut t = Tensor2::default();
+        unsafe {
+            t.prepare_uninit(16);
+        }
+        assert_eq!(t.data.len(), 16);
+        assert!(t.data.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
     fn test_quantized_matmul_pair_multi_row_matches_individual() {
         let mut rng = 987654321u64;
         let mut rand_f = || {
@@ -855,5 +886,38 @@ mod fused_add_layer_norm_tests {
             assert_eq!(t_out2.data, ind_out2.data, "triple out2 mismatch at m={m} k={k} n2={n2}");
             assert_eq!(t_out3.data, ind_out3.data, "triple out3 mismatch at m={m} k={k} n3={n3}");
         }
+    }
+
+    #[test]
+    fn test_quantized_matmul_multi_empty_and_4way() {
+        let x = Tensor2::from_vec([2, 32], vec![0.5; 64]);
+        let mut empty_ops = [];
+        x.quantized_matmul_multi_into(&mut empty_ops, 50.0);
+
+        let w_data: Vec<i8> = vec![1; 32 * 16];
+        let rs = crate::engine::tensor::simd::compute_row_sums(&w_data, 16, 32).into_owned();
+        let w = Quant8Tensor { shape: vec![16, 32], data: w_data.into(), quant_mult: 64.0, row_sums: Some(rs) };
+        let b = Tensor2::from_vec([1, 16], vec![0.1; 16]);
+        let mut out1 = Tensor2::zeros([2, 16]);
+        let mut out2 = Tensor2::zeros([2, 16]);
+        let mut out3 = Tensor2::zeros([2, 16]);
+        let mut out4 = Tensor2::zeros([2, 16]);
+        let mut ops = [
+            (&w, Some(&b), &mut out1),
+            (&w, None, &mut out2),
+            (&w, Some(&b), &mut out3),
+            (&w, None, &mut out4),
+        ];
+        x.quantized_matmul_multi_into(&mut ops, 50.0);
+
+        let mut exp_b = Tensor2::zeros([2, 16]);
+        let mut exp_nob = Tensor2::zeros([2, 16]);
+        x.quantized_matmul_biased_into(&w, 50.0, Some(&b), &mut exp_b);
+        x.quantized_matmul_biased_into(&w, 50.0, None, &mut exp_nob);
+
+        assert_eq!(out1.data, exp_b.data);
+        assert_eq!(out2.data, exp_nob.data);
+        assert_eq!(out3.data, exp_b.data);
+        assert_eq!(out4.data, exp_nob.data);
     }
 }

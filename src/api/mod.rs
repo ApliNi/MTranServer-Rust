@@ -19,6 +19,8 @@ pub enum ApiError {
     BadRequest(String),
     /// 401 — missing or invalid API token.
     Unauthorized,
+    /// 404 — resource or model not found.
+    NotFound(String),
     /// 500 — unexpected failure in the translation pipeline.
     Internal(String),
 }
@@ -36,6 +38,7 @@ impl IntoResponse for ApiError {
                 StatusCode::UNAUTHORIZED,
                 std::borrow::Cow::Borrowed("Unauthorized"),
             ),
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, std::borrow::Cow::Owned(msg)),
             ApiError::Internal(msg) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, std::borrow::Cow::Owned(msg))
             }

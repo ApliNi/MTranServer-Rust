@@ -9,7 +9,7 @@ pub mod records;
 pub mod updater;
 
 pub use records::{
-    download_model, get_language_list_response, get_language_pairs, get_model_files,
+    download_model, download_model_dir, get_language_list_response, get_language_pairs, get_model_files,
     get_supported_languages, has_language_pair, init_records, is_supported_language,
     LanguageListResponse, LanguagePair,
 };

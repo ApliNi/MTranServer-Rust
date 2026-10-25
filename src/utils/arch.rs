@@ -24,18 +24,44 @@ pub enum SimdLevel {
 
 /// Highest SIMD level available, evaluated once and memoised.
 ///
-/// `MT_FORCE_SIMD` overrides detection (`sse41`, `avx`, `avx2`); an unknown
+/// `MT_FORCE_SIMD` overrides detection (`scalar`, `sse41`, `avx`, `avx2`); an unknown
 /// value is ignored. This exists so the lower kernel tiers can be exercised
 /// on newer CPUs — feature detection alone only ever reaches the top tier.
 pub fn simd_level() -> SimdLevel {
-    static LEVEL: LazyLock<SimdLevel> =
-        LazyLock::new(|| match std::env::var("MT_FORCE_SIMD").as_deref() {
-            Ok("sse41") => SimdLevel::Sse41,
-            Ok("avx") => SimdLevel::Avx,
-            Ok("avx2") => SimdLevel::Avx2Fma,
-            _ => detect_simd_level(),
-        });
+    static LEVEL: LazyLock<SimdLevel> = LazyLock::new(|| {
+        resolve_simd_level(std::env::var("MT_FORCE_SIMD").as_deref().ok())
+    });
     *LEVEL
+}
+
+pub(crate) fn parse_simd_override(s: &str) -> Option<SimdLevel> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "scalar" | "none" => Some(SimdLevel::Scalar),
+        "sse41" => Some(SimdLevel::Sse41),
+        "avx" => Some(SimdLevel::Avx),
+        "avx2" => Some(SimdLevel::Avx2Fma),
+        #[cfg(target_arch = "aarch64")]
+        "neon" => Some(SimdLevel::Neon),
+        _ => None,
+    }
+}
+
+pub(crate) fn resolve_simd_level(forced: Option<&str>) -> SimdLevel {
+    forced
+        .and_then(parse_simd_override)
+        .unwrap_or_else(detect_simd_level)
+}
+
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+pub(crate) fn forced_level_disables_avx2(forced: Option<&str>) -> bool {
+    forced
+        .and_then(parse_simd_override)
+        .is_some_and(|lvl| matches!(lvl, SimdLevel::Scalar | SimdLevel::Sse41 | SimdLevel::Avx))
+}
+
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+fn forced_simd_disables_avx2() -> bool {
+    forced_level_disables_avx2(std::env::var("MT_FORCE_SIMD").as_deref().ok())
 }
 
 /// Returns whether the host CPU supports AVX2.
@@ -44,10 +70,8 @@ pub fn has_avx2() -> bool {
     static CACHED: LazyLock<bool> = LazyLock::new(|| {
         #[cfg(target_arch = "x86_64")]
         {
-            if let Ok(forced) = std::env::var("MT_FORCE_SIMD") {
-                if forced == "sse41" || forced == "avx" {
-                    return false;
-                }
+            if forced_simd_disables_avx2() {
+                return false;
             }
             std::arch::is_x86_feature_detected!("avx2")
                 && std::arch::is_x86_feature_detected!("fma")
@@ -70,10 +94,8 @@ pub fn has_avxvnni() -> bool {
     static CACHED: LazyLock<bool> = LazyLock::new(|| {
         #[cfg(target_arch = "x86_64")]
         {
-            if let Ok(forced) = std::env::var("MT_FORCE_SIMD") {
-                if forced == "sse41" || forced == "avx" {
-                    return false;
-                }
+            if forced_simd_disables_avx2() {
+                return false;
             }
             std::arch::is_x86_feature_detected!("avxvnni")
                 || (std::arch::is_x86_feature_detected!("avx512vnni")
@@ -95,10 +117,8 @@ pub fn has_avx512vnni() -> bool {
     static CACHED: LazyLock<bool> = LazyLock::new(|| {
         #[cfg(target_arch = "x86_64")]
         {
-            if let Ok(forced) = std::env::var("MT_FORCE_SIMD") {
-                if forced == "sse41" || forced == "avx" {
-                    return false;
-                }
+            if forced_simd_disables_avx2() {
+                return false;
             }
             std::arch::is_x86_feature_detected!("avx512vnni")
                 && std::arch::is_x86_feature_detected!("avx512vl")
@@ -119,10 +139,8 @@ pub fn vnni_uses_evex() -> bool {
     static CACHED: LazyLock<bool> = LazyLock::new(|| {
         #[cfg(target_arch = "x86_64")]
         {
-            if let Ok(forced) = std::env::var("MT_FORCE_SIMD") {
-                if forced == "sse41" || forced == "avx" {
-                    return false;
-                }
+            if forced_simd_disables_avx2() {
+                return false;
             }
             !std::arch::is_x86_feature_detected!("avxvnni")
                 && (std::arch::is_x86_feature_detected!("avx512vnni")
@@ -197,11 +215,113 @@ pub fn acceleration_report() -> String {
     #[cfg(target_arch = "aarch64")]
     {
         parts.push("neon: true".to_string());
-        parts.push("active: neon".to_string());
+        let active = match simd_level() {
+            SimdLevel::Neon => "neon",
+            _ => "scalar",
+        };
+        parts.push(format!("active: {active}"));
     }
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
         parts.push("active: scalar".to_string());
     }
     parts.join("; ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_simd_override() {
+        assert_eq!(parse_simd_override("scalar"), Some(SimdLevel::Scalar));
+        assert_eq!(parse_simd_override("none"), Some(SimdLevel::Scalar));
+        assert_eq!(parse_simd_override("Scalar"), Some(SimdLevel::Scalar));
+        assert_eq!(parse_simd_override("  NONE  "), Some(SimdLevel::Scalar));
+        assert_eq!(parse_simd_override("sse41"), Some(SimdLevel::Sse41));
+        assert_eq!(parse_simd_override("avx"), Some(SimdLevel::Avx));
+        assert_eq!(parse_simd_override("avx2"), Some(SimdLevel::Avx2Fma));
+        assert_eq!(parse_simd_override("unknown"), None);
+        assert_eq!(parse_simd_override(""), None);
+    }
+
+    #[test]
+    fn test_resolve_simd_level_overrides() {
+        assert_eq!(resolve_simd_level(Some("scalar")), SimdLevel::Scalar);
+        assert_eq!(resolve_simd_level(Some("none")), SimdLevel::Scalar);
+        assert_eq!(resolve_simd_level(Some("sse41")), SimdLevel::Sse41);
+        assert_eq!(resolve_simd_level(Some("avx")), SimdLevel::Avx);
+        assert_eq!(resolve_simd_level(Some("avx2")), SimdLevel::Avx2Fma);
+        assert_eq!(resolve_simd_level(Some("invalid")), detect_simd_level());
+        assert_eq!(resolve_simd_level(None), detect_simd_level());
+    }
+
+    #[test]
+    fn test_forced_disables_avx2() {
+        assert!(forced_level_disables_avx2(Some("scalar")));
+        assert!(forced_level_disables_avx2(Some("none")));
+        assert!(forced_level_disables_avx2(Some("sse41")));
+        assert!(forced_level_disables_avx2(Some("avx")));
+        assert!(!forced_level_disables_avx2(Some("avx2")));
+        assert!(!forced_level_disables_avx2(Some("unknown")));
+        assert!(!forced_level_disables_avx2(None));
+    }
+
+    #[test]
+    fn test_force_simd_scalar_env_subprocess() {
+        let exe = std::env::current_exe().expect("current exe");
+        let output = std::process::Command::new(exe)
+            .env("MT_FORCE_SIMD", "scalar")
+            .args(["--nocapture", "utils::arch::tests::helper_verify_scalar_env", "--exact"])
+            .output()
+            .expect("spawn helper");
+        assert!(
+            output.status.success(),
+            "subprocess failed: stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn helper_verify_scalar_env() {
+        if std::env::var("MT_FORCE_SIMD").as_deref() != Ok("scalar") {
+            return;
+        }
+        assert_eq!(simd_level(), SimdLevel::Scalar);
+        assert!(!has_avx2());
+        assert!(!has_avxvnni());
+        assert!(!has_avx512vnni());
+        assert!(!vnni_uses_evex());
+        assert!(acceleration_report().contains("active: scalar"));
+    }
+
+    #[test]
+    fn test_force_simd_none_env_subprocess() {
+        let exe = std::env::current_exe().expect("current exe");
+        let output = std::process::Command::new(exe)
+            .env("MT_FORCE_SIMD", "none")
+            .args(["--nocapture", "utils::arch::tests::helper_verify_none_env", "--exact"])
+            .output()
+            .expect("spawn helper");
+        assert!(
+            output.status.success(),
+            "subprocess failed: stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn helper_verify_none_env() {
+        if std::env::var("MT_FORCE_SIMD").as_deref() != Ok("none") {
+            return;
+        }
+        assert_eq!(simd_level(), SimdLevel::Scalar);
+        assert!(!has_avx2());
+        assert!(!has_avxvnni());
+        assert!(!has_avx512vnni());
+        assert!(!vnni_uses_evex());
+        assert!(acceleration_report().contains("active: scalar"));
+    }
 }

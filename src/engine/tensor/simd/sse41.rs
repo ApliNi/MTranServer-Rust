@@ -47,17 +47,17 @@ pub unsafe fn matmul_row_i8_sse41(
         _ => compute_row_sums(w, n, k),
     };
 
-    let mut lo_stack = [_mm_setzero_si128(); 64];
-    let mut hi_stack = [_mm_setzero_si128(); 64];
+    const MAX_STACK_BLOCKS: usize = 256;
+    let mut lo_stack = [_mm_setzero_si128(); MAX_STACK_BLOCKS];
+    let mut hi_stack = [_mm_setzero_si128(); MAX_STACK_BLOCKS];
     let (mut lo_heap, mut hi_heap);
-    let (lo_buf, hi_buf): (&mut [__m128i], &mut [__m128i]) = if blocks <= 64 {
+    let (lo_buf, hi_buf): (&mut [__m128i], &mut [__m128i]) = if blocks <= MAX_STACK_BLOCKS {
         (&mut lo_stack[..blocks], &mut hi_stack[..blocks])
     } else {
         lo_heap = vec![_mm_setzero_si128(); blocks];
         hi_heap = vec![_mm_setzero_si128(); blocks];
         (&mut lo_heap[..], &mut hi_heap[..])
     };
-
     for b in 0..blocks {
         let off = b * BLK;
         let xv = _mm_loadu_si128(x.as_ptr().add(off) as *const __m128i);
@@ -181,7 +181,7 @@ pub unsafe fn matmul_row_sse41(
         _mm_storeu_ps,
     };
     const NR: usize = 4;
-    const MAX_STACK_GROUPS: usize = 256;
+    const MAX_STACK_GROUPS: usize = 512;
     let groups = n / NR;
     let tail = n % NR;
     let mut stack_acc = [_mm_setzero_ps(); MAX_STACK_GROUPS];
@@ -677,17 +677,17 @@ pub unsafe fn matmul_i8_sse41(
     let groups = n / NR;
     let jtail = n % NR;
 
-    let mut lo_stack = [_mm_setzero_si128(); 64];
-    let mut hi_stack = [_mm_setzero_si128(); 64];
+    const MAX_STACK_BLOCKS: usize = 256;
+    let mut lo_stack = [_mm_setzero_si128(); MAX_STACK_BLOCKS];
+    let mut hi_stack = [_mm_setzero_si128(); MAX_STACK_BLOCKS];
     let (mut lo_heap, mut hi_heap);
-    let (lo_buf, hi_buf): (&mut [__m128i], &mut [__m128i]) = if blocks <= 64 {
+    let (lo_buf, hi_buf): (&mut [__m128i], &mut [__m128i]) = if blocks <= MAX_STACK_BLOCKS {
         (&mut lo_stack[..blocks], &mut hi_stack[..blocks])
     } else {
         lo_heap = vec![_mm_setzero_si128(); blocks];
         hi_heap = vec![_mm_setzero_si128(); blocks];
         (&mut lo_heap[..], &mut hi_heap[..])
     };
-
     for i in 0..m {
         let xr = &x[i * k..(i + 1) * k];
         let or = &mut out[i * n..(i + 1) * n];

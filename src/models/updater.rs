@@ -6,17 +6,15 @@
 //!
 //! # Safety
 //!
-//! - Engines load model data into memory (`std::fs::read`) and do not hold
-//!   file handles, so replacing the on-disk files is safe for running engines.
-//! - The updater downloads to a temporary directory under the pair's folder,
-//!   verifies hashes, and only then moves the new files into place.
-//! - After replacement the engine is evicted from the pool, so the next
-//!   request to that pair loads the new model automatically.
-
+//! - Engines map model files using `memmap2::Mmap`. Before directory replacement,
+//!   running engines are evicted and the updater waits for active requests to finish,
+//!   ensuring all memory-mapped file handles are closed before swapping on Windows.
+//! - The updater downloads to an isolated staging directory, verifies hashes, and
+//!   only then atomically swaps the new directory into place.
+//! - After eviction and swap, the next request to that pair loads the new model automatically.
 use std::path::{Path, PathBuf};
 
 use crate::config;
-use crate::models::download::Downloader;
 use crate::models::records;
 
 /// Start the background model updater.
@@ -138,54 +136,7 @@ async fn check_and_update(model_dir: &Path, from_lang: &str, to_lang: &str) {
 /// Download the latest model files to a staging directory, then atomically
 /// swap the staging directory into place and evict the running engine.
 async fn download_and_swap(model_dir: &Path, from_lang: &str, to_lang: &str) -> Result<(), String> {
-    let pair_name = format!("{}_{}", from_lang, to_lang);
-    let pair_dir = model_dir.join(&pair_name);
-    let staging_dir = model_dir.join(format!(".{pair_name}.staging"));
-
-    if staging_dir.exists() {
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
-    }
-    tokio::fs::create_dir_all(&staging_dir)
-        .await
-        .map_err(|e| format!("Failed to create staging dir: {e}"))?;
-
-    let downloader = Downloader::new();
-
-    let download_res = records::download_model_to_dir(
-        &downloader,
-        &staging_dir,
-        from_lang,
-        to_lang,
-        None,
-        Some(&pair_dir),
-    )
-    .await;
-
-    let downloaded = match download_res {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = tokio::fs::remove_dir_all(&staging_dir).await;
-            return Err(e);
-        }
-    };
-
-    if let Err(e) = records::write_installed_version(&staging_dir, &downloaded).await {
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
-        return Err(e);
-    }
-
-    crate::service::evict_engine(from_lang, to_lang);
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-    crate::models::download::swap_dir_atomic(&staging_dir, &pair_dir).await?;
-
-    crate::service::evict_engine(from_lang, to_lang);
-    tracing::info!(
-        "{} -> {}: atomically updated model (swapped to v{:?})",
-        from_lang,
-        to_lang,
-        downloaded
-    );
-
+    records::download_model_dir(model_dir, from_lang, to_lang, None).await?;
+    tracing::info!("{} -> {}: atomically updated model", from_lang, to_lang);
     Ok(())
 }

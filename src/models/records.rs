@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::config;
 use crate::models::download::Downloader;
@@ -116,8 +117,8 @@ impl RecordsData {
 }
 /// Installed model records, swapped atomically so the background updater can
 /// refresh the table while request threads take a consistent snapshot.
-static GLOBAL_RECORDS: std::sync::RwLock<Option<std::sync::Arc<RecordsData>>> =
-    std::sync::RwLock::new(None);
+static GLOBAL_RECORDS: parking_lot::RwLock<Option<std::sync::Arc<RecordsData>>> =
+    parking_lot::RwLock::new(None);
 
 const RECORDS_URL: &str = "https://firefox.settings.services.mozilla.com/v1/buckets/main-preview/collections/translations-models-v2/records";
 const ATTACHMENTS_BASE_URL: &str = "https://firefox-settings-attachments.cdn.mozilla.net";
@@ -140,6 +141,7 @@ pub async fn init_records() -> Result<(), String> {
     tokio::fs::create_dir_all(&cfg.model_dir)
         .await
         .map_err(|e| format!("Failed to create model dir: {}", e))?;
+    cleanup_orphan_staging(&cfg.model_dir).await;
 
     let records_path = cfg.config_dir.join("records.json");
     if records_path.exists() {
@@ -232,23 +234,17 @@ async fn load_records_from_file(config_dir: &Path) -> Result<(), String> {
 
 fn set_records(mut records: RecordsData) {
     records.build_indices();
-    *records_lock().write().unwrap_or_else(|e| e.into_inner()) = Some(std::sync::Arc::new(records));
+    *GLOBAL_RECORDS.write() = Some(std::sync::Arc::new(records));
 }
 
 fn with_records<R>(f: impl FnOnce(&RecordsData) -> R) -> Option<R> {
-    records_lock()
-        .read()
-        .ok()
-        .and_then(|guard| guard.as_deref().map(f))
+    GLOBAL_RECORDS.read().as_deref().map(f)
 }
 
 fn records() -> Option<std::sync::Arc<RecordsData>> {
-    records_lock().read().ok().and_then(|guard| guard.clone())
+    GLOBAL_RECORDS.read().clone()
 }
 
-fn records_lock() -> &'static std::sync::RwLock<Option<std::sync::Arc<RecordsData>>> {
-    &GLOBAL_RECORDS
-}
 
 /// Check if a language pair is available in the records.
 pub fn has_language_pair(from_lang: &str, to_lang: &str) -> bool {
@@ -286,6 +282,124 @@ pub fn is_supported_language(code: &str) -> bool {
     with_records(|r| r.supported_languages.contains(code.as_ref())).unwrap_or(true)
 }
 
+struct StagingGuard {
+    path: std::path::PathBuf,
+    committed: bool,
+}
+
+impl Drop for StagingGuard {
+    fn drop(&mut self) {
+        if !self.committed && self.path.exists() {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+async fn cleanup_orphan_staging(model_dir: &Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(model_dir).await else {
+        return;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') && (name.contains(".staging") || name.ends_with(".bak")) {
+            let path = entry.path();
+            if let Ok(ft) = entry.file_type().await {
+                if ft.is_dir() {
+                    let _ = tokio::fs::remove_dir_all(&path).await;
+                }
+            }
+        }
+    }
+}
+
+fn pair_download_lock(pair: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: parking_lot::Mutex<Option<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+        parking_lot::Mutex::new(None);
+    let mut guard = LOCKS.lock();
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.entry(pair.to_string())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
+/// Download a model for a specific language pair to the given model directory.
+pub async fn download_model_dir(
+    model_dir: &Path,
+    from_lang: &str,
+    to_lang: &str,
+    version: Option<&str>,
+) -> Result<(), String> {
+    let norm_from = crate::utils::lang::normalize_language_code_cow(from_lang);
+    let norm_to = crate::utils::lang::normalize_language_code_cow(to_lang);
+    let pair_name = format!("{}_{}", norm_from, norm_to);
+    let _lock = pair_download_lock(&pair_name).lock_owned().await;
+
+    let lang_pair_dir = model_dir.join(&pair_name);
+
+    if let Ok(files) = get_model_files(model_dir, from_lang, to_lang).await {
+        if !files.is_empty() {
+            if let Some(target_ver) = version {
+                if let Ok(Some(installed)) = read_installed_version(&lang_pair_dir).await {
+                    if installed.get("model").is_some_and(|v| v == target_ver) {
+                        return Ok(());
+                    }
+                }
+            } else if let Some(latest) = latest_record_versions(from_lang, to_lang) {
+                if let Ok(Some(installed)) = read_installed_version(&lang_pair_dir).await {
+                    let up_to_date = latest.iter().all(|(ft, ver)| {
+                        installed.get(ft).is_some_and(|cur| {
+                            compare_versions(cur, ver) != std::cmp::Ordering::Less
+                        })
+                    });
+                    if up_to_date {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    static STAGING_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let nonce = STAGING_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let staging_dir = model_dir.join(format!(".{pair_name}.staging.{}_{}", std::process::id(), nonce));
+
+    tokio::fs::create_dir_all(&staging_dir)
+        .await
+        .map_err(|e| format!("Failed to create staging dir: {}", e))?;
+
+    let mut guard = StagingGuard {
+        path: staging_dir.clone(),
+        committed: false,
+    };
+
+    let downloader = Downloader::new();
+    let existing = if lang_pair_dir.exists() {
+        Some(lang_pair_dir.as_path())
+    } else {
+        None
+    };
+
+    let downloaded = download_model_to_dir(
+        &downloader,
+        &staging_dir,
+        from_lang,
+        to_lang,
+        version,
+        existing,
+    )
+    .await?;
+
+    write_installed_version(&staging_dir, &downloaded).await?;
+
+    crate::service::evict_engine(from_lang, to_lang).await;
+
+    crate::models::download::swap_dir_atomic(&staging_dir, &lang_pair_dir).await?;
+    guard.committed = true;
+
+    crate::service::evict_engine(from_lang, to_lang).await;
+    Ok(())
+}
+
 /// Download a model for a specific language pair.
 ///
 /// Downloads the latest version of the model files for the given language
@@ -297,48 +411,7 @@ pub async fn download_model(
     version: Option<&str>,
 ) -> Result<(), String> {
     let cfg = config::get();
-    let pair_name = format!("{}_{}", from_lang, to_lang);
-    let lang_pair_dir = cfg.model_dir.join(&pair_name);
-    let staging_dir = cfg.model_dir.join(format!(".{pair_name}.staging"));
-
-    if staging_dir.exists() {
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
-    }
-    tokio::fs::create_dir_all(&staging_dir)
-        .await
-        .map_err(|e| format!("Failed to create staging dir: {}", e))?;
-
-    let downloader = Downloader::new();
-    let existing = if lang_pair_dir.exists() {
-        Some(lang_pair_dir.as_path())
-    } else {
-        None
-    };
-
-    let download_res = download_model_to_dir(
-        &downloader,
-        &staging_dir,
-        from_lang,
-        to_lang,
-        version,
-        existing,
-    )
-    .await;
-
-    let downloaded = match download_res {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = tokio::fs::remove_dir_all(&staging_dir).await;
-            return Err(e);
-        }
-    };
-
-    if let Err(e) = write_installed_version(&staging_dir, &downloaded).await {
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
-        return Err(e);
-    }
-
-    crate::models::download::swap_dir_atomic(&staging_dir, &lang_pair_dir).await
+    download_model_dir(&cfg.model_dir, from_lang, to_lang, version).await
 }
 
 /// Core download logic: fetch model files for a language pair into the given
@@ -410,24 +483,37 @@ pub(crate) async fn download_model_to_dir(
         let decompressed_path = target_dir.join(decompressed_filename);
 
         // Reuse unchanged file from existing_dir via hard link or copy
+        let mut reused = false;
         if !decompressed_path.exists() {
             if let Some(src_dir) = existing_dir {
                 let src_path = src_dir.join(decompressed_filename);
                 if src_path.exists() {
                     let mut matched_hash = false;
-                    if let (Some(expected), Ok(actual)) = (&record.decompressed_hash, compute_file_hash(&src_path).await) {
-                        matched_hash = *expected == actual;
-                    }
-                    if matched_hash {
-                        if tokio::fs::hard_link(&src_path, &decompressed_path).await.is_err() {
-                            let _ = tokio::fs::copy(&src_path, &decompressed_path).await;
+                    let size_matches = record
+                        .decompressed_size
+                        .map_or(true, |sz| {
+                            std::fs::metadata(&src_path).map(|m| m.len() == sz as u64).unwrap_or(false)
+                        });
+                    if size_matches {
+                        if let (Some(expected), Ok(actual)) =
+                            (&record.decompressed_hash, compute_file_hash(&src_path).await)
+                        {
+                            matched_hash = *expected == actual;
                         }
+                    }
+                    if matched_hash
+                        && (tokio::fs::hard_link(&src_path, &decompressed_path).await.is_ok()
+                            || tokio::fs::copy(&src_path, &decompressed_path).await.is_ok())
+                    {
+                        reused = true;
                     }
                 }
             }
         }
 
-        let needs_download = if decompressed_path.exists() {
+        let needs_download = if reused {
+            false
+        } else if decompressed_path.exists() {
             match &record.decompressed_hash {
                 Some(expected_hash) => {
                     compute_file_hash(&decompressed_path).await? != *expected_hash
@@ -718,9 +804,10 @@ pub fn latest_record_versions(from_lang: &str, to_lang: &str) -> Option<HashMap<
 
 #[cfg(test)]
 mod tests {
+    static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     #[tokio::test]
     async fn test_init_records_behavior() {
-        // 1. When local records.json exists, it should load cleanly
+        let _lock = TEST_LOCK.lock().await;
         let temp_dir1 = std::env::temp_dir().join(format!(
             "mtran_test_records_1_{}",
             std::time::SystemTime::now()
@@ -805,9 +892,9 @@ mod tests {
     fn different_lengths_pad_with_zero() {
         assert_eq!(compare_versions("1.0.0.0", "1"), Ordering::Equal);
     }
-
     #[test]
     fn test_has_language_pair_indexed() {
+        let _lock = TEST_LOCK.blocking_lock();
         let data = super::RecordsData {
             data: vec![
                 super::RecordItem {
@@ -902,6 +989,258 @@ mod tests {
 
         let pairs = super::installed_pairs(&temp_dir).await;
         assert_eq!(pairs, vec![("en".to_string(), "es".to_string())]);
+
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    }
+    #[tokio::test]
+    async fn test_cleanup_orphan_staging() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "mtran_test_cleanup_staging_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let valid_dir = temp_dir.join("en_es");
+        let orphan_staging1 = temp_dir.join(".en_es.staging");
+        let orphan_staging2 = temp_dir.join(".en_es.staging.999_1");
+        let orphan_bak = temp_dir.join(".en_es.bak");
+
+        tokio::fs::create_dir_all(&valid_dir).await.unwrap();
+        tokio::fs::create_dir_all(&orphan_staging1).await.unwrap();
+        tokio::fs::create_dir_all(&orphan_staging2).await.unwrap();
+        tokio::fs::create_dir_all(&orphan_bak).await.unwrap();
+
+        super::cleanup_orphan_staging(&temp_dir).await;
+
+        assert!(valid_dir.exists());
+        assert!(!orphan_staging1.exists());
+        assert!(!orphan_staging2.exists());
+        assert!(!orphan_bak.exists());
+
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    }
+
+    #[test]
+    fn test_staging_guard_cleanup() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "mtran_test_staging_guard_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let staging1 = temp_dir.join(".test.staging.1");
+        let staging2 = temp_dir.join(".test.staging.2");
+
+        std::fs::create_dir_all(&staging1).unwrap();
+        std::fs::create_dir_all(&staging2).unwrap();
+
+        {
+            let _guard = super::StagingGuard {
+                path: staging1.clone(),
+                committed: false,
+            };
+        }
+        assert!(!staging1.exists());
+
+        {
+            let mut guard = super::StagingGuard {
+                path: staging2.clone(),
+                committed: false,
+            };
+            guard.committed = true;
+        }
+        assert!(staging2.exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_download_model_dir_coalescing() {
+        let _lock = TEST_LOCK.lock().await;
+        let temp_dir = std::env::temp_dir().join(format!(
+            "mtran_test_concurrent_dl_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let pair_dir = temp_dir.join("en_es");
+        tokio::fs::create_dir_all(&pair_dir).await.unwrap();
+        tokio::fs::write(pair_dir.join("model.bin"), b"dummy model").await.unwrap();
+        tokio::fs::write(pair_dir.join("lex.s2t.bin"), b"dummy lex").await.unwrap();
+        tokio::fs::write(pair_dir.join("vocab.spm"), b"dummy vocab").await.unwrap();
+
+        let mut versions = std::collections::HashMap::new();
+        versions.insert("model".to_string(), "1.0".to_string());
+        versions.insert("lex".to_string(), "1.0".to_string());
+        versions.insert("vocab".to_string(), "1.0".to_string());
+        super::write_installed_version(&pair_dir, &versions).await.unwrap();
+
+        let data = super::RecordsData {
+            data: vec![
+                super::RecordItem {
+                    name: String::new(),
+                    schema: 0,
+                    version: "1.0".to_string(),
+                    file_type: "model".to_string(),
+                    attachment: super::Attachment {
+                        hash: String::new(),
+                        size: 0,
+                        filename: "model.bin".to_string(),
+                        location: String::new(),
+                        mimetype: String::new(),
+                    },
+                    architecture: None,
+                    sourceLanguage: "en".to_string(),
+                    targetLanguage: "es".to_string(),
+                    decompressed_hash: None,
+                    decompressed_size: None,
+                    id: "1".to_string(),
+                    last_modified: 0,
+                },
+                super::RecordItem {
+                    name: String::new(),
+                    schema: 0,
+                    version: "1.0".to_string(),
+                    file_type: "lex".to_string(),
+                    attachment: super::Attachment {
+                        hash: String::new(),
+                        size: 0,
+                        filename: "lex.s2t.bin".to_string(),
+                        location: String::new(),
+                        mimetype: String::new(),
+                    },
+                    architecture: None,
+                    sourceLanguage: "en".to_string(),
+                    targetLanguage: "es".to_string(),
+                    decompressed_hash: None,
+                    decompressed_size: None,
+                    id: "2".to_string(),
+                    last_modified: 0,
+                },
+                super::RecordItem {
+                    name: String::new(),
+                    schema: 0,
+                    version: "1.0".to_string(),
+                    file_type: "vocab".to_string(),
+                    attachment: super::Attachment {
+                        hash: String::new(),
+                        size: 0,
+                        filename: "vocab.spm".to_string(),
+                        location: String::new(),
+                        mimetype: String::new(),
+                    },
+                    architecture: None,
+                    sourceLanguage: "en".to_string(),
+                    targetLanguage: "es".to_string(),
+                    decompressed_hash: None,
+                    decompressed_size: None,
+                    id: "3".to_string(),
+                    last_modified: 0,
+                },
+            ],
+            ..Default::default()
+        };
+        super::set_records(data);
+
+        let mut handles = Vec::new();
+        for _ in 0..10 {
+            let dir = temp_dir.clone();
+            handles.push(tokio::spawn(async move {
+                super::download_model_dir(&dir, "en", "es", None).await
+            }));
+        }
+
+        for h in handles {
+            let res = h.await.unwrap();
+            assert!(res.is_ok(), "Concurrent download failed: {:?}", res);
+        }
+
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    }
+
+    #[test]
+    fn test_global_records_no_poison() {
+        let _lock = TEST_LOCK.blocking_lock();
+        let _ = std::panic::catch_unwind(|| {
+            super::with_records(|_| {
+                panic!("intentional panic while reading records");
+            });
+        });
+
+        let data = super::RecordsData {
+            data: vec![],
+            ..Default::default()
+        };
+        super::set_records(data);
+        assert!(super::records().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_reuse_existing_file_without_second_hash() {
+        let _lock = TEST_LOCK.lock().await;
+        let temp_dir = std::env::temp_dir().join(format!(
+            "mtran_test_reuse_{}",
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let src_dir = temp_dir.join("src");
+        let target_dir = temp_dir.join("target");
+        let _ = tokio::fs::create_dir_all(&src_dir).await;
+        let _ = tokio::fs::create_dir_all(&target_dir).await;
+
+        let content = b"pre-existing model data for testing reuse";
+        let src_file = src_dir.join("model.bin");
+        tokio::fs::write(&src_file, content).await.unwrap();
+
+        let hash = super::compute_file_hash(&src_file).await.unwrap();
+
+        let item = super::RecordItem {
+            schema: 0,
+            name: "test-model".to_string(),
+            version: "1.0".to_string(),
+            file_type: "model".to_string(),
+            attachment: super::Attachment {
+                hash: hash.clone(),
+                size: content.len() as i64,
+                filename: "model.bin".to_string(),
+                location: String::new(),
+                mimetype: String::new(),
+            },
+            architecture: None,
+            sourceLanguage: "en".to_string(),
+            targetLanguage: "de".to_string(),
+            decompressed_hash: Some(hash),
+            decompressed_size: Some(content.len() as i64),
+            id: "1".to_string(),
+            last_modified: 0,
+        };
+
+        let data = super::RecordsData {
+            data: vec![item],
+            ..Default::default()
+        };
+        super::set_records(data);
+
+        let downloader = crate::models::download::Downloader::new();
+        let downloaded = super::download_model_to_dir(
+            &downloader,
+            &target_dir,
+            "en",
+            "de",
+            None,
+            Some(&src_dir),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(downloaded.get("model").map(String::as_str), Some("1.0"));
+        assert!(target_dir.join("model.bin").exists());
+        assert_eq!(tokio::fs::read(target_dir.join("model.bin")).await.unwrap(), content);
 
         let _ = tokio::fs::remove_dir_all(&temp_dir).await;
     }

@@ -82,19 +82,6 @@ pub struct HcfyResponse {
     pub result: Option<Vec<String>>,
 }
 
-fn contains_chinese(text: &str) -> bool {
-    text.chars().any(|c| matches!(c, '\u{4E00}'..='\u{9FFF}'))
-}
-
-fn contains_japanese(text: &str) -> bool {
-    text.chars()
-        .any(|c| matches!(c, '\u{3040}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}'))
-}
-
-fn contains_korean(text: &str) -> bool {
-    text.chars().any(|c| matches!(c, '\u{AC00}'..='\u{D7AF}'))
-}
-
 pub async fn translate(Json(mut body): Json<HcfyRequest>) -> Result<Json<HcfyResponse>, ApiError> {
     validate_batch(std::slice::from_ref(&body.text))?;
 
@@ -129,12 +116,6 @@ pub async fn translate(Json(mut body): Json<HcfyRequest>) -> Result<Json<HcfyRes
         let detected = crate::service::detector::detect_language(&body.text).await;
         if !detected.is_empty() && detected != "un" {
             detected
-        } else if contains_japanese(&body.text) {
-            "ja".to_string()
-        } else if contains_korean(&body.text) {
-            "ko".to_string()
-        } else if contains_chinese(&body.text) {
-            crate::service::detector::distinguish_chinese_variant(&body.text).to_string()
         } else {
             "en".to_string()
         }
@@ -209,20 +190,18 @@ mod tests {
             .unwrap_or_else(|| normalize_language_code(unmapped));
         assert_eq!(normalized, "zh-Hans");
     }
-    #[test]
-    fn test_japanese_kana_detection_priority() {
-        let text = "日本語です";
-        assert!(contains_japanese(text));
-        assert!(contains_chinese(text)); // has Kanji
-        // Priority must detect Japanese first
-        let detected = if contains_japanese(text) {
-            "ja"
-        } else if contains_chinese(text) {
-            "zh"
-        } else {
-            "en"
+    #[tokio::test]
+    async fn test_hcfy_auto_detect_japanese() {
+        let req = HcfyRequest {
+            name: None,
+            text: "日本語です".to_string(),
+            source: None,
+            destination: vec!["日语".to_string()],
         };
-        assert_eq!(detected, "ja");
+        let res = translate(Json(req)).await.unwrap();
+        assert_eq!(res.from, "日语");
+        assert_eq!(res.to, "日语");
+        assert_eq!(res.result, Some(vec!["日本語です".to_string()]));
     }
     #[tokio::test]
     async fn test_hcfy_paragraph_batch_limit() {

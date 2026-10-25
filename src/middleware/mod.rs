@@ -63,14 +63,6 @@ pub async fn error_response_formatter(req: Request, next: Next) -> Result<Respon
 
     let (mut parts, body) = response.into_parts();
 
-    if status == StatusCode::NOT_FOUND {
-        parts.headers.insert(
-            axum::http::header::CONTENT_TYPE,
-            axum::http::HeaderValue::from_static("text/plain; charset=utf-8"),
-        );
-        return Ok(Response::from_parts(parts, Body::from("404")));
-    }
-
     if status == StatusCode::UNAUTHORIZED {
         parts.headers.insert(
             axum::http::header::CONTENT_TYPE,
@@ -87,17 +79,25 @@ pub async fn error_response_formatter(req: Request, next: Next) -> Result<Respon
         return Ok(Response::from_parts(parts, Body::from(TOO_MANY_REQUESTS_BODY)));
     }
 
-    if let Some(ct) = parts.headers.get(axum::http::header::CONTENT_TYPE) {
-        if let Ok(ct_str) = ct.to_str() {
-            if !ct_str.contains("json") {
-                return Ok(Response::from_parts(parts, body));
-            }
-        }
-    }
-
     let body_bytes = axum::body::to_bytes(body, 64 * 1024)
         .await
         .unwrap_or_default();
+
+    if status == StatusCode::NOT_FOUND && body_bytes.is_empty() {
+        parts.headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+        return Ok(Response::from_parts(parts, Body::from("404")));
+    }
+
+    if let Some(ct) = parts.headers.get(axum::http::header::CONTENT_TYPE) {
+        if let Ok(ct_str) = ct.to_str() {
+            if !ct_str.contains("json") {
+                return Ok(Response::from_parts(parts, Body::from(body_bytes)));
+            }
+        }
+    }
 
     let Ok(incoming) = serde_json::from_slice::<IncomingError>(&body_bytes) else {
         return Ok(Response::from_parts(parts, Body::from(body_bytes)));
@@ -107,7 +107,9 @@ pub async fn error_response_formatter(req: Request, next: Next) -> Result<Respon
         return Ok(Response::from_parts(parts, Body::from(body_bytes)));
     }
 
-    let error = incoming.error.unwrap_or("Internal Server Error");
+    let error = incoming
+        .error
+        .unwrap_or_else(|| status.canonical_reason().unwrap_or("Internal Server Error"));
     let message = incoming.message.unwrap_or(error);
     let outgoing = OutgoingError { error, message };
     let body_str = serde_json::to_string(&outgoing).unwrap_or_default();
@@ -262,13 +264,14 @@ pub fn extract_client_ip(req: &Request) -> String {
 /// Per-IP concurrency limiter tracking active in-flight requests per client IP.
 pub struct IpConcurrencyLimiter {
     max_per_ip: usize,
-    shards: [parking_lot::Mutex<std::collections::HashMap<std::sync::Arc<str>, usize>>; 16],
+    shards: [parking_lot::Mutex<std::collections::HashMap<std::sync::Arc<str>, std::cell::Cell<usize>>>; 16],
 }
 
 /// RAII Guard that decrements and cleans up per-IP concurrency count on drop.
 pub struct IpConcurrencyGuard {
     limiter: std::sync::Arc<IpConcurrencyLimiter>,
     ip: std::sync::Arc<str>,
+    shard_idx: usize,
 }
 
 impl IpConcurrencyLimiter {
@@ -283,34 +286,37 @@ impl IpConcurrencyLimiter {
         }
     }
 
-    fn shard(&self, ip: &str) -> &parking_lot::Mutex<std::collections::HashMap<std::sync::Arc<str>, usize>> {
+    fn shard_index(ip: &str) -> usize {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         ip.hash(&mut hasher);
-        let idx = (hasher.finish() as usize) % Self::SHARDS;
-        &self.shards[idx]
+        (hasher.finish() as usize) % Self::SHARDS
     }
 
     pub fn try_acquire(self: &std::sync::Arc<Self>, ip: &str) -> Option<IpConcurrencyGuard> {
-        let mut map = self.shard(ip).lock();
-        let count = map.get(ip).copied().unwrap_or(0);
-        if count >= self.max_per_ip {
-            None
-        } else {
-            let ip_arc = match map.get_mut(ip) {
-                Some(cnt) => {
-                    *cnt += 1;
-                    std::sync::Arc::from(ip)
-                }
-                None => {
-                    let arc: std::sync::Arc<str> = ip.into();
-                    map.insert(arc.clone(), 1);
-                    arc
-                }
-            };
+        let shard_idx = Self::shard_index(ip);
+        let mut map = self.shards[shard_idx].lock();
+        if let Some((arc, cell)) = map.get_key_value(ip) {
+            let count = cell.get();
+            if count >= self.max_per_ip {
+                return None;
+            }
+            cell.set(count + 1);
             Some(IpConcurrencyGuard {
                 limiter: self.clone(),
-                ip: ip_arc,
+                ip: arc.clone(),
+                shard_idx,
+            })
+        } else {
+            if self.max_per_ip == 0 {
+                return None;
+            }
+            let arc: std::sync::Arc<str> = ip.into();
+            map.insert(arc.clone(), std::cell::Cell::new(1));
+            Some(IpConcurrencyGuard {
+                limiter: self.clone(),
+                ip: arc,
+                shard_idx,
             })
         }
     }
@@ -318,11 +324,13 @@ impl IpConcurrencyLimiter {
 
 impl Drop for IpConcurrencyGuard {
     fn drop(&mut self) {
-        let mut map = self.limiter.shard(&self.ip).lock();
-        if let Some(cnt) = map.get_mut(&*self.ip) {
-            *cnt -= 1;
-            if *cnt == 0 {
-                map.remove(&*self.ip);
+        let mut map = self.limiter.shards[self.shard_idx].lock();
+        if let std::collections::hash_map::Entry::Occupied(entry) = map.entry(self.ip.clone()) {
+            let count = entry.get().get();
+            if count <= 1 {
+                entry.remove();
+            } else {
+                entry.get().set(count - 1);
             }
         }
     }
@@ -411,6 +419,23 @@ mod tests {
         for i in 0..32 {
             let ip = format!("192.168.1.{}", i);
             assert!(limiter.try_acquire(&ip).is_some());
+        }
+    }
+
+    #[test]
+    fn test_ip_concurrency_limiter_arc_reuse_and_zero_max() {
+        let zero_limiter = std::sync::Arc::new(IpConcurrencyLimiter::new(0));
+        assert!(zero_limiter.try_acquire("127.0.0.1").is_none());
+
+        let limiter = std::sync::Arc::new(IpConcurrencyLimiter::new(2));
+        let g1 = limiter.try_acquire("10.0.0.1").unwrap();
+        let g2 = limiter.try_acquire("10.0.0.1").unwrap();
+        assert!(std::sync::Arc::ptr_eq(&g1.ip, &g2.ip));
+
+        drop(g1);
+        drop(g2);
+        for s in &limiter.shards {
+            assert!(s.lock().is_empty());
         }
     }
 
@@ -526,5 +551,35 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         assert_eq!(resp.headers().get("x-custom-test").unwrap(), "survives");
+    }
+
+    #[tokio::test]
+    async fn test_error_response_formatter_not_found_with_json() {
+        use axum::middleware;
+        use tower::ServiceExt;
+
+        let app = axum::Router::new()
+            .route(
+                "/missing-model",
+                axum::routing::get(|| async {
+                    crate::api::ApiError::NotFound("No model found for en -> xx".to_string())
+                }),
+            )
+            .layer(middleware::from_fn(error_response_formatter));
+
+        let req = Request::builder()
+            .uri("/missing-model")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+        let bytes = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"], "No model found for en -> xx");
+        assert_eq!(json["message"], "No model found for en -> xx");
     }
 }

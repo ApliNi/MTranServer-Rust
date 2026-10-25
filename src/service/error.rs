@@ -150,9 +150,29 @@ impl From<ServiceError> for String {
 impl From<ServiceError> for ApiError {
     fn from(err: ServiceError) -> Self {
         match err {
+            ServiceError::ModelNotFound(_) => ApiError::NotFound(err.to_string()),
             ServiceError::LanguageNotSupported(msg) => ApiError::BadRequest(msg),
             ServiceError::LanguageDetectionFailed(msg) => ApiError::BadRequest(msg),
             _ => ApiError::Internal(err.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_model_not_found_status_code_and_api_error() {
+        let err = ServiceError::ModelNotFound("No model found for en -> fake".to_string());
+        assert_eq!(err.status_code(), StatusCode::NOT_FOUND);
+
+        let api_err: ApiError = err.into();
+        match api_err {
+            ApiError::NotFound(msg) => {
+                assert_eq!(msg, "No model found for en -> fake");
+            }
+            other => panic!("expected ApiError::NotFound, got: {other:?}"),
         }
     }
 }

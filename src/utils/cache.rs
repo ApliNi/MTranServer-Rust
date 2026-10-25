@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use lru::LruCache;
 use parking_lot::RwLock;
 
@@ -17,10 +18,12 @@ const SHARDS: usize = 32;
 struct CacheShard(RwLock<Option<LruCache<CacheKey, std::sync::Arc<str>>>>);
 
 static CACHE: [CacheShard; SHARDS] = [const { CacheShard(RwLock::new(None)) }; SHARDS];
+static CACHE_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// True if the cache is enabled and configured with a positive size.
+#[inline]
 pub fn enabled() -> bool {
-    config::is_initialized() && config::get().cache_size > 0
+    CACHE_ENABLED.load(Ordering::Acquire)
 }
 
 const SEED1: u64 = 0xcbf29ce484222325;
@@ -139,15 +142,15 @@ fn splitmix64(mut hash: u64) -> u64 {
 /// `cache_size`; eviction order becomes per-shard LRU instead of global LRU,
 /// which affects hit rate only — never translation output.
 pub fn init() {
-    let total = if config::is_initialized() {
+    let (is_enabled, total) = if config::is_initialized() {
         let cfg = config::get();
         if cfg.cache_size > 0 {
-            cfg.cache_size
+            (true, cfg.cache_size)
         } else {
-            1
+            (false, 1)
         }
     } else {
-        1
+        (false, 1)
     };
     let per_shard = total.div_ceil(SHARDS).max(1);
     for shard in &CACHE {
@@ -155,6 +158,7 @@ pub fn init() {
             std::num::NonZeroUsize::new(per_shard).unwrap(),
         ));
     }
+    CACHE_ENABLED.store(is_enabled, Ordering::Release);
 }
 
 #[inline]
@@ -462,5 +466,29 @@ mod tests {
 
         let missing_key = compute_key(&["en", "zh", "nonexistent"]);
         assert!(read_cached(missing_key).is_none());
+    }
+    #[test]
+    fn test_cache_enabled_atomic_flag() {
+        let _guard = setup_test_cache();
+        assert!(enabled());
+
+        let cli = crate::config::Cli::try_parse_from(["mtranserver", "--cache-size", "0"]).unwrap();
+        crate::config::init(cli);
+        init();
+        assert!(!enabled());
+
+        let k = compute_key(&["en", "zh", "test_disabled"]);
+        set(k, "disabled_val");
+        assert_eq!(get(k), None);
+        assert!(!contains(k));
+
+        let cli = crate::config::Cli::try_parse_from(["mtranserver", "--cache-size", "128"]).unwrap();
+        crate::config::init(cli);
+        init();
+        assert!(enabled());
+
+        set(k, "enabled_val");
+        assert_eq!(get(k).as_deref(), Some("enabled_val"));
+        assert!(contains(k));
     }
 }

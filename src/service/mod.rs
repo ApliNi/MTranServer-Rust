@@ -394,9 +394,9 @@ fn should_keep_resident(k: &str) -> bool {
 /// listener, in the background; failures are logged and skipped (the normal
 /// request path will surface them again with full context).
 ///
-/// Keys arrive normalized as `from-to` by `resolve_keep_models_pairs`, which
-/// splits on the FIRST separator so target codes containing a hyphen (e.g.
-/// `en-zh-Hans`) survive; the same first-hyphen split is mirrored here.
+/// Keys arrive normalized as `from-to` by `resolve_keep_models_pairs`.
+/// Language pairs are split using `split_language_pair` so hyphenated codes
+/// (e.g. `zh-Hans-en`, `en-zh-Hans`) are correctly recognized.
 /// The special value `all` expands to every language pair in the model
 /// records before preloading.
 pub fn preload_engines() {
@@ -409,11 +409,7 @@ pub fn preload_engines() {
     }
     tokio::spawn(async move {
         for pair in pairs {
-            let (from, to) = if let Some((f, t)) = pair.split_once('_') {
-                (f, t)
-            } else if let Some((f, t)) = pair.split_once('-') {
-                (f, t)
-            } else {
+            let Some((from, to)) = crate::utils::lang::split_language_pair(&pair) else {
                 continue;
             };
             match get_or_create_engine(from, to).await {
@@ -440,14 +436,14 @@ fn needs_pivot_translation(from_lang: &str, to_lang: &str) -> bool {
 /// Get or create the engine for a language pair (loads model if needed).
 struct LoadingCleanupGuard<'a> {
     key: &'a str,
-    active: bool,
+    promise: &'a LoadingPromise,
 }
 
 impl<'a> Drop for LoadingCleanupGuard<'a> {
     fn drop(&mut self) {
-        if self.active {
-            let mut guard = LOADING.lock();
-            if let Some(map) = guard.as_mut() {
+        let mut guard = LOADING.lock();
+        if let Some(map) = guard.as_mut() {
+            if map.get(self.key).is_some_and(|p| Arc::ptr_eq(p, self.promise)) {
                 map.remove(self.key);
             }
         }
@@ -467,7 +463,10 @@ async fn get_or_create_engine(
         }
 
         enum LoadSlot {
-            Loader(tokio::sync::OwnedMutexGuard<Option<Result<Arc<TranslationEngine>, ServiceError>>>),
+            Loader(
+                LoadingPromise,
+                tokio::sync::OwnedMutexGuard<Option<Result<Arc<TranslationEngine>, ServiceError>>>,
+            ),
             Waiter(LoadingPromise),
         }
 
@@ -481,8 +480,8 @@ async fn get_or_create_engine(
                         .clone()
                         .try_lock_owned()
                         .expect("uncontended lock");
-                    entry.insert(promise);
-                    LoadSlot::Loader(loader_guard)
+                    entry.insert(promise.clone());
+                    LoadSlot::Loader(promise, loader_guard)
                 }
                 std::collections::hash_map::Entry::Occupied(entry) => {
                     LoadSlot::Waiter(entry.get().clone())
@@ -491,20 +490,14 @@ async fn get_or_create_engine(
         };
 
         match slot {
-            LoadSlot::Loader(mut loader_guard) => {
-                let mut cleanup_guard = LoadingCleanupGuard {
+            LoadSlot::Loader(promise, mut loader_guard) => {
+                let cleanup_guard = LoadingCleanupGuard {
                     key: &k,
-                    active: true,
+                    promise: &promise,
                 };
                 let result = load_and_register_engine(from_lang, to_lang, &k).await;
                 *loader_guard = Some(result.clone());
-                cleanup_guard.active = false;
-                {
-                    let mut guard = LOADING.lock();
-                    if let Some(map) = guard.as_mut() {
-                        map.remove(&k);
-                    }
-                }
+                drop(cleanup_guard);
                 drop(loader_guard);
                 return result;
             }
@@ -517,12 +510,7 @@ async fn get_or_create_engine(
                     }
                     Some(Err(err)) => return Err(err.clone()),
                     None => {
-                        // Previous loader was cancelled before completing.
-                        // Ensure key is cleared from LOADING and loop back to retry.
-                        let mut guard = LOADING.lock();
-                        if let Some(map) = guard.as_mut() {
-                            map.remove(&k);
-                        }
+                        // Previous loader was cancelled before completing; retry.
                         continue;
                     }
                 }
@@ -860,6 +848,19 @@ pub async fn translate_with_pivot_timed_formats(
     text: &str,
     parse_formats: Option<config::ParseFormats>,
 ) -> Result<TranslationOutput, ServiceError> {
+    if text.is_empty() {
+        return Ok(TranslationOutput {
+            text: TranslatedText::default(),
+            detected_language: if from_lang == "auto" {
+                String::new()
+            } else {
+                from_lang.to_string()
+            },
+            translation_duration: Duration::ZERO,
+            model_load_duration: Duration::ZERO,
+        });
+    }
+
     if from_lang != "auto" && from_lang == to_lang {
         return Ok(TranslationOutput {
             text: text.into(),
@@ -1200,8 +1201,8 @@ async fn translate_segment_with_engines(
     text: &str,
     effective_formats: config::ParseFormats,
 ) -> Result<(TranslatedText, Duration), ServiceError> {
-    if from_lang == to_lang {
-        return Ok((TranslatedText::String(text.to_string()), Duration::ZERO));
+    if text.is_empty() {
+        return Ok((TranslatedText::default(), Duration::ZERO));
     }
 
     match engines {
@@ -1249,6 +1250,9 @@ pub async fn translate_segment(
     text: &str,
     effective_formats: config::ParseFormats,
 ) -> Result<(String, Duration), ServiceError> {
+    if text.is_empty() {
+        return Ok((String::new(), Duration::ZERO));
+    }
     if from_lang == to_lang {
         return Ok((text.to_string(), Duration::ZERO));
     }
@@ -3218,21 +3222,26 @@ fn enforce_capacity(map: &mut HashMap<String, EngineInfo>) {
 
 /// Evict a single engine from the pool by language pair key ("from-to").
 ///
-/// Aborts its idle timer and drops the pool reference. In-flight translations
-/// keep their `Arc<TranslationEngine>` and finish normally; the next request
-/// loads the (possibly updated) model fresh. Used by the model updater to
-/// switch engines to newly downloaded files.
-pub fn evict_engine(from_lang: &str, to_lang: &str) {
-    with_key(from_lang, to_lang, |k| {
+/// Aborts its idle timer, removes the engine from the pool, and waits for any
+/// in-flight translations to finish (by tracking the `Arc` strong count) so that
+/// memory-mapped file handles are released before on-disk directory replacement.
+pub async fn evict_engine(from_lang: &str, to_lang: &str) {
+    let engine = with_key(from_lang, to_lang, |k| {
         let mut guard = ENGINES.write();
-        if let Some(map) = guard.as_mut() {
-            if let Some(info) = map.remove(k) {
-                if let Some(task) = info.idle_task {
-                    task.abort();
-                }
+        guard.as_mut().and_then(|map| map.remove(k)).map(|info| {
+            if let Some(task) = info.idle_task {
+                task.abort();
             }
-        }
+            info.engine
+        })
     });
+    if let Some(engine) = engine {
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
+        while Arc::strong_count(&engine) > 1 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        }
+        drop(engine);
+    }
 }
 
 /// Translate through a directly-held engine, bypassing the result cache.
@@ -3294,5 +3303,86 @@ mod tests {
         // Normalization on zh target replaces punctuation
         let norm_zh = tt.normalize_punctuation("zh", true);
         assert_eq!(norm_zh, "cached hello，world");
+    }
+
+    #[tokio::test]
+    async fn test_empty_text_short_circuit() {
+        let auto_res = translate_with_pivot_timed_formats("auto", "zh", "", None)
+            .await
+            .expect("empty auto text should succeed");
+        assert_eq!(auto_res.text.as_str(), "");
+        assert_eq!(auto_res.detected_language, "");
+        assert_eq!(auto_res.translation_duration, Duration::ZERO);
+        assert_eq!(auto_res.model_load_duration, Duration::ZERO);
+
+        let explicit_res = translate_with_pivot_timed_formats("en", "zh", "", None)
+            .await
+            .expect("empty explicit text should succeed");
+        assert_eq!(explicit_res.text.as_str(), "");
+        assert_eq!(explicit_res.detected_language, "en");
+        assert_eq!(explicit_res.translation_duration, Duration::ZERO);
+        assert_eq!(explicit_res.model_load_duration, Duration::ZERO);
+
+        let seg_res = translate_segment("en", "zh", "", config::ParseFormats::default())
+            .await
+            .expect("empty segment should succeed");
+        assert_eq!(seg_res.0, "");
+        assert_eq!(seg_res.1, Duration::ZERO);
+    }
+
+    #[test]
+    fn test_preload_language_pair_split() {
+        assert_eq!(crate::utils::lang::split_language_pair("zh-Hans-en"), Some(("zh-Hans", "en")));
+        assert_eq!(crate::utils::lang::split_language_pair("en-zh-Hans"), Some(("en", "zh-Hans")));
+        assert_eq!(crate::utils::lang::split_language_pair("zh-Hans_en"), Some(("zh-Hans", "en")));
+        assert_eq!(crate::utils::lang::split_language_pair("en-es"), Some(("en", "es")));
+        assert_eq!(crate::utils::lang::split_language_pair("invalid"), None);
+    }
+
+    #[tokio::test]
+    async fn test_loading_cleanup_guard_atomic_promise_check() {
+        let test_key = "test_lang_from-test_lang_to";
+        let promise1: LoadingPromise = Arc::new(tokio::sync::Mutex::new(None));
+        let promise2: LoadingPromise = Arc::new(tokio::sync::Mutex::new(None));
+
+        {
+            let mut guard = LOADING.lock();
+            let map = guard.get_or_insert_with(HashMap::new);
+            map.insert(test_key.to_string(), promise2.clone());
+        }
+
+        // Dropping guard for promise1 should NOT remove promise2
+        {
+            let _guard = LoadingCleanupGuard {
+                key: test_key,
+                promise: &promise1,
+            };
+        }
+
+        {
+            let guard = LOADING.lock();
+            let map = guard.as_ref().unwrap();
+            assert!(map.contains_key(test_key), "promise2 must remain in LOADING");
+        }
+
+        // Dropping guard for promise2 SHOULD remove promise2
+        {
+            let _guard = LoadingCleanupGuard {
+                key: test_key,
+                promise: &promise2,
+            };
+        }
+
+        {
+            let guard = LOADING.lock();
+            let map = guard.as_ref().unwrap();
+            assert!(!map.contains_key(test_key), "promise2 must be removed after guard drop");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_evict_engine_nonexistent() {
+        super::init();
+        super::evict_engine("nonexistent_from", "nonexistent_to").await;
     }
 }

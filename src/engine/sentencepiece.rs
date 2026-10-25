@@ -6,6 +6,8 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::path::Path;
 use super::error::EngineError;
 /// SentencePiece model type
@@ -361,6 +363,54 @@ pub struct DpNode {
     pub prev: u32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct BpeSymbol {
+    pub start: u32,
+    pub len: u32,
+    pub prev: i32,
+    pub next: i32,
+    pub piece_id: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct BpeCandidate {
+    pub score: f32,
+    pub left: u32,
+    pub right: u32,
+    pub length: u32,
+    pub piece_id: u32,
+}
+
+impl PartialEq for BpeCandidate {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.score == other.score
+            && self.left == other.left
+            && self.right == other.right
+            && self.length == other.length
+    }
+}
+
+impl Eq for BpeCandidate {}
+
+impl PartialOrd for BpeCandidate {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BpeCandidate {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.score
+            .total_cmp(&other.score)
+            .then_with(|| other.left.cmp(&self.left))
+    }
+}
+
 /// Reusable heap buffers for the encode hot path.
 ///
 /// `translate_internal` keeps one of these in thread-local storage so the
@@ -384,6 +434,10 @@ pub struct EncodeScratch {
     pub norm_buf: String,
     /// Reusable byte spans mapping normalized characters to original text
     pub norm_to_orig: Vec<std::ops::Range<usize>>,
+    /// Reusable symbol buffer for BPE encoding
+    pub bpe_symbols: Vec<BpeSymbol>,
+    /// Reusable priority queue for BPE merges
+    pub bpe_queue: BinaryHeap<BpeCandidate>,
 }
 
 /// Reusable heap buffers for the decode hot path.
@@ -824,10 +878,7 @@ impl SentencePiece {
         };
         match self.model_type {
             ModelType::Unigram => self.encode_unigram_into(norm_text, scratch),
-            ModelType::BPE => {
-                let ids = self.encode_bpe(norm_text);
-                scratch.ids.extend(ids);
-            }
+            ModelType::BPE => self.encode_bpe_into(norm_text, scratch),
             _ => self.encode_unigram_into(norm_text, scratch),
         }
         &scratch.ids
@@ -859,9 +910,8 @@ impl SentencePiece {
             match self.model_type {
                 ModelType::Unigram => self.encode_unigram_with_spans_into(norm_text, None, scratch),
                 ModelType::BPE => {
-                    let ids = self.encode_bpe(norm_text);
+                    self.encode_bpe_into(norm_text, scratch);
                     let text_len = text.len();
-                    scratch.ids.extend(ids);
                     scratch.token_spans.resize(scratch.ids.len(), 0..text_len);
                 }
                 _ => self.encode_unigram_with_spans_into(norm_text, None, scratch),
@@ -882,9 +932,8 @@ impl SentencePiece {
             match self.model_type {
                 ModelType::Unigram => self.encode_unigram_with_spans_into(norm_text, orig_text, scratch),
                 ModelType::BPE => {
-                    let ids = self.encode_bpe(norm_text);
+                    self.encode_bpe_into(norm_text, scratch);
                     let text_len = text.len();
-                    scratch.ids.extend(ids);
                     scratch.token_spans.resize(scratch.ids.len(), 0..text_len);
                 }
                 _ => self.encode_unigram_with_spans_into(norm_text, orig_text, scratch),
@@ -1334,49 +1383,159 @@ impl SentencePiece {
     }
 
     /// BPE model encoding.
-    fn encode_bpe(&self, text: &str) -> Vec<u32> {
-        // Simple BPE: split by space, encode each word with BPE merges
-        // This is a simplified implementation
-        let sp_text = format!("▁{}", text.replace(' ', "▁"));
+    pub fn encode_bpe(&self, text: &str) -> Vec<u32> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+        ENCODE_SCRATCH.with(|cell| {
+            let mut scratch = cell.borrow_mut();
+            self.encode_bpe_into(text, &mut scratch);
+            scratch.ids.clone()
+        })
+    }
 
-        // Start with character-level tokenization
-        let mut tokens: Vec<String> = sp_text.chars().map(|c| c.to_string()).collect();
+    /// BPE model encoding reusing caller-owned scratch buffers.
+    pub fn encode_bpe_into(&self, text: &str, scratch: &mut EncodeScratch) {
+        scratch.ids.clear();
+        if text.is_empty() {
+            return;
+        }
 
-        // Greedy BPE merge: find the best pair and merge
-        let mut changed = true;
-        while changed {
-            changed = false;
-            let mut best_pair: Option<(usize, String)> = None;
-            let mut best_score = f32::NEG_INFINITY;
+        Self::prepare_sp_text(text, &mut scratch.sp_text);
+        let n = Self::prepare_char_offsets(&scratch.sp_text, &mut scratch.char_offsets);
+        if n == 0 {
+            return;
+        }
 
-            for i in 0..tokens.len().saturating_sub(1) {
-                let merged = format!("{}{}", tokens[i], tokens[i + 1]);
-                if let Some(id) = self.trie.get(&merged) {
+        scratch.bpe_symbols.clear();
+        if scratch.bpe_symbols.capacity() < n {
+            scratch.bpe_symbols.reserve(n);
+        }
+
+        let char_offsets = scratch.char_offsets.as_slice();
+        let sp_text = scratch.sp_text.as_str();
+
+        for i in 0..n {
+            let start = char_offsets[i];
+            let end = char_offsets[i + 1];
+            let piece_str = &sp_text[start..end];
+            let piece_id = self.trie.get(piece_str).unwrap_or(self.unk_id);
+            scratch.bpe_symbols.push(BpeSymbol {
+                start: start as u32,
+                len: (end - start) as u32,
+                prev: i as i32 - 1,
+                next: if i + 1 < n { (i + 1) as i32 } else { -1 },
+                piece_id,
+            });
+        }
+
+        let queue = &mut scratch.bpe_queue;
+        queue.clear();
+        if queue.capacity() < n {
+            queue.reserve(n);
+        }
+
+        for i in 0..n.saturating_sub(1) {
+            let start = char_offsets[i];
+            let end = char_offsets[i + 2];
+            let piece_str = &sp_text[start..end];
+            if let Some(id) = self.trie.get(piece_str) {
+                let score = self.pieces[id as usize].score;
+                queue.push(BpeCandidate {
+                    score,
+                    left: i as u32,
+                    right: (i + 1) as u32,
+                    length: (end - start) as u32,
+                    piece_id: id,
+                });
+            }
+        }
+
+        let symbols = scratch.bpe_symbols.as_mut_slice();
+
+        while let Some(cand) = queue.pop() {
+            let left = cand.left as usize;
+            let right = cand.right as usize;
+            let sym_l = &symbols[left];
+            let sym_r = &symbols[right];
+
+            if sym_l.len == 0
+                || sym_r.len == 0
+                || sym_l.len + sym_r.len != cand.length
+                || sym_l.next != cand.right as i32
+                || sym_r.prev != cand.left as i32
+            {
+                continue;
+            }
+
+            symbols[left].len += symbols[right].len;
+            symbols[left].next = symbols[right].next;
+            symbols[left].piece_id = cand.piece_id;
+
+            symbols[right].len = 0;
+            symbols[right].prev = -1;
+            symbols[right].next = -1;
+
+            if symbols[left].next >= 0 {
+                symbols[symbols[left].next as usize].prev = left as i32;
+            }
+
+            let prev_idx = symbols[left].prev;
+            if prev_idx >= 0 {
+                let p = prev_idx as usize;
+                let start = symbols[p].start as usize;
+                let end = (symbols[left].start + symbols[left].len) as usize;
+                let piece_str = &sp_text[start..end];
+                if let Some(id) = self.trie.get(piece_str) {
                     let score = self.pieces[id as usize].score;
-                    if score > best_score {
-                        best_score = score;
-                        best_pair = Some((i, merged));
-                    }
+                    queue.push(BpeCandidate {
+                        score,
+                        left: p as u32,
+                        right: left as u32,
+                        length: symbols[p].len + symbols[left].len,
+                        piece_id: id,
+                    });
                 }
             }
 
-            if let Some((idx, merged)) = best_pair {
-                tokens[idx] = merged;
-                tokens.remove(idx + 1);
-                changed = true;
+            let next_idx = symbols[left].next;
+            if next_idx >= 0 {
+                let n_idx = next_idx as usize;
+                let start = symbols[left].start as usize;
+                let end = (symbols[n_idx].start + symbols[n_idx].len) as usize;
+                let piece_str = &sp_text[start..end];
+                if let Some(id) = self.trie.get(piece_str) {
+                    let score = self.pieces[id as usize].score;
+                    queue.push(BpeCandidate {
+                        score,
+                        left: left as u32,
+                        right: n_idx as u32,
+                        length: symbols[left].len + symbols[n_idx].len,
+                        piece_id: id,
+                    });
+                }
             }
         }
 
-        let mut ids = Vec::new();
-        for token in &tokens {
-            if let Some(id) = self.trie.get(token) {
-                ids.push(id);
+        let mut curr = 0i32;
+        while curr >= 0 {
+            let sym = &symbols[curr as usize];
+            let id = sym.piece_id;
+            if id == self.unk_id {
+                let piece_str = &sp_text[sym.start as usize..(sym.start + sym.len) as usize];
+                let mut chars = piece_str.chars();
+                if let (Some(c), None) = (chars.next(), chars.next()) {
+                    if self.byte_fallback_encode_into(c, &mut scratch.ids) {
+                        curr = sym.next;
+                        continue;
+                    }
+                }
+                scratch.ids.push(self.unk_id);
             } else {
-                ids.push(self.unk_id);
+                scratch.ids.push(id);
             }
+            curr = sym.next;
         }
-
-        ids
     }
 }
 /// Standard lightweight NFKC normalization for NMT (SentencePiece style).
@@ -1385,6 +1544,7 @@ impl SentencePiece {
 /// - Fullwidth space (`\u{3000}`), NBSP (`\u{00A0}`), and other Unicode whitespace -> regular ASCII space (`0x20`).
 /// - Soft hyphen (`\u{00AD}`) and zero-width control characters -> filtered out.
 /// - Pure ASCII text is zero-copy borrowed (`Cow::Borrowed`).
+///
 /// Normalize text into `norm_buf` using NMT NFKC rules, returning `true` if modifications
 /// were made, or `false` if `text` requires no normalization.
 pub fn normalize_nmt_nfkc_into(text: &str, norm_buf: &mut String) -> bool {
@@ -2953,5 +3113,314 @@ mod tests {
         let data = std::fs::read(path).unwrap();
         let sp = SentencePiece::from_bytes(&data).unwrap();
         assert_eq!(sp.decode(&[sp.bos_id]), "");
+    }
+    #[test]
+    fn test_bpe_encode_basic() {
+        let pieces_raw = [
+            ("<unk>", 0.0, 2),
+            ("<s>", 0.0, 3),
+            ("</s>", 0.0, 3),
+            ("\u{2581}", -1.0, 1),
+            ("h", -2.0, 1),
+            ("e", -2.0, 1),
+            ("l", -2.0, 1),
+            ("o", -2.0, 1),
+            ("w", -2.0, 1),
+            ("r", -2.0, 1),
+            ("d", -2.0, 1),
+            ("ll", 2.0, 1),
+            ("ell", 3.0, 1),
+            ("ello", 4.0, 1),
+            ("hello", 5.0, 1),
+            ("\u{2581}hello", 6.0, 1),
+            ("or", 2.0, 1),
+            ("ld", 2.0, 1),
+            ("rld", 3.0, 1),
+            ("orld", 4.0, 1),
+            ("world", 5.0, 1),
+            ("\u{2581}world", 6.0, 1),
+        ];
+
+        let mut trie_builder = PieceTrieBuilder::new();
+        let mut pieces = Vec::new();
+        let mut scores = Vec::new();
+        for (i, &(piece, score, p_type)) in pieces_raw.iter().enumerate() {
+            pieces.push(Piece {
+                piece: piece.to_string(),
+                score,
+                piece_type: p_type,
+                byte_val: None,
+                fields_seen: FIELD_PIECE | FIELD_TYPE | FIELD_SCORE,
+            });
+            scores.push(score);
+            trie_builder.insert(piece, i as u32);
+        }
+
+        let sp = SentencePiece {
+            pieces,
+            scores,
+            decode_pieces: vec![],
+            model_type: ModelType::BPE,
+            vocab_size: pieces_raw.len(),
+            trie: trie_builder.build(),
+            max_piece_len: 6,
+            byte_pieces: [u32::MAX; 256],
+            bos_id: 1,
+            eos_id: 2,
+            unk_id: 0,
+            pad_id: 0,
+            normalizer: None,
+        };
+
+        assert_eq!(sp.encode("hello world"), vec![15, 21]);
+        assert_eq!(sp.encode("hello"), vec![15]);
+        assert_eq!(sp.encode(""), Vec::<u32>::new());
+
+        let mut scratch = EncodeScratch::default();
+        let ids = sp.encode_into("hello world", &mut scratch);
+        assert_eq!(ids, &[15, 21]);
+
+        let (ids_spans, spans) = sp.encode_with_spans_into("hello world", &mut scratch);
+        assert_eq!(ids_spans, &[15, 21]);
+        assert_eq!(spans.len(), 2);
+    }
+
+    #[test]
+    fn test_bpe_tie_breaking_and_stale() {
+        let pieces_raw = [
+            ("<unk>", 0.0, 2),
+            ("<s>", 0.0, 3),
+            ("</s>", 0.0, 3),
+            ("\u{2581}", -1.0, 1),
+            ("a", -2.0, 1),
+            ("aa", 5.0, 1),
+        ];
+
+        let mut trie_builder = PieceTrieBuilder::new();
+        let mut pieces = Vec::new();
+        let mut scores = Vec::new();
+        for (i, &(piece, score, p_type)) in pieces_raw.iter().enumerate() {
+            pieces.push(Piece {
+                piece: piece.to_string(),
+                score,
+                piece_type: p_type,
+                byte_val: None,
+                fields_seen: FIELD_PIECE | FIELD_TYPE | FIELD_SCORE,
+            });
+            scores.push(score);
+            trie_builder.insert(piece, i as u32);
+        }
+
+        let sp = SentencePiece {
+            pieces,
+            scores,
+            decode_pieces: vec![],
+            model_type: ModelType::BPE,
+            vocab_size: pieces_raw.len(),
+            trie: trie_builder.build(),
+            max_piece_len: 2,
+            byte_pieces: [u32::MAX; 256],
+            bos_id: 1,
+            eos_id: 2,
+            unk_id: 0,
+            pad_id: 0,
+            normalizer: None,
+        };
+
+        // Leftmost pair merges first
+        assert_eq!(sp.encode("aaa"), vec![3, 5, 4]);
+        assert_eq!(sp.encode("aaaa"), vec![3, 5, 5]);
+    }
+
+    #[test]
+    fn test_bpe_scratch_buffer_reuse() {
+        let pieces_raw = [
+            ("<unk>", 0.0, 2),
+            ("<s>", 0.0, 3),
+            ("</s>", 0.0, 3),
+            ("\u{2581}", -1.0, 1),
+            ("a", -2.0, 1),
+            ("b", -2.0, 1),
+            ("ab", 5.0, 1),
+        ];
+
+        let mut trie_builder = PieceTrieBuilder::new();
+        let mut pieces = Vec::new();
+        let mut scores = Vec::new();
+        for (i, &(piece, score, p_type)) in pieces_raw.iter().enumerate() {
+            pieces.push(Piece {
+                piece: piece.to_string(),
+                score,
+                piece_type: p_type,
+                byte_val: None,
+                fields_seen: FIELD_PIECE | FIELD_TYPE | FIELD_SCORE,
+            });
+            scores.push(score);
+            trie_builder.insert(piece, i as u32);
+        }
+
+        let sp = SentencePiece {
+            pieces,
+            scores,
+            decode_pieces: vec![],
+            model_type: ModelType::BPE,
+            vocab_size: pieces_raw.len(),
+            trie: trie_builder.build(),
+            max_piece_len: 2,
+            byte_pieces: [u32::MAX; 256],
+            bos_id: 1,
+            eos_id: 2,
+            unk_id: 0,
+            pad_id: 0,
+            normalizer: None,
+        };
+
+        let mut scratch = EncodeScratch::default();
+        let r1 = sp.encode_into("ab ab ab ab", &mut scratch).to_vec();
+        let r2 = sp.encode_into("ab", &mut scratch).to_vec();
+        let r3 = sp.encode_into("", &mut scratch).to_vec();
+        let r4 = sp.encode_into("xyz", &mut scratch).to_vec();
+
+        assert_eq!(r1, vec![3, 6, 3, 6, 3, 6, 3, 6]);
+        assert_eq!(r2, vec![3, 6]);
+        assert_eq!(r3, Vec::<u32>::new());
+        assert_eq!(r4, vec![3, 0, 0, 0]);
+    }
+
+    #[test]
+    fn test_bpe_byte_fallback() {
+        let mut byte_pieces = [u32::MAX; 256];
+        byte_pieces[b'x' as usize] = 100;
+        let sp = SentencePiece {
+            pieces: vec![
+                Piece { piece: "<unk>".to_string(), score: 0.0, piece_type: 2, byte_val: None, fields_seen: FIELD_PIECE | FIELD_TYPE },
+                Piece { piece: "<s>".to_string(), score: 0.0, piece_type: 3, byte_val: None, fields_seen: FIELD_PIECE | FIELD_TYPE },
+                Piece { piece: "</s>".to_string(), score: 0.0, piece_type: 3, byte_val: None, fields_seen: FIELD_PIECE | FIELD_TYPE },
+                Piece { piece: "\u{2581}".to_string(), score: -1.0, piece_type: 1, byte_val: None, fields_seen: FIELD_PIECE | FIELD_TYPE },
+            ],
+            scores: vec![0.0, 0.0, 0.0, -1.0],
+            decode_pieces: vec![],
+            model_type: ModelType::BPE,
+            vocab_size: 4,
+            trie: {
+                let mut t = PieceTrieBuilder::new();
+                t.insert("\u{2581}", 3);
+                t.build()
+            },
+            max_piece_len: 1,
+            byte_pieces,
+            bos_id: 1,
+            eos_id: 2,
+            unk_id: 0,
+            pad_id: 0,
+            normalizer: None,
+        };
+        assert_eq!(sp.encode("x"), vec![3, 100]);
+        assert_eq!(sp.encode("y"), vec![3, 0]);
+    }
+    #[test]
+    fn test_bpe_vs_naive_equivalence() {
+        fn naive_bpe(sp: &SentencePiece, text: &str) -> Vec<u32> {
+            let sp_text = format!("\u{2581}{}", text.replace(' ', "\u{2581}"));
+            let mut tokens: Vec<String> = sp_text.chars().map(|c| c.to_string()).collect();
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let mut best_pair: Option<(usize, String)> = None;
+                let mut best_score = f32::NEG_INFINITY;
+                for i in 0..tokens.len().saturating_sub(1) {
+                    let merged = format!("{}{}", tokens[i], tokens[i + 1]);
+                    if let Some(id) = sp.trie.get(&merged) {
+                        let score = sp.pieces[id as usize].score;
+                        if score > best_score {
+                            best_score = score;
+                            best_pair = Some((i, merged));
+                        }
+                    }
+                }
+                if let Some((idx, merged)) = best_pair {
+                    tokens[idx] = merged;
+                    tokens.remove(idx + 1);
+                    changed = true;
+                }
+            }
+            tokens
+                .iter()
+                .map(|t| sp.trie.get(t).unwrap_or(sp.unk_id))
+                .collect()
+        }
+
+        let pieces_raw = [
+            ("<unk>", 0.0, 2),
+            ("<s>", 0.0, 3),
+            ("</s>", 0.0, 3),
+            ("\u{2581}", -1.0, 1),
+            ("a", -2.0, 1),
+            ("b", -2.0, 1),
+            ("c", -2.0, 1),
+            ("d", -2.0, 1),
+            ("ab", 2.0, 1),
+            ("bc", 3.0, 1),
+            ("cd", 1.5, 1),
+            ("abc", 4.0, 1),
+            ("bcd", 5.0, 1),
+            ("\u{2581}a", 2.5, 1),
+            ("\u{2581}ab", 6.0, 1),
+            ("\u{2581}abc", 7.0, 1),
+            ("da", 1.0, 1),
+        ];
+
+        let mut trie_builder = PieceTrieBuilder::new();
+        let mut pieces = Vec::new();
+        let mut scores = Vec::new();
+        for (i, &(piece, score, p_type)) in pieces_raw.iter().enumerate() {
+            pieces.push(Piece {
+                piece: piece.to_string(),
+                score,
+                piece_type: p_type,
+                byte_val: None,
+                fields_seen: FIELD_PIECE | FIELD_TYPE | FIELD_SCORE,
+            });
+            scores.push(score);
+            trie_builder.insert(piece, i as u32);
+        }
+
+        let sp = SentencePiece {
+            pieces,
+            scores,
+            decode_pieces: vec![],
+            model_type: ModelType::BPE,
+            vocab_size: pieces_raw.len(),
+            trie: trie_builder.build(),
+            max_piece_len: 4,
+            byte_pieces: [u32::MAX; 256],
+            bos_id: 1,
+            eos_id: 2,
+            unk_id: 0,
+            pad_id: 0,
+            normalizer: None,
+        };
+
+        let test_inputs = [
+            "a",
+            "ab",
+            "abc",
+            "abcd",
+            "abc abcd bcda",
+            "d c b a",
+            "a b c d abcd",
+            "aaaa bbbb cccc",
+            "ab bc cd da",
+            "unknown chars xyz",
+        ];
+
+        let mut scratch = EncodeScratch::default();
+        for input in test_inputs {
+            let naive_res = naive_bpe(&sp, input);
+            let fast_res = sp.encode(input);
+            let scratch_res = sp.encode_into(input, &mut scratch).to_vec();
+            assert_eq!(fast_res, naive_res, "Mismatch for input: {}", input);
+            assert_eq!(scratch_res, naive_res, "Scratch mismatch for input: {}", input);
+        }
     }
 }

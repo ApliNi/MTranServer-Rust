@@ -197,12 +197,11 @@ impl Tensor2 {
         self.data.extend_from_slice(src);
     }
 
-    /// Prepares `self.data` to hold `len` elements without zero-initialization,
-    /// avoiding double-write memory traffic when the buffer will be immediately overwritten.
+    /// Prepares `self.data` to hold `len` elements, resizing with default values if needed.
     ///
     /// # Safety
-    /// Every element up to `len` must be initialized before reading from `self.data`.
-    #[inline]
+    /// Calling this is safe as memory is initialized with default values. Marked unsafe for
+    /// compatibility with existing callers.
     pub unsafe fn prepare_uninit(&mut self, len: usize) {
         prepare_uninit_vec(&mut self.data, len);
     }
@@ -354,56 +353,32 @@ impl Tensor2 {
     ) {
         self.quantized_matmul_relu_generic_into(w, qa, bias, out, true);
     }
-    /// Performs two quantized matmuls with the SAME input `self` and same `qa`,
+    /// Performs multiple quantized matmuls with the SAME input `self` and same `qa`,
     /// eliminating redundant input quantization into `I8_ACT_BUF`.
-    #[allow(clippy::too_many_arguments)]
-    #[inline]
-    pub fn quantized_matmul_pair_into(
+    #[allow(clippy::type_complexity)]
+    pub fn quantized_matmul_multi_into(
         &self,
-        w1: &Quant8Tensor,
-        bias1: Option<&Tensor2>,
-        out1: &mut Tensor2,
-        w2: &Quant8Tensor,
-        bias2: Option<&Tensor2>,
-        out2: &mut Tensor2,
+        ops: &mut [(&Quant8Tensor, Option<&Tensor2>, &mut Tensor2)],
         qa: f32,
     ) {
-        debug_assert_eq!(w1.shape.len(), 2, "quantized_matmul_pair: w1 must be 2D");
-        debug_assert_eq!(w2.shape.len(), 2, "quantized_matmul_pair: w2 must be 2D");
+        if ops.is_empty() {
+            return;
+        }
         let m = self.shape[0];
         let k = self.shape[1];
-        let n1 = w1.shape[0];
-        let n2 = w2.shape[0];
-        debug_assert_eq!(
-            k, w1.shape[1],
-            "quantized_matmul_pair: inner dim mismatch w1"
-        );
-        debug_assert_eq!(
-            k, w2.shape[1],
-            "quantized_matmul_pair: inner dim mismatch w2"
-        );
-        debug_assert_eq!(
-            w1.data.len(),
-            n1 * k,
-            "quantized_matmul_pair: w1 data size mismatch"
-        );
-        debug_assert_eq!(
-            w2.data.len(),
-            n2 * k,
-            "quantized_matmul_pair: w2 data size mismatch"
-        );
 
-        let denom1 = qa * w1.quant_mult;
-        let denom2 = qa * w2.quant_mult;
-        // SAFETY: capacity is guaranteed >= m * n_i, and the kernels overwrite all elements.
-        unsafe {
-            prepare_uninit_vec(&mut out1.data, m * n1);
-            prepare_uninit_vec(&mut out2.data, m * n2);
+        for (w, bias, out) in ops.iter_mut() {
+            debug_assert_eq!(w.shape.len(), 2, "quantized_matmul_multi: w must be 2D");
+            let n = w.shape[0];
+            debug_assert_eq!(k, w.shape[1], "quantized_matmul_multi: inner dim mismatch");
+            debug_assert_eq!(w.data.len(), n * k, "quantized_matmul_multi: w data size mismatch");
+            if let Some(b) = bias {
+                debug_assert_eq!(b.data.len(), n, "quantized_matmul_multi: bias data size mismatch");
+            }
+            unsafe {
+                prepare_uninit_vec(&mut out.data, m * n);
+            }
         }
-        let row_sums1 = w1.row_sums.as_deref();
-        let row_sums2 = w2.row_sums.as_deref();
-        let bias_slice1 = bias1.map(|b| b.data.as_slice());
-        let bias_slice2 = bias2.map(|b| b.data.as_slice());
 
         I8_ACT_BUF.with(|cell| {
             let mut opt_buf = cell.try_borrow_mut();
@@ -419,238 +394,165 @@ impl Tensor2 {
                     &local_buf[..]
                 }
             };
+
             #[cfg(target_arch = "x86_64")]
-            if crate::utils::arch::has_avxvnni() {
+            let handled = if crate::utils::arch::has_avxvnni() {
                 unsafe {
                     simd::vnni::with_vnni_prebiased(buf_ref, m, k, |xb_slice| {
-                        if m == 1 {
-                            simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_slice,
-                                buf_ref,
-                                &w1.data,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_slice,
-                                buf_ref,
-                                &w2.data,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
-                        } else {
-                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
-                                xb_slice,
-                                buf_ref,
-                                &w1.data,
-                                m,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
-                                xb_slice,
-                                buf_ref,
-                                &w2.data,
-                                m,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
+                        for (w, bias, out) in ops.iter_mut() {
+                            let n = w.shape[0];
+                            let denom = qa * w.quant_mult;
+                            let bias_slice = bias.map(|b| b.data.as_slice());
+                            let row_sums = w.row_sums.as_deref();
+                            if m == 1 {
+                                simd::vnni::matmul_row_i8_avxvnni_prebiased(
+                                    xb_slice,
+                                    buf_ref,
+                                    &w.data,
+                                    k,
+                                    n,
+                                    bias_slice,
+                                    row_sums,
+                                    &mut out.data,
+                                    denom,
+                                    false,
+                                );
+                            } else {
+                                simd::vnni::matmul_i8_avxvnni_prebiased_split(
+                                    xb_slice,
+                                    buf_ref,
+                                    &w.data,
+                                    m,
+                                    k,
+                                    n,
+                                    bias_slice,
+                                    row_sums,
+                                    &mut out.data,
+                                    denom,
+                                    false,
+                                );
+                            }
                         }
                     });
                 }
+                true
             } else if crate::utils::arch::has_avx2() {
                 unsafe {
                     simd::avx2::with_avx2_prebiased(buf_ref, m, k, |lo_slice, hi_slice| {
-                        if m == 1 {
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w1.data,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w2.data,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
-                        } else {
-                            simd::avx2::matmul_i8_avx2_prebiased_split(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w1.data,
-                                m,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::avx2::matmul_i8_avx2_prebiased_split(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w2.data,
-                                m,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
+                        for (w, bias, out) in ops.iter_mut() {
+                            let n = w.shape[0];
+                            let denom = qa * w.quant_mult;
+                            let bias_slice = bias.map(|b| b.data.as_slice());
+                            let row_sums = w.row_sums.as_deref();
+                            if m == 1 {
+                                simd::avx2::matmul_row_i8_avx2_prebiased(
+                                    lo_slice,
+                                    hi_slice,
+                                    buf_ref,
+                                    &w.data,
+                                    k,
+                                    n,
+                                    bias_slice,
+                                    row_sums,
+                                    &mut out.data,
+                                    denom,
+                                    false,
+                                );
+                            } else {
+                                simd::avx2::matmul_i8_avx2_prebiased_split(
+                                    lo_slice,
+                                    hi_slice,
+                                    buf_ref,
+                                    &w.data,
+                                    m,
+                                    k,
+                                    n,
+                                    bias_slice,
+                                    row_sums,
+                                    &mut out.data,
+                                    denom,
+                                    false,
+                                );
+                            }
                         }
                     });
                 }
-            } else if m == 1 {
-                let row_fn = matmul_row_i8_dispatch();
-                unsafe {
-                    row_fn(
-                        buf_ref,
-                        &w1.data,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    row_fn(
-                        buf_ref,
-                        &w2.data,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
-                }
+                true
             } else {
-                unsafe {
-                    matmul_i8_split(
-                        buf_ref,
-                        &w1.data,
-                        m,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    matmul_i8_split(
-                        buf_ref,
-                        &w2.data,
-                        m,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
-                }
-            }
+                false
+            };
+
             #[cfg(not(target_arch = "x86_64"))]
-            if m == 1 {
-                let row_fn = matmul_row_i8_dispatch();
-                unsafe {
-                    row_fn(
-                        buf_ref,
-                        &w1.data,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    row_fn(
-                        buf_ref,
-                        &w2.data,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
-                }
-            } else {
-                unsafe {
-                    matmul_i8_split(
-                        buf_ref,
-                        &w1.data,
-                        m,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    matmul_i8_split(
-                        buf_ref,
-                        &w2.data,
-                        m,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
+            let handled = false;
+
+            if !handled {
+                if m == 1 {
+                    let row_fn = matmul_row_i8_dispatch();
+                    for (w, bias, out) in ops.iter_mut() {
+                        let n = w.shape[0];
+                        let denom = qa * w.quant_mult;
+                        let bias_slice = bias.map(|b| b.data.as_slice());
+                        let row_sums = w.row_sums.as_deref();
+                        unsafe {
+                            row_fn(
+                                buf_ref,
+                                &w.data,
+                                k,
+                                n,
+                                bias_slice,
+                                row_sums,
+                                &mut out.data,
+                                denom,
+                                false,
+                            );
+                        }
+                    }
+                } else {
+                    for (w, bias, out) in ops.iter_mut() {
+                        let n = w.shape[0];
+                        let denom = qa * w.quant_mult;
+                        let bias_slice = bias.map(|b| b.data.as_slice());
+                        let row_sums = w.row_sums.as_deref();
+                        unsafe {
+                            matmul_i8_split(
+                                buf_ref,
+                                &w.data,
+                                m,
+                                k,
+                                n,
+                                bias_slice,
+                                row_sums,
+                                &mut out.data,
+                                denom,
+                                false,
+                            );
+                        }
+                    }
                 }
             }
-        });        out1.shape = [m, n1];
-        out2.shape = [m, n2];
+        });
+
+        for (w, _, out) in ops.iter_mut() {
+            out.shape = [m, w.shape[0]];
+        }
+    }
+
+    /// Performs two quantized matmuls with the SAME input `self` and same `qa`,
+    /// eliminating redundant input quantization into `I8_ACT_BUF`.
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    pub fn quantized_matmul_pair_into(
+        &self,
+        w1: &Quant8Tensor,
+        bias1: Option<&Tensor2>,
+        out1: &mut Tensor2,
+        w2: &Quant8Tensor,
+        bias2: Option<&Tensor2>,
+        out2: &mut Tensor2,
+        qa: f32,
+    ) {
+        let mut ops = [(w1, bias1, out1), (w2, bias2, out2)];
+        self.quantized_matmul_multi_into(&mut ops, qa);
     }
 
     /// Performs three quantized matmuls with the SAME input `self` and same `qa`,
@@ -670,403 +572,8 @@ impl Tensor2 {
         out3: &mut Tensor2,
         qa: f32,
     ) {
-        debug_assert_eq!(w1.shape.len(), 2, "quantized_matmul_triple: w1 must be 2D");
-        debug_assert_eq!(w2.shape.len(), 2, "quantized_matmul_triple: w2 must be 2D");
-        debug_assert_eq!(w3.shape.len(), 2, "quantized_matmul_triple: w3 must be 2D");
-        let m = self.shape[0];
-        let k = self.shape[1];
-        let n1 = w1.shape[0];
-        let n2 = w2.shape[0];
-        let n3 = w3.shape[0];
-        debug_assert_eq!(
-            k, w1.shape[1],
-            "quantized_matmul_triple: inner dim mismatch w1"
-        );
-        debug_assert_eq!(
-            k, w2.shape[1],
-            "quantized_matmul_triple: inner dim mismatch w2"
-        );
-        debug_assert_eq!(
-            k, w3.shape[1],
-            "quantized_matmul_triple: inner dim mismatch w3"
-        );
-        debug_assert_eq!(
-            w1.data.len(),
-            n1 * k,
-            "quantized_matmul_triple: w1 data size mismatch"
-        );
-        debug_assert_eq!(
-            w2.data.len(),
-            n2 * k,
-            "quantized_matmul_triple: w2 data size mismatch"
-        );
-        debug_assert_eq!(
-            w3.data.len(),
-            n3 * k,
-            "quantized_matmul_triple: w3 data size mismatch"
-        );
-
-        let denom1 = qa * w1.quant_mult;
-        let denom2 = qa * w2.quant_mult;
-        let denom3 = qa * w3.quant_mult;
-        // SAFETY: capacity is guaranteed >= m * n_i, and the kernels overwrite all elements.
-        unsafe {
-            prepare_uninit_vec(&mut out1.data, m * n1);
-            prepare_uninit_vec(&mut out2.data, m * n2);
-            prepare_uninit_vec(&mut out3.data, m * n3);
-        }
-        let row_sums1 = w1.row_sums.as_deref();
-        let row_sums2 = w2.row_sums.as_deref();
-        let row_sums3 = w3.row_sums.as_deref();
-        let bias_slice1 = bias1.map(|b| b.data.as_slice());
-        let bias_slice2 = bias2.map(|b| b.data.as_slice());
-        let bias_slice3 = bias3.map(|b| b.data.as_slice());
-
-        I8_ACT_BUF.with(|cell| {
-            let mut opt_buf = cell.try_borrow_mut();
-            let mut local_buf;
-            let buf_ref = match &mut opt_buf {
-                Ok(b) => {
-                    i8_quantize_into(&self.data, qa, b);
-                    &**b
-                }
-                Err(_) => {
-                    local_buf = Vec::new();
-                    i8_quantize_into(&self.data, qa, &mut local_buf);
-                    &local_buf[..]
-                }
-            };
-            #[cfg(target_arch = "x86_64")]
-            if crate::utils::arch::has_avxvnni() {
-                unsafe {
-                    simd::vnni::with_vnni_prebiased(buf_ref, m, k, |xb_slice| {
-                        if m == 1 {
-                            simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_slice,
-                                buf_ref,
-                                &w1.data,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_slice,
-                                buf_ref,
-                                &w2.data,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
-                            simd::vnni::matmul_row_i8_avxvnni_prebiased(
-                                xb_slice,
-                                buf_ref,
-                                &w3.data,
-                                k,
-                                n3,
-                                bias_slice3,
-                                row_sums3,
-                                &mut out3.data,
-                                denom3,
-                                false,
-                            );
-                        } else {
-                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
-                                xb_slice,
-                                buf_ref,
-                                &w1.data,
-                                m,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
-                                xb_slice,
-                                buf_ref,
-                                &w2.data,
-                                m,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
-                            simd::vnni::matmul_i8_avxvnni_prebiased_split(
-                                xb_slice,
-                                buf_ref,
-                                &w3.data,
-                                m,
-                                k,
-                                n3,
-                                bias_slice3,
-                                row_sums3,
-                                &mut out3.data,
-                                denom3,
-                                false,
-                            );
-                        }
-                    });
-                }
-            } else if crate::utils::arch::has_avx2() {
-                unsafe {
-                    simd::avx2::with_avx2_prebiased(buf_ref, m, k, |lo_slice, hi_slice| {
-                        if m == 1 {
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w1.data,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w2.data,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
-                            simd::avx2::matmul_row_i8_avx2_prebiased(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w3.data,
-                                k,
-                                n3,
-                                bias_slice3,
-                                row_sums3,
-                                &mut out3.data,
-                                denom3,
-                                false,
-                            );
-                        } else {
-                            simd::avx2::matmul_i8_avx2_prebiased_split(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w1.data,
-                                m,
-                                k,
-                                n1,
-                                bias_slice1,
-                                row_sums1,
-                                &mut out1.data,
-                                denom1,
-                                false,
-                            );
-                            simd::avx2::matmul_i8_avx2_prebiased_split(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w2.data,
-                                m,
-                                k,
-                                n2,
-                                bias_slice2,
-                                row_sums2,
-                                &mut out2.data,
-                                denom2,
-                                false,
-                            );
-                            simd::avx2::matmul_i8_avx2_prebiased_split(
-                                lo_slice,
-                                hi_slice,
-                                buf_ref,
-                                &w3.data,
-                                m,
-                                k,
-                                n3,
-                                bias_slice3,
-                                row_sums3,
-                                &mut out3.data,
-                                denom3,
-                                false,
-                            );
-                        }
-                    });
-                }
-            } else if m == 1 {
-                let row_fn = matmul_row_i8_dispatch();
-                unsafe {
-                    row_fn(
-                        buf_ref,
-                        &w1.data,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    row_fn(
-                        buf_ref,
-                        &w2.data,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
-                    row_fn(
-                        buf_ref,
-                        &w3.data,
-                        k,
-                        n3,
-                        bias_slice3,
-                        row_sums3,
-                        &mut out3.data,
-                        denom3,
-                        false,
-                    );
-                }
-            } else {
-                unsafe {
-                    matmul_i8_split(
-                        buf_ref,
-                        &w1.data,
-                        m,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    matmul_i8_split(
-                        buf_ref,
-                        &w2.data,
-                        m,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
-                    matmul_i8_split(
-                        buf_ref,
-                        &w3.data,
-                        m,
-                        k,
-                        n3,
-                        bias_slice3,
-                        row_sums3,
-                        &mut out3.data,
-                        denom3,
-                        false,
-                    );
-                }
-            }
-            #[cfg(not(target_arch = "x86_64"))]
-            if m == 1 {
-                let row_fn = matmul_row_i8_dispatch();
-                unsafe {
-                    row_fn(
-                        buf_ref,
-                        &w1.data,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    row_fn(
-                        buf_ref,
-                        &w2.data,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
-                    row_fn(
-                        buf_ref,
-                        &w3.data,
-                        k,
-                        n3,
-                        bias_slice3,
-                        row_sums3,
-                        &mut out3.data,
-                        denom3,
-                        false,
-                    );
-                }
-            } else {
-                unsafe {
-                    matmul_i8_split(
-                        buf_ref,
-                        &w1.data,
-                        m,
-                        k,
-                        n1,
-                        bias_slice1,
-                        row_sums1,
-                        &mut out1.data,
-                        denom1,
-                        false,
-                    );
-                    matmul_i8_split(
-                        buf_ref,
-                        &w2.data,
-                        m,
-                        k,
-                        n2,
-                        bias_slice2,
-                        row_sums2,
-                        &mut out2.data,
-                        denom2,
-                        false,
-                    );
-                    matmul_i8_split(
-                        buf_ref,
-                        &w3.data,
-                        m,
-                        k,
-                        n3,
-                        bias_slice3,
-                        row_sums3,
-                        &mut out3.data,
-                        denom3,
-                        false,
-                    );
-                }
-            }
-        });        out1.shape = [m, n1];
-        out2.shape = [m, n2];
-        out3.shape = [m, n3];
+        let mut ops = [(w1, bias1, out1), (w2, bias2, out2), (w3, bias3, out3)];
+        self.quantized_matmul_multi_into(&mut ops, qa);
     }
 
     #[inline]
@@ -1278,17 +785,15 @@ fn i8_quantize_into(data: &[f32], qa: f32, out: &mut Vec<i8>) {
     quantize_row(data, qa, out);
 }
 
-/// Helper to ensure a `Vec` has at least `len` capacity and set its length to `len`
-/// without zeroing memory.
+/// Helper to ensure a `Vec` has at least `len` capacity and length `len`,
+/// initializing newly extended elements to default values.
 ///
 /// # Safety
-/// The caller must ensure that every element in `0..len` is initialized before being read.
+/// Calling this is safe as memory is initialized with default values. Marked unsafe for
+/// compatibility with existing callers.
 #[inline]
-pub(crate) unsafe fn prepare_uninit_vec<T: Copy>(vec: &mut Vec<T>, len: usize) {
-    if vec.capacity() < len {
-        vec.reserve(len - vec.len());
-    }
-    vec.set_len(len);
+pub(crate) unsafe fn prepare_uninit_vec<T: Copy + Default>(vec: &mut Vec<T>, len: usize) {
+    vec.resize(len, T::default());
 }
 // Per-thread scratch for the single-row quantized matmul's activation
 // buffer (`i8_quantize_into`), so the decode loop's several quantized
