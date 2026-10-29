@@ -87,123 +87,119 @@ use std::borrow::Cow;
 #[test]
 fn test_normalize_output_punctuation() {
     let s = "你好, 世界!".to_string();
-    let norm = normalize_output_punctuation(s, "zh", true);
+    let norm = normalize_output_punctuation(s, "zh");
     assert_eq!(norm.as_str(), "你好，世界！");
 
     let s2 = "hello, world".to_string();
-    let norm2 = normalize_output_punctuation(s2, "en", true);
+    let norm2 = normalize_output_punctuation(s2, "en");
     assert_eq!(norm2.as_str(), "Hello, world");
-
-    let s3 = "你好, 世界!".to_string();
-    let norm3 = normalize_output_punctuation(s3, "zh", false);
-    assert_eq!(norm3.as_str(), "你好, 世界!");
 }
 
 #[test]
 fn test_format_zh_punctuation_protections() {
     let num1 = "总金额为 1,000,000 美元";
-    assert_eq!(format_zh_punctuation(num1, "zh", true), "总金额为 1,000,000 美元");
-    assert!(matches!(format_zh_punctuation(num1, "zh", true), Cow::Borrowed(_)));
+    assert_eq!(format_zh_punctuation(num1, "zh"), "总金额为 1,000,000 美元");
+    assert!(matches!(format_zh_punctuation(num1, "zh"), Cow::Borrowed(_)));
 
     let num2 = "欧洲格式 3.141,59 测试";
-    assert_eq!(format_zh_punctuation(num2, "zh", true), "欧洲格式 3.141,59 测试");
+    assert_eq!(format_zh_punctuation(num2, "zh"), "欧洲格式 3.141,59 测试");
 
     let list = "第 1, 2, 3 项";
-    assert_eq!(format_zh_punctuation(list, "zh", true), "第 1，2，3 项");
+    assert_eq!(format_zh_punctuation(list, "zh"), "第 1，2，3 项");
 
     let time = "会议时间 12:30 开始";
-    assert_eq!(format_zh_punctuation(time, "zh", true), "会议时间 12:30 开始");
+    assert_eq!(format_zh_punctuation(time, "zh"), "会议时间 12:30 开始");
 
     let url = "访问 https://example.com/api";
-    assert_eq!(format_zh_punctuation(url, "zh", true), "访问 https://example.com/api");
+    assert_eq!(format_zh_punctuation(url, "zh"), "访问 https://example.com/api");
 
     let host1 = "服务运行在 localhost:8080 地址";
-    assert_eq!(format_zh_punctuation(host1, "zh", true), "服务运行在 localhost:8080 地址");
+    assert_eq!(format_zh_punctuation(host1, "zh"), "服务运行在 localhost:8080 地址");
     let host2 = "连接 127.0.0.1:3000 端口";
-    assert_eq!(format_zh_punctuation(host2, "zh", true), "连接 127.0.0.1:3000 端口");
+    assert_eq!(format_zh_punctuation(host2, "zh"), "连接 127.0.0.1:3000 端口");
 
     let rust_path = "使用 std::path::PathBuf 结构体";
-    assert_eq!(format_zh_punctuation(rust_path, "zh", true), "使用 std::path::PathBuf 结构体");
-    assert!(matches!(format_zh_punctuation(rust_path, "zh", true), Cow::Borrowed(_)));
+    assert_eq!(format_zh_punctuation(rust_path, "zh"), "使用 std::path::PathBuf 结构体");
+    assert!(matches!(format_zh_punctuation(rust_path, "zh"), Cow::Borrowed(_)));
 
     let ipv6 = "连接 [2001:db8::1]:8080 节点";
-    assert_eq!(format_zh_punctuation(ipv6, "zh", true), "连接 [2001:db8::1]:8080 节点");
+    assert_eq!(format_zh_punctuation(ipv6, "zh"), "连接 [2001:db8::1]:8080 节点");
 
     let header = "Content-Type: application/json\nHost: 127.0.0.1";
-    assert_eq!(format_zh_punctuation(header, "zh", true), "Content-Type: application/json\nHost: 127.0.0.1");
+    assert_eq!(format_zh_punctuation(header, "zh"), "Content-Type: application/json\nHost: 127.0.0.1");
 
     let url_params = "详情参见 https://example.com/api?a=1,b=2;c=3 页面, 完成!";
     assert_eq!(
-        format_zh_punctuation(url_params, "zh", true),
+        format_zh_punctuation(url_params, "zh"),
         "详情参见 https://example.com/api?a=1,b=2;c=3 页面，完成！"
     );
     let label = "注意: 请勿操作";
-    assert_eq!(format_zh_punctuation(label, "zh", true), "注意：请勿操作");
+    assert_eq!(format_zh_punctuation(label, "zh"), "注意：请勿操作");
 
     let md_inline = "执行 `let a = 1, b: 2;` 命令, 完成!";
     assert_eq!(
-        format_zh_punctuation(md_inline, "zh", true),
+        format_zh_punctuation(md_inline, "zh"),
         "执行 `let a = 1, b: 2;` 命令，完成！"
     );
 
     let md_block = "如下: ```std::path, 1,000,000!``` 结束";
     assert_eq!(
-        format_zh_punctuation(md_block, "zh", true),
+        format_zh_punctuation(md_block, "zh"),
         "如下：```std::path, 1,000,000!``` 结束"
     );
 
     assert_eq!(
-        format_zh_punctuation("如果 value != 0, 则继续执行", "zh", true),
+        format_zh_punctuation("如果 value != 0, 则继续执行", "zh"),
         "如果 value != 0，则继续执行"
     );
     assert_eq!(
-        format_zh_punctuation("使用 obj?.property 访问可选属性", "zh", true),
+        format_zh_punctuation("使用 obj?.property 访问可选属性", "zh"),
         "使用 obj?.property 访问可选属性"
     );
     assert_eq!(
-        format_zh_punctuation("设置 flag = !isActive 来取反", "zh", true),
+        format_zh_punctuation("设置 flag = !isActive 来取反", "zh"),
         "设置 flag = !isActive 来取反"
     );
     assert_eq!(
-        format_zh_punctuation("使用 value ?? default 作为备选", "zh", true),
+        format_zh_punctuation("使用 value ?? default 作为备选", "zh"),
         "使用 value ?? default 作为备选"
     );
 
     let json_input = r#"配置 {"host": "localhost"} 成功!"#;
     assert_eq!(
-        format_zh_punctuation(json_input, "zh", true),
+        format_zh_punctuation(json_input, "zh"),
         "配置 {\"host\": \"localhost\"} 成功！"
     );
     let macro_input = "执行 println!(\"ok\") 和 assert!(true) 测试完成!";
     assert_eq!(
-        format_zh_punctuation(macro_input, "zh", true),
+        format_zh_punctuation(macro_input, "zh"),
         "执行 println!(\"ok\") 和 assert!(true) 测试完成！"
     );
 
     let shell_input = "配置模板:将 PORT=${HTTP_PORT:-8080} 导出,并使用 max_retries=%d 设置 SECRET=\"{{APP_SECRET_KEY}}\"。";
-    let shell_res = format_zh_punctuation(shell_input, "zh", true);
+    let shell_res = format_zh_punctuation(shell_input, "zh");
     assert_eq!(
         shell_res,
         "配置模板：将 PORT=${HTTP_PORT:-8080} 导出，并使用 max_retries=%d 设置 SECRET=\"{{APP_SECRET_KEY}}\"。"
     );
 
     let dropped_quote = "配置模板:将 PORT=${HTTP_PORT:-8080} 导出,并使用 max_retries=%d 设置 SECRET=\"{APP_SECRET_KEY}}。";
-    let dropped_res = postprocess_typography(Cow::Borrowed(dropped_quote), "zh-Hans", true);
+    let dropped_res = postprocess_typography(Cow::Borrowed(dropped_quote), "zh-Hans");
     assert_eq!(
         dropped_res.as_ref(),
         "配置模板：将 PORT=${HTTP_PORT:-8080} 导出，并使用 max_retries=%d 设置 SECRET=\"{APP_SECRET_KEY}}。"
     );
 
     assert_eq!(
-        format_zh_punctuation("推荐使用 Docker: 容器平台", "zh", true),
+        format_zh_punctuation("推荐使用 Docker: 容器平台", "zh"),
         "推荐使用 Docker：容器平台"
     );
     assert_eq!(
-        format_zh_punctuation("参考 API: 接口定义", "zh", true),
+        format_zh_punctuation("参考 API: 接口定义", "zh"),
         "参考 API：接口定义"
     );
     assert_eq!(
-        format_zh_punctuation("步骤 1: 点击确认", "zh", true),
+        format_zh_punctuation("步骤 1: 点击确认", "zh"),
         "步骤 1：点击确认"
     );
 }
@@ -226,25 +222,25 @@ fn test_truecase_western_cjk_exemption() {
 #[test]
 fn test_format_zh_math_comparison_not_html() {
     let input = "数量 < 100MB, 且折扣 > 5折!";
-    let formatted = format_zh_punctuation(input, "zh", true);
+    let formatted = format_zh_punctuation(input, "zh");
     assert_eq!(formatted, "数量 < 100 MB，且折扣 > 5 折！");
 }
 
 #[test]
 fn test_format_zh_ipv6_colons_preserved() {
     let input = "服务地址: 2001:db8::1, 端口: 8080";
-    let formatted = format_zh_punctuation(input, "zh", true);
+    let formatted = format_zh_punctuation(input, "zh");
     assert_eq!(formatted, "服务地址：2001:db8::1，端口：8080");
 }
 
 #[test]
 fn test_format_zh_pangu_cjk_extended_zero() {
     let input = "二〇二六年5月";
-    let formatted = format_zh_punctuation(input, "zh", true);
+    let formatted = format_zh_punctuation(input, "zh");
     assert_eq!(formatted, "二〇二六年 5 月");
 
     let input_repeat = "常々100次";
-    let formatted_repeat = format_zh_punctuation(input_repeat, "zh", true);
+    let formatted_repeat = format_zh_punctuation(input_repeat, "zh");
     assert_eq!(formatted_repeat, "常々 100 次");
 }
 
@@ -282,43 +278,52 @@ fn test_truecase_western_accents_and_punctuation() {
 
 #[test]
 fn test_format_zh_pangu_spacing() {
-    assert_eq!(format_zh_punctuation("使用Rust开发", "zh", true), "使用 Rust 开发");
-    assert_eq!(format_zh_punctuation("在Rust中", "zh", true), "在 Rust 中");
-    assert_eq!(format_zh_punctuation("延迟为10ms", "zh", true), "延迟为 10ms");
-    assert_eq!(format_zh_punctuation("100MB内存", "zh", true), "100 MB 内存");
-    assert_eq!(format_zh_punctuation("100MB 内存", "zh", true), "100 MB 内存");
-    assert_eq!(format_zh_punctuation("100 MB内存", "zh", true), "100 MB 内存");
+    assert_eq!(format_zh_punctuation("使用Rust开发", "zh"), "使用 Rust 开发");
+    assert_eq!(format_zh_punctuation("在Rust中", "zh"), "在 Rust 中");
+    assert_eq!(format_zh_punctuation("延迟为10ms", "zh"), "延迟为 10ms");
+    assert_eq!(format_zh_punctuation("100MB内存", "zh"), "100 MB 内存");
+    assert_eq!(format_zh_punctuation("100MB 内存", "zh"), "100 MB 内存");
+    assert_eq!(format_zh_punctuation("100 MB内存", "zh"), "100 MB 内存");
 
     assert_eq!(format_pangu_spacing("在Rust中"), "在 Rust 中");
 
     let spaced = "在 Rust 中使用 100 MB 内存";
-    assert_eq!(format_zh_punctuation(spaced, "zh", true), spaced);
-    assert!(matches!(format_zh_punctuation(spaced, "zh", true), Cow::Borrowed(_)));
+    assert_eq!(format_zh_punctuation(spaced, "zh"), spaced);
+    assert!(matches!(format_zh_punctuation(spaced, "zh"), Cow::Borrowed(_)));
 
-    assert_eq!(format_zh_punctuation("使用Rust，开发高效", "zh", true), "使用 Rust，开发高效");
-    assert_eq!(format_zh_punctuation("你好！World", "zh", true), "你好！World");
-    assert_eq!(format_zh_punctuation("“Rust”权威指南", "zh", true), "“Rust”权威指南");
-    assert_eq!(format_zh_punctuation("性能提升了（约10%）", "zh", true), "性能提升了（约 10%）");
+    assert_eq!(format_zh_punctuation("使用Rust，开发高效", "zh"), "使用 Rust，开发高效");
+    assert_eq!(format_zh_punctuation("你好！World", "zh"), "你好！World");
+    assert_eq!(format_zh_punctuation("“Rust”权威指南", "zh"), "“Rust”权威指南");
+    assert_eq!(format_zh_punctuation("性能提升了（约10%）", "zh"), "性能提升了（约 10%）");
 }
 
 #[test]
 fn test_format_zh_markup_and_url_protections() {
     let html1 = "<span class=\"cjk\">Rust开发</span>";
-    assert_eq!(format_zh_punctuation(html1, "zh", true), "<span class=\"cjk\">Rust 开发</span>");
+    assert_eq!(format_zh_punctuation(html1, "zh"), "<span class=\"cjk\">Rust 开发</span>");
     let html2 = "<input value=\"在Rust中\" />";
-    assert_eq!(format_zh_punctuation(html2, "zh", true), "<input value=\"在Rust中\" />");
+    assert_eq!(format_zh_punctuation(html2, "zh"), "<input value=\"在Rust中\" />");
     let html3 = "<div>在Rust中</div>";
-    assert_eq!(format_zh_punctuation(html3, "zh", true), "<div>在 Rust 中</div>");
+    assert_eq!(format_zh_punctuation(html3, "zh"), "<div>在 Rust 中</div>");
 
     let md1 = "执行 `let a = 1;` 命令";
-    assert_eq!(format_zh_punctuation(md1, "zh", true), "执行 `let a = 1;` 命令");
+    assert_eq!(format_zh_punctuation(md1, "zh"), "执行 `let a = 1;` 命令");
     let md2 = "运行 `cargo build 100MB` 工具";
-    assert_eq!(format_zh_punctuation(md2, "zh", true), "运行 `cargo build 100MB` 工具");
+    assert_eq!(format_zh_punctuation(md2, "zh"), "运行 `cargo build 100MB` 工具");
+    let md3 = "在`cargo test`提交";
+    assert_eq!(format_zh_punctuation(md3, "zh"), "在 `cargo test` 提交");
+    assert_eq!(format_pangu_spacing(md3), "在 `cargo test` 提交");
+
+    let md4 = "运行`cargo run`。";
+    assert_eq!(format_zh_punctuation(md4, "zh"), "运行 `cargo run`。");
+
+    let md5 = "`cargo test`是测试工具";
+    assert_eq!(format_zh_punctuation(md5, "zh"), "`cargo test` 是测试工具");
 
     let url1 = "访问 https://example.com/api100MB 测试";
-    assert_eq!(format_zh_punctuation(url1, "zh", true), "访问 https://example.com/api100MB 测试");
+    assert_eq!(format_zh_punctuation(url1, "zh"), "访问 https://example.com/api100MB 测试");
     let url2 = "访问https://example.com/api测试";
-    assert_eq!(format_zh_punctuation(url2, "zh", true), "访问 https://example.com/api 测试");
+    assert_eq!(format_zh_punctuation(url2, "zh"), "访问 https://example.com/api 测试");
 }
 
 #[test]
@@ -354,15 +359,11 @@ fn test_defensive_char_boundary_slicing() {
 #[test]
 fn test_normalize_punctuation_decoupled_truecasing() {
     let text_en = TranslatedText::String("hello world. good morning.".to_string());
-    let normalized_en = text_en.normalize_punctuation("en", false);
+    let normalized_en = text_en.normalize_punctuation("en");
     assert_eq!(normalized_en.as_str(), "Hello world. Good morning.");
 
-    let text_zh = TranslatedText::String("你好,世界.".to_string());
-    let unchanged_zh = text_zh.normalize_punctuation("zh", false);
-    assert_eq!(unchanged_zh.as_str(), "你好,世界.");
-
     let text_zh_on = TranslatedText::String("你好,世界!".to_string());
-    let converted_zh = text_zh_on.normalize_punctuation("zh", true);
+    let converted_zh = text_zh_on.normalize_punctuation("zh");
     assert_eq!(converted_zh.as_str(), "你好，世界！");
 }
 
@@ -475,42 +476,42 @@ fn test_format_spanish_inverted_punctuation() {
 #[test]
 fn test_postprocess_typography_cjk_pangu() {
     let zh_text = "使用Rust开发100MB内存应用";
-    let processed_zh = postprocess_typography(Cow::Borrowed(zh_text), "zh", true);
+    let processed_zh = postprocess_typography(Cow::Borrowed(zh_text), "zh");
     assert_eq!(processed_zh, "使用 Rust 开发 100 MB 内存应用");
 
     let ja_text = "Rustで開発する100MBのメモリ";
-    let processed_ja = postprocess_typography(Cow::Borrowed(ja_text), "ja", false);
+    let processed_ja = postprocess_typography(Cow::Borrowed(ja_text), "ja");
     assert_eq!(processed_ja, ja_text);
 
     let ko_text = "Rust로개발하는100MB메모리";
-    let processed_ko = postprocess_typography(Cow::Borrowed(ko_text), "ko", false);
+    let processed_ko = postprocess_typography(Cow::Borrowed(ko_text), "ko");
     assert_eq!(processed_ko, ko_text);
 }
 
 #[test]
 fn test_postprocess_typography_quote_styles() {
     let fr_text = "Il a dit: \"Bonjour le monde\"!";
-    let processed_fr = postprocess_typography(Cow::Borrowed(fr_text), "fr", false);
+    let processed_fr = postprocess_typography(Cow::Borrowed(fr_text), "fr");
     assert_eq!(processed_fr, "Il a dit\u{00A0}: «Bonjour le monde»!");
 
     let de_text = "Er sagte: \"Hallo Welt\".";
-    let processed_de = postprocess_typography(Cow::Borrowed(de_text), "de", false);
+    let processed_de = postprocess_typography(Cow::Borrowed(de_text), "de");
     assert_eq!(processed_de, "Er sagte: „Hallo Welt“.");
 
     let ja_text = "彼は\"こんにちは世界\"と言った。";
-    let processed_ja = postprocess_typography(Cow::Borrowed(ja_text), "ja", false);
+    let processed_ja = postprocess_typography(Cow::Borrowed(ja_text), "ja");
     assert_eq!(processed_ja, "彼は「こんにちは世界」と言った。");
 
     let code_html_url = "Citation \"Texte\" avec `<tag attr=\"1\">` et \"Autre\"!";
-    let processed_mixed = postprocess_typography(Cow::Borrowed(code_html_url), "fr", false);
+    let processed_mixed = postprocess_typography(Cow::Borrowed(code_html_url), "fr");
     assert_eq!(processed_mixed, "Citation «Texte» avec `<tag attr=\"1\">` et «Autre»!");
 
     let url_quote = "Visitez https://example.com/api?q=rust pour \"tester\"!";
-    let processed_url = postprocess_typography(Cow::Borrowed(url_quote), "fr", false);
+    let processed_url = postprocess_typography(Cow::Borrowed(url_quote), "fr");
     assert_eq!(processed_url, "Visitez https://example.com/api?q=rust pour «tester»!");
 
     let en_text = "He said: \"Hello world\"!";
-    let processed_en = postprocess_typography(Cow::Borrowed(en_text), "en", false);
+    let processed_en = postprocess_typography(Cow::Borrowed(en_text), "en");
     assert_eq!(processed_en, "He said: “Hello world”!");
 
     let inch_text = "A 14\" display and 27\" monitor with 3.5\" drive.";
@@ -531,18 +532,18 @@ fn test_postprocess_typography_quote_styles() {
 #[test]
 fn test_postprocess_typography_spanish_inverted_truecasing() {
     let q = "cómo estás?";
-    let processed_q = postprocess_typography(Cow::Borrowed(q), "es", false);
+    let processed_q = postprocess_typography(Cow::Borrowed(q), "es");
     assert_eq!(processed_q, "¿Cómo estás?");
 
     let sub_q = "hola, cómo estás?";
-    let processed_sub = postprocess_typography(Cow::Borrowed(sub_q), "es", false);
+    let processed_sub = postprocess_typography(Cow::Borrowed(sub_q), "es");
     assert_eq!(processed_sub, "Hola, ¿Cómo estás?");
 
     let comp_q = "hola, por qué no vienes?";
-    let processed_comp = postprocess_typography(Cow::Borrowed(comp_q), "es", false);
+    let processed_comp = postprocess_typography(Cow::Borrowed(comp_q), "es");
     assert_eq!(processed_comp, "Hola, ¿Por qué no vienes?");
 
     let sub_e = "por favor, dime la verdad!";
-    let processed_e = postprocess_typography(Cow::Borrowed(sub_e), "es", false);
+    let processed_e = postprocess_typography(Cow::Borrowed(sub_e), "es");
     assert_eq!(processed_e, "Por favor, ¡Dime la verdad!");
 }

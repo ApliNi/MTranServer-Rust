@@ -1571,8 +1571,11 @@ where
     let cap = sentences.iter().map(|s| s.text.len() + s.separator.len()).sum::<usize>() + 64;
     let mut out = String::with_capacity(cap);
 
-    for sentence in sentences {
+    for (i, sentence) in sentences.into_iter().enumerate() {
         let part = translate_single_split_sentence_with_syntax(sentence, &mut translate_fn, syntax);
+        if i > 0 && crate::utils::lang::should_insert_adaptive_space(&out, &part, lang) {
+            out.push(' ');
+        }
         out.push_str(&part);
     }
 
@@ -1614,8 +1617,11 @@ where
     let cap = sentences.iter().map(|s| s.text.len() + s.separator.len()).sum::<usize>() + 64;
     let mut out = String::with_capacity(cap);
 
-    for sentence in sentences {
+    for (i, sentence) in sentences.into_iter().enumerate() {
         let part = translate_single_split_sentence_dual_with_syntax(sentence, &mut plain_fn, &mut align_fn, syntax);
+        if i > 0 && crate::utils::lang::should_insert_adaptive_space(&out, &part, lang) {
+            out.push(' ');
+        }
         out.push_str(&part);
     }
 
@@ -1665,8 +1671,11 @@ where
         .collect();
 
     let total_len: usize = translated_parts.iter().map(|s| s.len()).sum();
-    let mut out = String::with_capacity(total_len);
-    for part in translated_parts {
+    let mut out = String::with_capacity(total_len + 32);
+    for (i, part) in translated_parts.into_iter().enumerate() {
+        if i > 0 && crate::utils::lang::should_insert_adaptive_space(&out, &part, lang) {
+            out.push(' ');
+        }
         out.push_str(&part);
     }
     out
@@ -1721,8 +1730,11 @@ where
         .collect();
 
     let total_len: usize = translated_parts.iter().map(|s| s.len()).sum();
-    let mut out = String::with_capacity(total_len);
-    for part in translated_parts {
+    let mut out = String::with_capacity(total_len + 32);
+    for (i, part) in translated_parts.into_iter().enumerate() {
+        if i > 0 && crate::utils::lang::should_insert_adaptive_space(&out, &part, lang) {
+            out.push(' ');
+        }
         out.push_str(&part);
     }
     out

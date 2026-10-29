@@ -328,10 +328,10 @@ pub unsafe fn matmul_row_i8_avx2(
     let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
     let nibble_mask = _mm256_set1_epi8(0x0F);
 
-    let mut lo_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 64];
-    let mut hi_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 64];
+    let mut lo_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 128];
+    let mut hi_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 128];
     let (lo_heap, hi_heap);
-    let (lo_buf, hi_buf): (&[__m256i], &[__m256i]) = if blocks <= 64 {
+    let (lo_buf, hi_buf): (&[__m256i], &[__m256i]) = if blocks <= 128 {
         for b in 0..blocks {
             let off = b * BLK;
             let xv = _mm256_loadu_si256(x.as_ptr().add(off) as *const __m256i);

@@ -158,11 +158,68 @@ pub fn normalize_academic_and_special_symbols(text: &str) -> Cow<'_, str> {
 
 
 
-/// Hide emoji characters and template interpolation variables `{{...}}` behind `[EE<i>]` placeholders.
+/// Helper to detect template interpolation variables (`{{...}}`, `{identifier}`, `${VAR}`)
+/// starting at byte index `start`.
+/// Returns the end byte index (one past the closing delimiter) if a valid variable placeholder is matched.
+fn match_template_or_var_placeholder(text: &str, start: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    if start >= len {
+        return None;
+    }
+
+    // 1. Shell variable: ${VAR} or ${HTTP_PORT:-8080}
+    if bytes[start] == b'$' && start + 1 < len && bytes[start + 1] == b'{' {
+        let rest = &text[start + 2..];
+        if let Some(pos) = rest.find('}') {
+            let inner = &rest[..pos];
+            if !inner.is_empty()
+                && inner.len() <= 128
+                && !inner.contains(|c: char| c.is_whitespace() || c == '{' || c == '}' || c == '"' || c == '\'')
+                && inner.chars().any(|c| c.is_alphanumeric())
+            {
+                return Some(start + 2 + pos + 1);
+            }
+        }
+        return None;
+    }
+
+    // 2. Double-brace template variable: {{...}}
+    if bytes[start] == b'{' && start + 1 < len && bytes[start + 1] == b'{' {
+        let rest = &text[start + 2..];
+        if let Some(pos) = rest.find("}}") {
+            let inner = &rest[..pos];
+            if !inner.contains('\n') && !inner.contains('\r') {
+                return Some(start + 2 + pos + 2);
+            }
+        }
+        return None;
+    }
+
+    // 3. Single-brace variable: {username}, {order_id}, {address}, {0}, {1}, {user.name}, etc.
+    if bytes[start] == b'{' {
+        let rest = &text[start + 1..];
+        if let Some(pos) = rest.find('}') {
+            let inner = &rest[..pos];
+            if !inner.is_empty()
+                && inner.len() <= 128
+                && !inner.contains(|c: char| c.is_whitespace() || c == '{' || c == '}')
+                && inner.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':')
+                && inner.chars().any(|c| c.is_alphanumeric())
+            {
+                return Some(start + 1 + pos + 1);
+            }
+        }
+    }
+
+    None
+}
+
+/// Hide emoji characters and template interpolation variables (`{{...}}`, `{var}`, `${VAR}`) behind `[EE<i>]` placeholders.
 pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
     let has_emoji_lead = text.as_bytes().iter().any(|&b| b >= 0xE2);
-    let has_template = text.contains("{{");
-    if !has_emoji_lead && !has_template {
+    let has_template_or_var = text.contains('{') || text.contains('$');
+    if !has_emoji_lead && !has_template_or_var {
         return (Cow::Borrowed(text), vec![]);
     }
 
@@ -174,22 +231,20 @@ pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
     let mut last = 0;
 
     while i < len {
-        if has_template && bytes[i] == b'{' && i + 1 < len && bytes[i + 1] == b'{' {
-            if let Some(pos) = text[i + 2..].find("}}") {
-                let end = i + 2 + pos + 2;
-                let inner = &text[i + 2..end - 2];
-                if !inner.contains('\n') && !inner.contains('\r') {
-                    if i > last {
-                        clean.push_str(&text[last..i]);
-                    }
-                    clean.push_str("[EE");
-                    push_usize(&mut clean, replacements.len());
-                    clean.push(']');
-                    replacements.push(text[i..end].to_string());
-                    i = end;
-                    last = end;
-                    continue;
+        if has_template_or_var
+            && (bytes[i] == b'{' || (bytes[i] == b'$' && i + 1 < len && bytes[i + 1] == b'{'))
+        {
+            if let Some(end) = match_template_or_var_placeholder(text, i) {
+                if i > last {
+                    clean.push_str(&text[last..i]);
                 }
+                clean.push_str("[EE");
+                push_usize(&mut clean, replacements.len());
+                clean.push(']');
+                replacements.push(text[i..end].to_string());
+                i = end;
+                last = end;
+                continue;
             }
         }
 
@@ -937,5 +992,35 @@ mod tests {
 
         let restored = restore_emojis_with_source_and_spans(&clean, &repls, input, &mut []);
         assert_eq!(restored, input);
+    }
+    #[test]
+    fn test_single_brace_and_shell_var_placeholders() {
+        let input = "Welcome, {username}! Your order #{order_id} has shipped to {address}. Items: {0}, {1}, ${VAR}, and ${PORT:-8080}.";
+        let (clean, repls) = hide_emojis(input);
+        assert_eq!(
+            clean,
+            "Welcome, [EE0]! Your order #[EE1] has shipped to [EE2]. Items: [EE3], [EE4], [EE5], and [EE6]."
+        );
+        assert_eq!(
+            repls,
+            vec![
+                "{username}".to_string(),
+                "{order_id}".to_string(),
+                "{address}".to_string(),
+                "{0}".to_string(),
+                "{1}".to_string(),
+                "${VAR}".to_string(),
+                "${PORT:-8080}".to_string(),
+            ]
+        );
+
+        let restored = restore_emojis_with_source_and_spans(&clean, &repls, input, &mut []);
+        assert_eq!(restored, input);
+
+        // Negative cases that should not be matched as placeholders
+        let neg = "This is not { a variable } nor empty {} nor json {\"key\": 1} nor {a, b}.";
+        let (neg_clean, neg_repls) = hide_emojis(neg);
+        assert_eq!(neg_clean, neg);
+        assert!(neg_repls.is_empty());
     }
 }

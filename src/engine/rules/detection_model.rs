@@ -150,9 +150,9 @@ pub struct CompiledLatinDetection {
     pub es_chars: Box<[char]>,
     pub es_punct: Box<[char]>,
     pub pt_tilde: Box<[char]>,
+    pub fr_unique: Box<[char]>,
     pub scand_ae_oe: Box<[char]>,
     pub scand_a_o_umlaut: Box<[char]>,
-
     pub ro_words: Box<[String]>,
     pub pt_terms: Box<[String]>,
     pub nn_words: Box<[String]>,
@@ -246,6 +246,10 @@ impl CompiledLatinDetection {
     }
 
     #[inline]
+    pub fn is_fr_unique(&self, c: char) -> bool {
+        self.fr_unique.binary_search(&c).is_ok()
+    }
+
     pub fn is_scand_ae_oe(&self, c: char) -> bool {
         self.scand_ae_oe.binary_search(&c).is_ok()
     }
@@ -498,9 +502,9 @@ impl CompiledDetectionModel {
         let mut es_chars = Vec::new();
         let mut es_punct = Vec::new();
         let mut pt_tilde = Vec::new();
+        let mut fr_unique = Vec::new();
         let mut scand_ae_oe = Vec::new();
         let mut scand_a_o_umlaut = Vec::new();
-
         let mut ro_words = Vec::new();
         let mut pt_terms = Vec::new();
         let mut nn_words = Vec::new();
@@ -518,6 +522,16 @@ impl CompiledDetectionModel {
         let mut scand_da_terms = Vec::new();
         let mut scand_sv_terms = Vec::new();
         let mut scand_sv_words = Vec::new();
+        let mut fr_words = Vec::new();
+        let mut fr_terms = Vec::new();
+        let mut de_words = Vec::new();
+        let mut de_terms = Vec::new();
+        let mut it_words = Vec::new();
+        let mut it_terms = Vec::new();
+        let mut es_words = Vec::new();
+        let mut es_terms = Vec::new();
+        let mut nl_words = Vec::new();
+        let mut nl_terms = Vec::new();
 
         if let Some(prof) = profiles.get("vi") {
             if let Some(det) = &prof.detection {
@@ -660,6 +674,37 @@ impl CompiledDetectionModel {
                 }
             }
         }
+        if let Some(prof) = profiles.get("fr") {
+            if let Some(det) = &prof.detection {
+                fr_unique.extend_from_slice(&det.unique_chars);
+                fr_words.extend_from_slice(&det.whole_words);
+                fr_terms.extend_from_slice(&det.substring_terms);
+            }
+        }
+        if let Some(prof) = profiles.get("de") {
+            if let Some(det) = &prof.detection {
+                de_words.extend_from_slice(&det.whole_words);
+                de_terms.extend_from_slice(&det.substring_terms);
+            }
+        }
+        if let Some(prof) = profiles.get("it") {
+            if let Some(det) = &prof.detection {
+                it_words.extend_from_slice(&det.whole_words);
+                it_terms.extend_from_slice(&det.substring_terms);
+            }
+        }
+        if let Some(prof) = profiles.get("es") {
+            if let Some(det) = &prof.detection {
+                es_words.extend_from_slice(&det.whole_words);
+                es_terms.extend_from_slice(&det.substring_terms);
+            }
+        }
+        if let Some(prof) = profiles.get("nl") {
+            if let Some(det) = &prof.detection {
+                nl_words.extend_from_slice(&det.whole_words);
+                nl_terms.extend_from_slice(&det.substring_terms);
+            }
+        }
 
         let mut greetings = Vec::new();
         for (lang_code, prof) in profiles {
@@ -680,28 +725,38 @@ impl CompiledDetectionModel {
         let groups: &[(&[String], &'static str, usize)] = &[
             (&nn_words, "nn", 0),
             (&nn_terms, "nn", 0),
+            (&fr_words, "fr", 0),
+            (&fr_terms, "fr", 0),
+            (&de_words, "de", 0),
+            (&de_terms, "de", 0),
+            (&it_words, "it", 0),
+            (&it_terms, "it", 0),
+            (&nl_words, "nl", 0),
+            (&nl_terms, "nl", 0),
             (&nb_terms, "nb", 1),
             (&da_terms, "da", 2),
             (&gl_terms, "gl", 3),
             (&gl_words, "gl", 3),
-            (&eu_terms, "eu", 4),
-            (&sq_terms, "sq", 5),
-            (&af_terms, "af", 6),
-            (&ms_terms, "ms", 7),
-            (&id_terms, "id", 8),
+            (&es_words, "es", 4),
+            (&es_terms, "es", 4),
+            (&eu_terms, "eu", 5),
+            (&sq_terms, "sq", 6),
+            (&af_terms, "af", 7),
+            (&ms_terms, "ms", 8),
+            (&id_terms, "id", 9),
         ];
         for (items, lang, prio) in groups {
             for item in *items {
-                if item.contains(' ') {
-                    latin_lexical_phrases.push((item.clone(), *lang, *prio));
+                let lower = item.to_lowercase();
+                if lower.contains(' ') {
+                    latin_lexical_phrases.push((lower, *lang, *prio));
                 } else {
-                    latin_lexical_words.push((item.clone(), *lang, *prio));
+                    latin_lexical_words.push((lower, *lang, *prio));
                 }
             }
         }
-        latin_lexical_words.sort_by(|a, b| a.0.cmp(&b.0));
-        latin_lexical_words.dedup_by(|a, b| a.0 == b.0);
-
+        latin_lexical_words.sort_by(|a, b| super::detect::cmp_ignore_unicode_case(&a.0, &b.0));
+        latin_lexical_words.dedup_by(|a, b| super::detect::eq_ignore_unicode_case(&a.0, &b.0));
         let latin = CompiledLatinDetection {
             vi_chars: sort_chars(vi_chars),
             is_chars: sort_chars(is_chars),
@@ -717,6 +772,7 @@ impl CompiledDetectionModel {
             es_chars: sort_chars(es_chars),
             es_punct: sort_chars(es_punct),
             pt_tilde: sort_chars(pt_tilde),
+            fr_unique: sort_chars(fr_unique),
             scand_ae_oe: sort_chars(scand_ae_oe),
             scand_a_o_umlaut: sort_chars(scand_a_o_umlaut),
 

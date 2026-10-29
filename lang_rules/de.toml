@@ -73,3 +73,15 @@ conditional_end_prefixes = [
 
 [detection]
 distinctive_chars = ['ß', 'ẞ']
+substring_terms = [
+    "guten morgen", "guten tag", "guten abend", "auf wiedersehen",
+    "vielen dank", "danke schön", "dankeschön",
+]
+whole_words = [
+    "nicht", "aber", "wir", "hier", "auch", "nach", "über", "unter",
+    "zwischen", "während", "durch", "ohne", "gegen", "sein", "seine",
+    "seiner", "seinem", "seinen", "ihre", "ihrer", "ihrem", "ihren",
+    "haben", "hatte", "hatten", "werden", "wurde", "wurden", "wird",
+    "können", "kann", "müssen", "muss", "sollen", "soll", "deutsch",
+    "deutsche", "deutschen", "deutscher", "danke",
+]

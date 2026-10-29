@@ -86,7 +86,6 @@ pub fn setup_test_service() {
             check_model_update: false,
             model_update_interval_secs: 0,
             cache_size: 2000,
-            fullwidth_zh_punctuation: true,
             keep_models: vec![],
             keep_top_n: 0,
             max_loaded_models: 0,

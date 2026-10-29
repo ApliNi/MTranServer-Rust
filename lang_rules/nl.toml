@@ -62,3 +62,13 @@ nonbreaking_prefixes = [
 conditional_end_prefixes = [
     "enz.", "b.v.", "d.w.z.", "m.b.t.", "ca.", "jl.",
 ]
+
+[detection]
+substring_terms = [
+    "dank je wel", "dank u wel", "alstublieft", "alsjeblieft",
+    "goedemorgen", "goedemiddag", "goedenavond",
+]
+whole_words = [
+    "niet", "ook", "maar", "naar", "zijn", "hebben", "worden",
+    "werd", "welke", "altijd", "nooit", "nederlands", "nederlandse",
+]

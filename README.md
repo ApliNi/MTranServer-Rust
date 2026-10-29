@@ -49,7 +49,6 @@ data/
 | `--offline` | `MT_OFFLINE` | `false` | 离线模式, 不下载或更新模型 |
 | `--ui` | `MT_ENABLE_UI` | `true` | 启用 Web UI |
 | `--preprocess-symbols` | `MT_PREPROCESS_SYMBOLS` | `false` | 符号预处理 (驼峰/连字符/下划线拆词) |
-| `--fullwidth-zh-punctuation` | `MT_FULLWIDTH_ZH_PUNCTUATION` | `true` | 为译文替换中文全角标点 |
 | `--parse-formats` | `MT_PARSE_FORMATS` | `html,md` | 详见下方 [标记格式解析与投影](#标记格式解析与投影---parse-formats) |
 | `--check-model-update` | `MT_CHECK_MODEL_UPDATE` | `true` | 模型更新检查, 使用时间参数 (如 `24h`、`1d`,) 定期检查 |
 | `--keep-models` | `MT_KEEP_MODELS` | — | 常驻内存不卸载的模型, 特殊值 `all` 表示全部常驻 |

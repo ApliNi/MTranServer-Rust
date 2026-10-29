@@ -78,9 +78,9 @@ impl TranslatedText {
 
     /// Apply typographic normalization and truecasing, reusing the existing backing storage when no modifications are made.
     #[inline]
-    pub fn normalize_punctuation(self, to_lang: &str, fullwidth_zh: bool) -> TranslatedText {
+    pub fn normalize_punctuation(self, to_lang: &str) -> TranslatedText {
         let text_cow = std::borrow::Cow::Borrowed(self.as_str());
-        let processed = postprocess_typography(text_cow, to_lang, fullwidth_zh);
+        let processed = postprocess_typography(text_cow, to_lang);
         match processed {
             std::borrow::Cow::Borrowed(_) => self,
             std::borrow::Cow::Owned(s) => TranslatedText::String(s),
@@ -211,9 +211,8 @@ impl PartialEq<TranslatedText> for String {
 pub fn normalize_output_punctuation(
     text: impl Into<TranslatedText>,
     to_lang: &str,
-    fullwidth_zh: bool,
 ) -> TranslatedText {
-    text.into().normalize_punctuation(to_lang, fullwidth_zh)
+    text.into().normalize_punctuation(to_lang)
 }
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -877,11 +876,6 @@ pub async fn translate_with_pivot_timed_formats(
             config::ParseFormats::default()
         }
     });
-    let fullwidth_zh_punctuation = if config::is_initialized() {
-        config::get().fullwidth_zh_punctuation
-    } else {
-        true
-    };
     let max_sent_len = if config::is_initialized() {
         config::get().max_sentence_length
     } else {
@@ -895,11 +889,11 @@ pub async fn translate_with_pivot_timed_formats(
         let (engines, model_load_duration) = ensure_required_engines(from_lang, to_lang).await?;
         let (translated, translation_duration) = if is_short {
             let (t, d) = translate_segment_with_engines(&engines, from_lang, to_lang, text, effective_formats).await?;
-            (t.normalize_punctuation(to_lang, fullwidth_zh_punctuation), d)
+            (t.normalize_punctuation(to_lang), d)
         } else {
             // Long explicit-language text goes through segmentation.
             let (t, d) = translate_long_text_with_engines(&engines, from_lang, to_lang, text, effective_formats).await?;
-            (normalize_output_punctuation(t, to_lang, fullwidth_zh_punctuation), d)
+            (normalize_output_punctuation(t, to_lang), d)
         };
         Ok(TranslationOutput {
             text: translated,
@@ -942,10 +936,10 @@ pub async fn translate_with_pivot_timed_formats(
             };
             let (final_text, translation_duration) = if is_long {
                 let (t, d) = translate_long_text_with_engines(&engines, &effective_from, to_lang, text, effective_formats).await?;
-                (normalize_output_punctuation(t, to_lang, fullwidth_zh_punctuation), d)
+                (normalize_output_punctuation(t, to_lang), d)
             } else {
                 let (t, d) = translate_segment_with_engines(&engines, &effective_from, to_lang, text, effective_formats).await?;
-                (t.normalize_punctuation(to_lang, fullwidth_zh_punctuation), d)
+                (t.normalize_punctuation(to_lang), d)
             };
 
             Ok(TranslationOutput {
@@ -1011,7 +1005,7 @@ pub async fn translate_with_pivot_timed_formats(
             if last_end < text.len() {
                 out.push_str(&text[last_end..]);
             }
-            let final_text = normalize_output_punctuation(out, to_lang, fullwidth_zh_punctuation);
+            let final_text = normalize_output_punctuation(out, to_lang);
 
             Ok(TranslationOutput {
                 text: final_text,
@@ -1065,18 +1059,15 @@ pub async fn translate_batch_with_pivot_formats(
                 config::ParseFormats::default()
             }
         });
-        let (fullwidth_zh_punctuation, limit) = if config::is_initialized() {
+        let limit = if config::is_initialized() {
             let cfg = config::get();
-            (
-                cfg.fullwidth_zh_punctuation,
-                if cfg.max_sentence_length > 0 {
-                    cfg.max_sentence_length
-                } else {
-                    512
-                },
-            )
+            if cfg.max_sentence_length > 0 {
+                cfg.max_sentence_length
+            } else {
+                512
+            }
         } else {
-            (true, 512)
+            512
         };
 
         let (engines, _) = ensure_required_engines(from_lang, to_lang).await?;
@@ -1090,7 +1081,6 @@ pub async fn translate_batch_with_pivot_formats(
                     to_lang,
                     text,
                     effective_formats,
-                    fullwidth_zh_punctuation,
                     limit,
                 )
                 .await
@@ -1127,7 +1117,6 @@ async fn translate_batch_item_with_engines(
     to_lang: &str,
     text: &str,
     effective_formats: config::ParseFormats,
-    fullwidth_zh_punctuation: bool,
     limit: usize,
 ) -> Result<String, ServiceError> {
     if text.is_empty() {
@@ -1147,7 +1136,7 @@ async fn translate_batch_item_with_engines(
             effective_formats,
         )
         .await?;
-        t.normalize_punctuation(to_lang, fullwidth_zh_punctuation)
+        t.normalize_punctuation(to_lang)
     } else {
         let (t, _) = translate_long_text_with_engines(
             engines,
@@ -1157,7 +1146,7 @@ async fn translate_batch_item_with_engines(
             effective_formats,
         )
         .await?;
-        normalize_output_punctuation(t, to_lang, fullwidth_zh_punctuation)
+        normalize_output_punctuation(t, to_lang)
     };
 
     Ok(translated.into_string())
@@ -1443,7 +1432,6 @@ pub async fn translate_long_text_with_engines(
     }
 
     let total_duration = start_wall.elapsed();
-    let is_western = !to_lang.starts_with("zh") && !to_lang.starts_with("ja");
     let mut out = String::with_capacity(text.len());
 
     for (i, (res_opt, sent)) in results.into_iter().zip(&sentences).enumerate() {
@@ -1452,12 +1440,8 @@ pub async fn translate_long_text_with_engines(
             None => TranslatedText::String(sent.text.to_string()),
         };
 
-        if i > 0 && is_western && !out.is_empty() && !piece.is_empty() {
-            let prev_has_space = out.ends_with(|c: char| c.is_whitespace());
-            let next_has_space = piece.starts_with(|c: char| c.is_whitespace());
-            if !prev_has_space && !next_has_space {
-                out.push(' ');
-            }
+        if i > 0 && crate::utils::lang::should_insert_adaptive_space(&out, piece.as_str(), Some(to_lang)) {
+            out.push(' ');
         }
 
         out.push_str(piece.as_str());
@@ -1496,11 +1480,9 @@ pub async fn translate_long_text(
 pub fn format_zh_punctuation<'a>(
     text: &'a str,
     to_lang: &str,
-    enabled: bool,
 ) -> std::borrow::Cow<'a, str> {
-    // Fast path: nothing to format for non-Chinese targets, HTML bodies, or
-    // when the feature is off — return the input borrowed, no copy at all.
-    if !enabled || !to_lang.starts_with("zh") {
+    // Fast path: nothing to format for non-Chinese targets
+    if !to_lang.starts_with("zh") {
         return std::borrow::Cow::Borrowed(text);
     }
     apply_zh_punct_and_pangu(std::borrow::Cow::Borrowed(text))
@@ -1806,6 +1788,30 @@ pub(crate) fn apply_pangu_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std::b
             }
         } else if bytes[i] == b'`' {
             if let Some(code_end) = markdown_code_end(bytes, i) {
+                if let Some(prev) = prev_char {
+                    if is_cjk_char(prev) {
+                        if out.is_none() {
+                            out = Some(String::with_capacity(s.len() + 16));
+                        }
+                        if let Some(buf) = &mut out {
+                            buf.push_str(&s[last_copied..i]);
+                            buf.push(' ');
+                            last_copied = i;
+                        }
+                    }
+                }
+                if let Some(next_c) = s[code_end..].chars().next() {
+                    if is_cjk_char(next_c) {
+                        if out.is_none() {
+                            out = Some(String::with_capacity(s.len() + 16));
+                        }
+                        if let Some(buf) = &mut out {
+                            buf.push_str(&s[last_copied..code_end]);
+                            buf.push(' ');
+                            last_copied = code_end;
+                        }
+                    }
+                }
                 prev_char = None;
                 i = code_end;
                 prev_end = i;
@@ -1954,6 +1960,30 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
             }
         } else if b == b'`' {
             if let Some(code_end) = markdown_code_end(bytes, i) {
+                if let Some(prev) = prev_char {
+                    if is_cjk_char(prev) {
+                        let buf = out.get_or_insert_with(|| {
+                            let mut s_buf = String::with_capacity(s.len() + 16);
+                            s_buf.push_str(&s[..last_copied]);
+                            s_buf
+                        });
+                        buf.push_str(&s[last_copied..i]);
+                        buf.push(' ');
+                        last_copied = i;
+                    }
+                }
+                if let Some(next_c) = s[code_end..].chars().next() {
+                    if is_cjk_char(next_c) {
+                        let buf = out.get_or_insert_with(|| {
+                            let mut s_buf = String::with_capacity(s.len() + 16);
+                            s_buf.push_str(&s[..last_copied]);
+                            s_buf
+                        });
+                        buf.push_str(&s[last_copied..code_end]);
+                        buf.push(' ');
+                        last_copied = code_end;
+                    }
+                }
                 prev_char = None;
                 i = code_end;
                 prev_end = i;
@@ -2470,7 +2500,6 @@ pub(crate) fn get_language_rule_profile(
 pub fn postprocess_typography<'a>(
     text: std::borrow::Cow<'a, str>,
     to_lang: &str,
-    fullwidth_zh: bool,
 ) -> std::borrow::Cow<'a, str> {
     let mut cur = text;
 
@@ -2478,7 +2507,7 @@ pub fn postprocess_typography<'a>(
     let profile = get_language_rule_profile(to_lang);
 
     // 2. Chinese typography: fused fullwidth punctuation + Pangu spacing
-    if to_lang.starts_with("zh") && fullwidth_zh {
+    if to_lang.starts_with("zh") {
         let pangu_enabled = profile
             .as_ref()
             .map(|p| p.typography.pangu_spacing)
@@ -3297,11 +3326,11 @@ mod tests {
         assert_eq!(format!("{}", tt), "cached hello, world");
 
         // Normalization on non-zh target applies truecasing
-        let norm_en = tt.clone().normalize_punctuation("en", true);
+        let norm_en = tt.clone().normalize_punctuation("en");
         assert_eq!(norm_en, "Cached hello, world");
 
         // Normalization on zh target replaces punctuation
-        let norm_zh = tt.normalize_punctuation("zh", true);
+        let norm_zh = tt.normalize_punctuation("zh");
         assert_eq!(norm_zh, "cached hello，world");
     }
 
@@ -3382,7 +3411,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_evict_engine_nonexistent() {
-        super::init();
+        if ENGINES.read().is_none() {
+            super::init();
+        }
         super::evict_engine("nonexistent_from", "nonexistent_to").await;
     }
 }

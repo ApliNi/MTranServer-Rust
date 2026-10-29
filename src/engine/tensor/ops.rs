@@ -30,19 +30,26 @@ pub unsafe fn layer_norm_mean_inv_avx2(slice: &[f32], eps: f32) -> (f32, f32) {
     use std::arch::x86_64::*;
     let d = slice.len();
     let ptr = slice.as_ptr();
-    let chunks16 = d / 16;
+    let chunks32 = d / 32;
     let mut sum0 = _mm256_setzero_ps();
     let mut sum1 = _mm256_setzero_ps();
+    let mut sum2 = _mm256_setzero_ps();
+    let mut sum3 = _mm256_setzero_ps();
 
-    for i in 0..chunks16 {
-        let p = ptr.add(i * 16);
-        let v0 = _mm256_loadu_ps(p);
-        let v1 = _mm256_loadu_ps(p.add(8));
-        sum0 = _mm256_add_ps(sum0, v0);
-        sum1 = _mm256_add_ps(sum1, v1);
+    for i in 0..chunks32 {
+        let p = ptr.add(i * 32);
+        sum0 = _mm256_add_ps(sum0, _mm256_loadu_ps(p));
+        sum1 = _mm256_add_ps(sum1, _mm256_loadu_ps(p.add(8)));
+        sum2 = _mm256_add_ps(sum2, _mm256_loadu_ps(p.add(16)));
+        sum3 = _mm256_add_ps(sum3, _mm256_loadu_ps(p.add(24)));
     }
 
-    let sum_v = _mm256_add_ps(sum0, sum1);
+    let mut sum_v = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+    let chunks8 = d / 8;
+    for i in (chunks32 * 4)..chunks8 {
+        sum_v = _mm256_add_ps(sum_v, _mm256_loadu_ps(ptr.add(i * 8)));
+    }
+
     let sum128 = _mm_add_ps(
         _mm256_castps256_ps128(sum_v),
         _mm256_extractf128_ps(sum_v, 1),
@@ -51,7 +58,7 @@ pub unsafe fn layer_norm_mean_inv_avx2(slice: &[f32], eps: f32) -> (f32, f32) {
     let sum32 = _mm_add_ss(sum64, _mm_shuffle_ps(sum64, sum64, 1));
     let mut sum = _mm_cvtss_f32(sum32);
 
-    let tail_start = chunks16 * 16;
+    let tail_start = chunks8 * 8;
     for i in tail_start..d {
         sum += *ptr.add(i);
     }
@@ -63,15 +70,26 @@ pub unsafe fn layer_norm_mean_inv_avx2(slice: &[f32], eps: f32) -> (f32, f32) {
     // Pass 2: compute sum((x - mean)^2)
     let mut var0 = _mm256_setzero_ps();
     let mut var1 = _mm256_setzero_ps();
-    for i in 0..chunks16 {
-        let p = ptr.add(i * 16);
+    let mut var2 = _mm256_setzero_ps();
+    let mut var3 = _mm256_setzero_ps();
+    for i in 0..chunks32 {
+        let p = ptr.add(i * 32);
         let diff0 = _mm256_sub_ps(_mm256_loadu_ps(p), mean_v);
         let diff1 = _mm256_sub_ps(_mm256_loadu_ps(p.add(8)), mean_v);
+        let diff2 = _mm256_sub_ps(_mm256_loadu_ps(p.add(16)), mean_v);
+        let diff3 = _mm256_sub_ps(_mm256_loadu_ps(p.add(24)), mean_v);
         var0 = _mm256_fmadd_ps(diff0, diff0, var0);
         var1 = _mm256_fmadd_ps(diff1, diff1, var1);
+        var2 = _mm256_fmadd_ps(diff2, diff2, var2);
+        var3 = _mm256_fmadd_ps(diff3, diff3, var3);
     }
 
-    let var_v = _mm256_add_ps(var0, var1);
+    let mut var_v = _mm256_add_ps(_mm256_add_ps(var0, var1), _mm256_add_ps(var2, var3));
+    for i in (chunks32 * 4)..chunks8 {
+        let diff = _mm256_sub_ps(_mm256_loadu_ps(ptr.add(i * 8)), mean_v);
+        var_v = _mm256_fmadd_ps(diff, diff, var_v);
+    }
+
     let var128 = _mm_add_ps(
         _mm256_castps256_ps128(var_v),
         _mm256_extractf128_ps(var_v, 1),
@@ -172,7 +190,7 @@ pub unsafe fn layer_norm_store_avx(
         _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_set1_ps, _mm256_storeu_ps,
         _mm256_sub_ps,
     };
-    const W: usize = 16;
+    const W: usize = 32;
     let mean_v = _mm256_set1_ps(mean);
     let inv_v = _mm256_set1_ps(inv);
     let groups = x.len() / W;
@@ -183,46 +201,32 @@ pub unsafe fn layer_norm_store_avx(
 
     for g in 0..groups {
         let o = g * W;
-        let v0 = _mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o)), mean_v);
-        let v1 = _mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o + 8)), mean_v);
+        let v0 = _mm256_mul_ps(_mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o)), mean_v), inv_v);
+        let v1 = _mm256_mul_ps(_mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o + 8)), mean_v), inv_v);
+        let v2 = _mm256_mul_ps(_mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o + 16)), mean_v), inv_v);
+        let v3 = _mm256_mul_ps(_mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o + 24)), mean_v), inv_v);
 
-        let v0 = _mm256_mul_ps(v0, inv_v);
-        let v1 = _mm256_mul_ps(v1, inv_v);
+        let out0 = _mm256_fmadd_ps(v0, _mm256_loadu_ps(s_ptr.add(o)), _mm256_loadu_ps(b_ptr.add(o)));
+        let out1 = _mm256_fmadd_ps(v1, _mm256_loadu_ps(s_ptr.add(o + 8)), _mm256_loadu_ps(b_ptr.add(o + 8)));
+        let out2 = _mm256_fmadd_ps(v2, _mm256_loadu_ps(s_ptr.add(o + 16)), _mm256_loadu_ps(b_ptr.add(o + 16)));
+        let out3 = _mm256_fmadd_ps(v3, _mm256_loadu_ps(s_ptr.add(o + 24)), _mm256_loadu_ps(b_ptr.add(o + 24)));
 
-        let v0 = _mm256_fmadd_ps(
-            v0,
-            _mm256_loadu_ps(s_ptr.add(o)),
-            _mm256_loadu_ps(b_ptr.add(o)),
-        );
-        let v1 = _mm256_fmadd_ps(
-            v1,
-            _mm256_loadu_ps(s_ptr.add(o + 8)),
-            _mm256_loadu_ps(b_ptr.add(o + 8)),
-        );
-
-        _mm256_storeu_ps(o_ptr.add(o), v0);
-        _mm256_storeu_ps(o_ptr.add(o + 8), v1);
+        _mm256_storeu_ps(o_ptr.add(o), out0);
+        _mm256_storeu_ps(o_ptr.add(o + 8), out1);
+        _mm256_storeu_ps(o_ptr.add(o + 16), out2);
+        _mm256_storeu_ps(o_ptr.add(o + 24), out3);
     }
 
-    let tail_start = groups * W;
-    let rem = x.len() - tail_start;
-    if rem >= 8 {
+    let mut tail_start = groups * W;
+    while x.len() - tail_start >= 8 {
         let o = tail_start;
-        let v = _mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o)), mean_v);
-        let v = _mm256_mul_ps(v, inv_v);
-        let v = _mm256_fmadd_ps(
-            v,
-            _mm256_loadu_ps(s_ptr.add(o)),
-            _mm256_loadu_ps(b_ptr.add(o)),
-        );
-        _mm256_storeu_ps(o_ptr.add(o), v);
-        for i in (tail_start + 8)..x.len() {
-            *o_ptr.add(i) = (*x_ptr.add(i) - mean) * inv * *s_ptr.add(i) + *b_ptr.add(i);
-        }
-    } else {
-        for i in tail_start..x.len() {
-            *o_ptr.add(i) = (*x_ptr.add(i) - mean) * inv * *s_ptr.add(i) + *b_ptr.add(i);
-        }
+        let v = _mm256_mul_ps(_mm256_sub_ps(_mm256_loadu_ps(x_ptr.add(o)), mean_v), inv_v);
+        let out_v = _mm256_fmadd_ps(v, _mm256_loadu_ps(s_ptr.add(o)), _mm256_loadu_ps(b_ptr.add(o)));
+        _mm256_storeu_ps(o_ptr.add(o), out_v);
+        tail_start += 8;
+    }
+    for i in tail_start..x.len() {
+        *o_ptr.add(i) = (*x_ptr.add(i) - mean) * inv * *s_ptr.add(i) + *b_ptr.add(i);
     }
 }
 
@@ -877,11 +881,107 @@ pub unsafe fn exp256_ps(x: std::arch::x86_64::__m256) -> std::arch::x86_64::__m2
     _mm256_and_ps(res, underflow_mask)
 }
 
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+#[inline]
+unsafe fn exp256_ps_4x(
+    x0: std::arch::x86_64::__m256,
+    x1: std::arch::x86_64::__m256,
+    x2: std::arch::x86_64::__m256,
+    x3: std::arch::x86_64::__m256,
+    min_x: std::arch::x86_64::__m256,
+    log2e: std::arch::x86_64::__m256,
+    c1: std::arch::x86_64::__m256,
+    c2: std::arch::x86_64::__m256,
+    c_p6: std::arch::x86_64::__m256,
+    c_p5: std::arch::x86_64::__m256,
+    c_p4: std::arch::x86_64::__m256,
+    c_p3: std::arch::x86_64::__m256,
+    c_p2: std::arch::x86_64::__m256,
+    c_one: std::arch::x86_64::__m256,
+    bias_int: std::arch::x86_64::__m256i,
+) -> (
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+) {
+    use std::arch::x86_64::*;
+
+    let mask0 = _mm256_cmp_ps(x0, min_x, _CMP_GE_OQ);
+    let mask1 = _mm256_cmp_ps(x1, min_x, _CMP_GE_OQ);
+    let mask2 = _mm256_cmp_ps(x2, min_x, _CMP_GE_OQ);
+    let mask3 = _mm256_cmp_ps(x3, min_x, _CMP_GE_OQ);
+
+    let xc0 = _mm256_max_ps(x0, min_x);
+    let xc1 = _mm256_max_ps(x1, min_x);
+    let xc2 = _mm256_max_ps(x2, min_x);
+    let xc3 = _mm256_max_ps(x3, min_x);
+
+    let k0 = _mm256_round_ps(_mm256_mul_ps(xc0, log2e), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+    let k1 = _mm256_round_ps(_mm256_mul_ps(xc1, log2e), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+    let k2 = _mm256_round_ps(_mm256_mul_ps(xc2, log2e), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+    let k3 = _mm256_round_ps(_mm256_mul_ps(xc3, log2e), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+
+    let r0 = _mm256_fnmadd_ps(k0, c1, xc0);
+    let r1 = _mm256_fnmadd_ps(k1, c1, xc1);
+    let r2 = _mm256_fnmadd_ps(k2, c1, xc2);
+    let r3 = _mm256_fnmadd_ps(k3, c1, xc3);
+
+    let r0 = _mm256_fnmadd_ps(k0, c2, r0);
+    let r1 = _mm256_fnmadd_ps(k1, c2, r1);
+    let r2 = _mm256_fnmadd_ps(k2, c2, r2);
+    let r3 = _mm256_fnmadd_ps(k3, c2, r3);
+
+    let mut poly0 = _mm256_fmadd_ps(c_p6, r0, c_p5);
+    let mut poly1 = _mm256_fmadd_ps(c_p6, r1, c_p5);
+    let mut poly2 = _mm256_fmadd_ps(c_p6, r2, c_p5);
+    let mut poly3 = _mm256_fmadd_ps(c_p6, r3, c_p5);
+
+    poly0 = _mm256_fmadd_ps(poly0, r0, c_p4);
+    poly1 = _mm256_fmadd_ps(poly1, r1, c_p4);
+    poly2 = _mm256_fmadd_ps(poly2, r2, c_p4);
+    poly3 = _mm256_fmadd_ps(poly3, r3, c_p4);
+
+    poly0 = _mm256_fmadd_ps(poly0, r0, c_p3);
+    poly1 = _mm256_fmadd_ps(poly1, r1, c_p3);
+    poly2 = _mm256_fmadd_ps(poly2, r2, c_p3);
+    poly3 = _mm256_fmadd_ps(poly3, r3, c_p3);
+
+    poly0 = _mm256_fmadd_ps(poly0, r0, c_p2);
+    poly1 = _mm256_fmadd_ps(poly1, r1, c_p2);
+    poly2 = _mm256_fmadd_ps(poly2, r2, c_p2);
+    poly3 = _mm256_fmadd_ps(poly3, r3, c_p2);
+
+    poly0 = _mm256_fmadd_ps(poly0, r0, c_one);
+    poly1 = _mm256_fmadd_ps(poly1, r1, c_one);
+    poly2 = _mm256_fmadd_ps(poly2, r2, c_one);
+    poly3 = _mm256_fmadd_ps(poly3, r3, c_one);
+
+    poly0 = _mm256_fmadd_ps(poly0, r0, c_one);
+    poly1 = _mm256_fmadd_ps(poly1, r1, c_one);
+    poly2 = _mm256_fmadd_ps(poly2, r2, c_one);
+    poly3 = _mm256_fmadd_ps(poly3, r3, c_one);
+
+    let k_i0 = _mm256_cvtps_epi32(k0);
+    let k_i1 = _mm256_cvtps_epi32(k1);
+    let k_i2 = _mm256_cvtps_epi32(k2);
+    let k_i3 = _mm256_cvtps_epi32(k3);
+
+    let pow2_0 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_add_epi32(k_i0, bias_int), 23));
+    let pow2_1 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_add_epi32(k_i1, bias_int), 23));
+    let pow2_2 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_add_epi32(k_i2, bias_int), 23));
+    let pow2_3 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_add_epi32(k_i3, bias_int), 23));
+
+    (
+        _mm256_and_ps(_mm256_mul_ps(pow2_0, poly0), mask0),
+        _mm256_and_ps(_mm256_mul_ps(pow2_1, poly1), mask1),
+        _mm256_and_ps(_mm256_mul_ps(pow2_2, poly2), mask2),
+        _mm256_and_ps(_mm256_mul_ps(pow2_3, poly3), mask3),
+    )
+}
+
 /// AVX2-accelerated in-place softmax over query-key attention scores.
-///
-/// # Safety
-/// Caller must ensure the host CPU supports AVX2 and FMA feature sets,
-/// and that `scores.len() >= q_len * kv_len`.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 pub unsafe fn softmax_scores_inplace_avx2(scores: &mut [f32], q_len: usize, kv_len: usize) {
@@ -893,10 +993,21 @@ pub unsafe fn softmax_scores_inplace_avx2(scores: &mut [f32], q_len: usize, kv_l
         return;
     }
 
-    let chunks16 = d / 16;
-    let rem8_idx = chunks16 * 16;
-    let has_rem8 = rem8_idx + 8 <= d;
-    let tail_start = (d / 8) * 8;
+    let chunks32 = d / 32;
+    let chunks8 = d / 8;
+    let tail_start = chunks8 * 8;
+
+    let min_x = _mm256_set1_ps(-87.336544);
+    let log2e = _mm256_set1_ps(std::f32::consts::LOG2_E);
+    let c1 = _mm256_set1_ps(0.693145751953125);
+    let c2 = _mm256_set1_ps(1.4286068203094172e-6);
+    let c_p6 = _mm256_set1_ps(1.0 / 720.0);
+    let c_p5 = _mm256_set1_ps(1.0 / 120.0);
+    let c_p4 = _mm256_set1_ps(1.0 / 24.0);
+    let c_p3 = _mm256_set1_ps(1.0 / 6.0);
+    let c_p2 = _mm256_set1_ps(0.5);
+    let c_one = _mm256_set1_ps(1.0);
+    let bias_int = _mm256_set1_epi32(127);
 
     for row in scores[..q_len * d].chunks_exact_mut(d) {
         let ptr = row.as_mut_ptr();
@@ -904,16 +1015,20 @@ pub unsafe fn softmax_scores_inplace_avx2(scores: &mut [f32], q_len: usize, kv_l
         // Pass 1: compute row maximum
         let mut max0 = _mm256_set1_ps(f32::NEG_INFINITY);
         let mut max1 = _mm256_set1_ps(f32::NEG_INFINITY);
+        let mut max2 = _mm256_set1_ps(f32::NEG_INFINITY);
+        let mut max3 = _mm256_set1_ps(f32::NEG_INFINITY);
 
-        for i in 0..chunks16 {
-            let p = ptr.add(i * 16);
+        for i in 0..chunks32 {
+            let p = ptr.add(i * 32);
             max0 = _mm256_max_ps(max0, _mm256_loadu_ps(p));
             max1 = _mm256_max_ps(max1, _mm256_loadu_ps(p.add(8)));
+            max2 = _mm256_max_ps(max2, _mm256_loadu_ps(p.add(16)));
+            max3 = _mm256_max_ps(max3, _mm256_loadu_ps(p.add(24)));
         }
 
-        let mut max_v = _mm256_max_ps(max0, max1);
-        if has_rem8 {
-            max_v = _mm256_max_ps(max_v, _mm256_loadu_ps(ptr.add(rem8_idx)));
+        let mut max_v = _mm256_max_ps(_mm256_max_ps(max0, max1), _mm256_max_ps(max2, max3));
+        for i in (chunks32 * 4)..chunks8 {
+            max_v = _mm256_max_ps(max_v, _mm256_loadu_ps(ptr.add(i * 8)));
         }
 
         let max128 = _mm_max_ps(
@@ -935,31 +1050,41 @@ pub unsafe fn softmax_scores_inplace_avx2(scores: &mut [f32], q_len: usize, kv_l
         let max_broadcast = _mm256_set1_ps(max_val);
         let mut sum0 = _mm256_setzero_ps();
         let mut sum1 = _mm256_setzero_ps();
+        let mut sum2 = _mm256_setzero_ps();
+        let mut sum3 = _mm256_setzero_ps();
 
-        for i in 0..chunks16 {
-            let p0 = ptr.add(i * 16);
+        for i in 0..chunks32 {
+            let p0 = ptr.add(i * 32);
             let p1 = p0.add(8);
+            let p2 = p0.add(16);
+            let p3 = p0.add(24);
 
-            let diff0 = _mm256_sub_ps(_mm256_loadu_ps(p0), max_broadcast);
-            let diff1 = _mm256_sub_ps(_mm256_loadu_ps(p1), max_broadcast);
+            let x0 = _mm256_sub_ps(_mm256_loadu_ps(p0), max_broadcast);
+            let x1 = _mm256_sub_ps(_mm256_loadu_ps(p1), max_broadcast);
+            let x2 = _mm256_sub_ps(_mm256_loadu_ps(p2), max_broadcast);
+            let x3 = _mm256_sub_ps(_mm256_loadu_ps(p3), max_broadcast);
 
-            let exp0 = exp256_ps(diff0);
-            let exp1 = exp256_ps(diff1);
+            let (e0, e1, e2, e3) = exp256_ps_4x(
+                x0, x1, x2, x3, min_x, log2e, c1, c2, c_p6, c_p5, c_p4, c_p3, c_p2, c_one, bias_int,
+            );
+            sum0 = _mm256_add_ps(sum0, e0);
+            sum1 = _mm256_add_ps(sum1, e1);
+            sum2 = _mm256_add_ps(sum2, e2);
+            sum3 = _mm256_add_ps(sum3, e3);
 
-            sum0 = _mm256_add_ps(sum0, exp0);
-            sum1 = _mm256_add_ps(sum1, exp1);
-
-            _mm256_storeu_ps(p0, exp0);
-            _mm256_storeu_ps(p1, exp1);
+            _mm256_storeu_ps(p0, e0);
+            _mm256_storeu_ps(p1, e1);
+            _mm256_storeu_ps(p2, e2);
+            _mm256_storeu_ps(p3, e3);
         }
 
-        let mut sum_v = _mm256_add_ps(sum0, sum1);
-        if has_rem8 {
-            let p = ptr.add(rem8_idx);
+        let mut sum_v = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+        for i in (chunks32 * 4)..chunks8 {
+            let p = ptr.add(i * 8);
             let diff = _mm256_sub_ps(_mm256_loadu_ps(p), max_broadcast);
-            let exp_val = exp256_ps(diff);
-            sum_v = _mm256_add_ps(sum_v, exp_val);
-            _mm256_storeu_ps(p, exp_val);
+            let e = exp256_ps(diff);
+            sum_v = _mm256_add_ps(sum_v, e);
+            _mm256_storeu_ps(p, e);
         }
 
         let sum128 = _mm_add_ps(
@@ -981,19 +1106,25 @@ pub unsafe fn softmax_scores_inplace_avx2(scores: &mut [f32], q_len: usize, kv_l
         let inv = 1.0 / sum;
         let inv_broadcast = _mm256_set1_ps(inv);
 
-        for i in 0..chunks16 {
-            let p0 = ptr.add(i * 16);
+        for i in 0..chunks32 {
+            let p0 = ptr.add(i * 32);
             let p1 = p0.add(8);
+            let p2 = p0.add(16);
+            let p3 = p0.add(24);
 
             let v0 = _mm256_mul_ps(_mm256_loadu_ps(p0), inv_broadcast);
             let v1 = _mm256_mul_ps(_mm256_loadu_ps(p1), inv_broadcast);
+            let v2 = _mm256_mul_ps(_mm256_loadu_ps(p2), inv_broadcast);
+            let v3 = _mm256_mul_ps(_mm256_loadu_ps(p3), inv_broadcast);
 
             _mm256_storeu_ps(p0, v0);
             _mm256_storeu_ps(p1, v1);
+            _mm256_storeu_ps(p2, v2);
+            _mm256_storeu_ps(p3, v3);
         }
 
-        if has_rem8 {
-            let p = ptr.add(rem8_idx);
+        for i in (chunks32 * 4)..chunks8 {
+            let p = ptr.add(i * 8);
             let v = _mm256_mul_ps(_mm256_loadu_ps(p), inv_broadcast);
             _mm256_storeu_ps(p, v);
         }
@@ -1002,6 +1133,218 @@ pub unsafe fn softmax_scores_inplace_avx2(scores: &mut [f32], q_len: usize, kv_l
             *ptr.add(i) *= inv;
         }
     }
+}
+
+/// AVX2-accelerated out-of-place softmax reading from `src` and writing to `dst`.
+/// Eliminates redundant memcpy buffer copies.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+pub unsafe fn softmax_scores_into_avx2(src: &[f32], dst: &mut [f32], q_len: usize, kv_len: usize) {
+    use std::arch::x86_64::*;
+
+    let d = kv_len;
+    if d < 8 {
+        softmax_scores_into_scalar(src, dst, q_len, kv_len);
+        return;
+    }
+
+    let chunks32 = d / 32;
+    let chunks8 = d / 8;
+    let tail_start = chunks8 * 8;
+
+    let min_x = _mm256_set1_ps(-87.336544);
+    let log2e = _mm256_set1_ps(std::f32::consts::LOG2_E);
+    let c1 = _mm256_set1_ps(0.693145751953125);
+    let c2 = _mm256_set1_ps(1.4286068203094172e-6);
+    let c_p6 = _mm256_set1_ps(1.0 / 720.0);
+    let c_p5 = _mm256_set1_ps(1.0 / 120.0);
+    let c_p4 = _mm256_set1_ps(1.0 / 24.0);
+    let c_p3 = _mm256_set1_ps(1.0 / 6.0);
+    let c_p2 = _mm256_set1_ps(0.5);
+    let c_one = _mm256_set1_ps(1.0);
+    let bias_int = _mm256_set1_epi32(127);
+
+    for (src_row, dst_row) in src[..q_len * d].chunks_exact(d).zip(dst[..q_len * d].chunks_exact_mut(d)) {
+        let s_ptr = src_row.as_ptr();
+        let d_ptr = dst_row.as_mut_ptr();
+
+        // Pass 1: compute row maximum from src
+        let mut max0 = _mm256_set1_ps(f32::NEG_INFINITY);
+        let mut max1 = _mm256_set1_ps(f32::NEG_INFINITY);
+        let mut max2 = _mm256_set1_ps(f32::NEG_INFINITY);
+        let mut max3 = _mm256_set1_ps(f32::NEG_INFINITY);
+
+        for i in 0..chunks32 {
+            let p = s_ptr.add(i * 32);
+            max0 = _mm256_max_ps(max0, _mm256_loadu_ps(p));
+            max1 = _mm256_max_ps(max1, _mm256_loadu_ps(p.add(8)));
+            max2 = _mm256_max_ps(max2, _mm256_loadu_ps(p.add(16)));
+            max3 = _mm256_max_ps(max3, _mm256_loadu_ps(p.add(24)));
+        }
+
+        let mut max_v = _mm256_max_ps(_mm256_max_ps(max0, max1), _mm256_max_ps(max2, max3));
+        for i in (chunks32 * 4)..chunks8 {
+            max_v = _mm256_max_ps(max_v, _mm256_loadu_ps(s_ptr.add(i * 8)));
+        }
+
+        let max128 = _mm_max_ps(
+            _mm256_castps256_ps128(max_v),
+            _mm256_extractf128_ps(max_v, 1),
+        );
+        let max64 = _mm_max_ps(max128, _mm_movehl_ps(max128, max128));
+        let max32 = _mm_max_ss(max64, _mm_shuffle_ps(max64, max64, 1));
+        let mut max_val = _mm_cvtss_f32(max32);
+
+        for i in tail_start..d {
+            let v = *s_ptr.add(i);
+            if v > max_val {
+                max_val = v;
+            }
+        }
+
+        // Pass 2: compute exp(x - max) from src, store directly to dst
+        let max_broadcast = _mm256_set1_ps(max_val);
+        let mut sum0 = _mm256_setzero_ps();
+        let mut sum1 = _mm256_setzero_ps();
+        let mut sum2 = _mm256_setzero_ps();
+        let mut sum3 = _mm256_setzero_ps();
+
+        for i in 0..chunks32 {
+            let sp0 = s_ptr.add(i * 32);
+            let sp1 = sp0.add(8);
+            let sp2 = sp0.add(16);
+            let sp3 = sp0.add(24);
+
+            let dp0 = d_ptr.add(i * 32);
+            let dp1 = dp0.add(8);
+            let dp2 = dp0.add(16);
+            let dp3 = dp0.add(24);
+
+            let x0 = _mm256_sub_ps(_mm256_loadu_ps(sp0), max_broadcast);
+            let x1 = _mm256_sub_ps(_mm256_loadu_ps(sp1), max_broadcast);
+            let x2 = _mm256_sub_ps(_mm256_loadu_ps(sp2), max_broadcast);
+            let x3 = _mm256_sub_ps(_mm256_loadu_ps(sp3), max_broadcast);
+
+            let (e0, e1, e2, e3) = exp256_ps_4x(
+                x0, x1, x2, x3, min_x, log2e, c1, c2, c_p6, c_p5, c_p4, c_p3, c_p2, c_one, bias_int,
+            );
+            sum0 = _mm256_add_ps(sum0, e0);
+            sum1 = _mm256_add_ps(sum1, e1);
+            sum2 = _mm256_add_ps(sum2, e2);
+            sum3 = _mm256_add_ps(sum3, e3);
+
+            _mm256_storeu_ps(dp0, e0);
+            _mm256_storeu_ps(dp1, e1);
+            _mm256_storeu_ps(dp2, e2);
+            _mm256_storeu_ps(dp3, e3);
+        }
+
+        let mut sum_v = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+        for i in (chunks32 * 4)..chunks8 {
+            let sp = s_ptr.add(i * 8);
+            let dp = d_ptr.add(i * 8);
+            let diff = _mm256_sub_ps(_mm256_loadu_ps(sp), max_broadcast);
+            let e = exp256_ps(diff);
+            sum_v = _mm256_add_ps(sum_v, e);
+            _mm256_storeu_ps(dp, e);
+        }
+
+        let sum128 = _mm_add_ps(
+            _mm256_castps256_ps128(sum_v),
+            _mm256_extractf128_ps(sum_v, 1),
+        );
+        let sum64 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+        let sum32 = _mm_add_ss(sum64, _mm_shuffle_ps(sum64, sum64, 1));
+        let mut sum = _mm_cvtss_f32(sum32);
+
+        for i in tail_start..d {
+            let e = (*s_ptr.add(i) - max_val).exp();
+            *d_ptr.add(i) = e;
+            sum += e;
+        }
+
+        // Pass 3: normalize dst
+        let inv = 1.0 / sum;
+        let inv_broadcast = _mm256_set1_ps(inv);
+
+        for i in 0..chunks32 {
+            let dp0 = d_ptr.add(i * 32);
+            let dp1 = dp0.add(8);
+            let dp2 = dp0.add(16);
+            let dp3 = dp0.add(24);
+
+            let v0 = _mm256_mul_ps(_mm256_loadu_ps(dp0), inv_broadcast);
+            let v1 = _mm256_mul_ps(_mm256_loadu_ps(dp1), inv_broadcast);
+            let v2 = _mm256_mul_ps(_mm256_loadu_ps(dp2), inv_broadcast);
+            let v3 = _mm256_mul_ps(_mm256_loadu_ps(dp3), inv_broadcast);
+
+            _mm256_storeu_ps(dp0, v0);
+            _mm256_storeu_ps(dp1, v1);
+            _mm256_storeu_ps(dp2, v2);
+            _mm256_storeu_ps(dp3, v3);
+        }
+
+        for i in (chunks32 * 4)..chunks8 {
+            let dp = d_ptr.add(i * 8);
+            let v = _mm256_mul_ps(_mm256_loadu_ps(dp), inv_broadcast);
+            _mm256_storeu_ps(dp, v);
+        }
+
+        for i in tail_start..d {
+            *d_ptr.add(i) *= inv;
+        }
+    }
+}
+
+#[inline]
+pub fn softmax_scores_into_scalar(src: &[f32], dst: &mut [f32], q_len: usize, kv_len: usize) {
+    if q_len == 0 || kv_len == 0 {
+        return;
+    }
+    for (src_row, dst_row) in src[..q_len * kv_len]
+        .chunks_exact(kv_len)
+        .zip(dst[..q_len * kv_len].chunks_exact_mut(kv_len))
+    {
+        let mut max = f32::NEG_INFINITY;
+        for &s in src_row.iter() {
+            if s > max {
+                max = s;
+            }
+        }
+
+        let mut sum = 0.0f32;
+        for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
+            let e = (*s - max).exp();
+            *d = e;
+            sum += e;
+        }
+
+        let inv = 1.0 / sum;
+        for d in dst_row.iter_mut() {
+            *d *= inv;
+        }
+    }
+}
+
+#[inline]
+pub fn softmax_scores_into(src: &[f32], dst: &mut [f32], q_len: usize, kv_len: usize) {
+    let total = match q_len.checked_mul(kv_len) {
+        Some(t) if t > 0 => t,
+        _ => return,
+    };
+    if src.len() < total || dst.len() < total {
+        return;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if crate::utils::arch::has_avx2() {
+            unsafe {
+                softmax_scores_into_avx2(src, dst, q_len, kv_len);
+                return;
+            }
+        }
+    }
+    softmax_scores_into_scalar(src, dst, q_len, kv_len);
 }
 
 #[inline]
@@ -1033,7 +1376,11 @@ pub fn softmax_scores_inplace_scalar(scores: &mut [f32], q_len: usize, kv_len: u
 
 #[inline]
 pub fn softmax_scores_inplace(scores: &mut [f32], q_len: usize, kv_len: usize) {
-    if q_len == 0 || kv_len == 0 {
+    let total = match q_len.checked_mul(kv_len) {
+        Some(t) if t > 0 => t,
+        _ => return,
+    };
+    if scores.len() < total {
         return;
     }
     #[cfg(target_arch = "x86_64")]
@@ -1050,16 +1397,25 @@ pub fn softmax_scores_inplace(scores: &mut [f32], q_len: usize, kv_len: usize) {
 
 #[inline]
 pub fn softmax(x: &Tensor2) -> Tensor2 {
-    let mut out = x.clone();
-    softmax_inplace(&mut out);
+    let mut out = Tensor2::zeros(x.shape);
+    softmax_into(x, &mut out);
     out
 }
 
 #[inline]
 pub fn softmax_into(x: &Tensor2, out: &mut Tensor2) {
-    out.copy_from_slice(&x.data);
+    let d = x.shape[1];
+    if d == 0 || x.data.is_empty() {
+        out.shape = x.shape;
+        out.data.clear();
+        return;
+    }
+    let total_len = x.shape[0] * d;
+    if out.data.len() != total_len {
+        out.data.resize(total_len, 0.0);
+    }
     out.shape = x.shape;
-    softmax_inplace(out);
+    softmax_scores_into(&x.data, &mut out.data, x.shape[0], d);
 }
 
 #[inline]

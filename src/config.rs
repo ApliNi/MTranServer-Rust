@@ -43,11 +43,6 @@ pub struct Cli {
     #[arg(long, env = "MT_CACHE_SIZE", default_value_t = 2000)]
     pub cache_size: usize,
 
-    /// Fullwidth Chinese punctuation. Bare `--fullwidth-zh-punctuation` or
-    /// `--fullwidth-zh-punctuation=false` both work.
-    #[arg(long, env = "MT_FULLWIDTH_ZH_PUNCTUATION", default_value_t = true, num_args = 0..=1, default_missing_value = "true", value_parser = boolish())]
-    pub fullwidth_zh_punctuation: bool,
-
     /// Preprocess source symbols before translation: rewrite in-word
     /// hyphens, camelCase, and snake_case splits into plain words so the
     /// model produces clean output for out-of-vocabulary identifiers.
@@ -195,7 +190,6 @@ pub struct Config {
     /// Interval between update checks in seconds; `0` = check once at startup.
     pub model_update_interval_secs: u64,
     pub cache_size: usize,
-    pub fullwidth_zh_punctuation: bool,
     /// Language pairs ("from-to") that stay resident forever.
     /// The special value "all" keeps every available model resident.
     pub keep_models: Vec<String>,
@@ -554,7 +548,6 @@ pub fn init(cli: Cli) {
         check_model_update,
         model_update_interval_secs,
         cache_size,
-        fullwidth_zh_punctuation: cli.fullwidth_zh_punctuation,
         keep_models: resolve_keep_models_pairs(&cli.keep_models),
         keep_top_n,
         max_loaded_models,

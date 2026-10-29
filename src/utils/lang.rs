@@ -362,6 +362,64 @@ pub fn append_split_sentence_separator(out: &mut String, sep: &str) {
     }
     out.push_str(sep);
 }
+/// Check if target language requires inter-word spacing (e.g. Western/Latin/Cyrillic/Greek/Semitic/Indic).
+/// Returns false for continuous script languages like Chinese, Japanese, Thai.
+pub fn lang_needs_word_space(lang: Option<&str>) -> bool {
+    let Some(lang) = lang else {
+        return false;
+    };
+    let trimmed = lang.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    // 1. Check loaded rule profile if available
+    if let Some(profile) = crate::engine::rules::RuleRegistry::global().get(trimmed) {
+        return profile.word_boundary;
+    }
+    // 2. Fallback check by language code prefix
+    let base = trimmed
+        .split(&['-', '_'][..])
+        .next()
+        .unwrap_or(trimmed);
+    !matches!(
+        base.to_ascii_lowercase().as_str(),
+        "zh" | "ja" | "th" | "km" | "lo" | "my"
+    )
+}
+
+/// Check if string ends with a strong sentence-ending punctuation mark (., !, ?, :, ;),
+/// optionally followed by closing quotes or brackets.
+#[inline]
+pub fn ends_with_strong_punctuation(s: &str) -> bool {
+    let trimmed = s.trim_end_matches(['"', '\'', '”', '’', ')', ']', '}', '»', '›', '」', '』']);
+    trimmed.ends_with(['.', '!', '?', ':', ';', '。', '！', '？', '：', '；', '…'])
+}
+
+/// Check if string starts with a sentence-starting token (letter, digit, backtick, variable, tag),
+/// optionally preceded by opening quotes or brackets.
+#[inline]
+pub fn starts_with_sentence_starter(s: &str) -> bool {
+    let trimmed = s.trim_start_matches(['"', '\'', '“', '‘', '(', '[', '{', '«', '‹']);
+    trimmed.starts_with(|c: char| c.is_alphanumeric() || c == '`' || c == '$' || c == '<')
+}
+
+/// Check if an adaptive halfwidth space should be inserted between adjacent sentences during reassembly.
+pub fn should_insert_adaptive_space(prev_text: &str, next_text: &str, lang: Option<&str>) -> bool {
+    if prev_text.is_empty() || next_text.is_empty() {
+        return false;
+    }
+    if prev_text.ends_with(char::is_whitespace) || next_text.starts_with(char::is_whitespace) {
+        return false;
+    }
+    let needs_spacing = match lang {
+        Some(l) => lang_needs_word_space(Some(l)),
+        None => next_text.trim_start().starts_with(|c: char| c.is_ascii_alphanumeric()),
+    };
+    if !needs_spacing {
+        return false;
+    }
+    ends_with_strong_punctuation(prev_text) && starts_with_sentence_starter(next_text)
+}
 
 #[cfg(test)]
 mod tests {
@@ -471,5 +529,29 @@ mod tests {
         let mut s = "First sentence.".to_string();
         append_split_sentence_separator(&mut s, " ");
         assert_eq!(s, "First sentence. ");
+    }
+    #[test]
+    fn test_adaptive_sentence_spacing() {
+        assert!(should_insert_adaptive_space("Good morning!", "Is the meeting started?", Some("en")));
+        assert!(should_insert_adaptive_space("Good morning!", "`cargo test`", Some("en")));
+        assert!(should_insert_adaptive_space("Good morning!", "{username}", Some("en")));
+        assert!(should_insert_adaptive_space("Good morning!\"", "Next sentence.", Some("en")));
+        assert!(should_insert_adaptive_space("First sentence.", "Second sentence.", Some("en")));
+        assert!(should_insert_adaptive_space("Question?", "Answer.", Some("es")));
+        assert!(should_insert_adaptive_space("Colons:", "Details.", Some("fr")));
+        assert!(should_insert_adaptive_space("Semi;", "Next.", Some("de")));
+
+        // Already has space or newline
+        assert!(!should_insert_adaptive_space("Good morning! ", "Is the meeting started?", Some("en")));
+        assert!(!should_insert_adaptive_space("Good morning!\n", "Is the meeting started?", Some("en")));
+        assert!(!should_insert_adaptive_space("Good morning!", " Is the meeting started?", Some("en")));
+
+        // Target language is CJK / continuous
+        assert!(!should_insert_adaptive_space("早上好！", "开会了吗？", Some("zh")));
+        assert!(!should_insert_adaptive_space("おはよう！", "元気ですか？", Some("ja")));
+
+        // Weak punctuation or no punctuation
+        assert!(!should_insert_adaptive_space("Hello,", "world.", Some("en")));
+        assert!(!should_insert_adaptive_space("Hello", "world.", Some("en")));
     }
 }

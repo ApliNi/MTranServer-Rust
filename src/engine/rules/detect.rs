@@ -307,6 +307,7 @@ struct ScriptStats {
     has_german_eszett: bool,
     has_spanish_unique: bool,
     has_portuguese_tilde: bool,
+    has_french_unique: bool,
     scand_ae_oe: usize,      // æ, ø
     scand_a_o_umlaut: usize, // ä, ö
 }
@@ -481,6 +482,8 @@ fn scan_script_stats(text: &str, model: &CompiledDetectionModel) -> ScriptStats 
                 stats.has_spanish_unique = true;
             } else if model.latin.is_pt_tilde(c) {
                 stats.has_portuguese_tilde = true;
+            } else if model.latin.is_fr_unique(c) {
+                stats.has_french_unique = true;
             } else if model.latin.is_scand_ae_oe(c) {
                 stats.scand_ae_oe += 1;
             } else if model.latin.is_scand_a_o_umlaut(c) {
@@ -959,6 +962,9 @@ pub fn detect_text_language_with_model_and_confidence(
     if stats.has_turkish {
         return ("tr", 1.0);
     }
+    if stats.has_french_unique {
+        return ("fr", 1.0);
+    }
     if stats.has_german_eszett {
         return ("de", 1.0);
     }
@@ -1210,6 +1216,28 @@ pub fn map_detected_code_to_static(code: &str) -> &'static str {
     }
 }
 #[inline]
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if haystack.len() < needle.len() {
+        return false;
+    }
+    let n_bytes = needle.as_bytes();
+    let first = n_bytes[0].to_ascii_lowercase();
+    let h_bytes = haystack.as_bytes();
+    let max_idx = h_bytes.len() - n_bytes.len();
+    for i in 0..=max_idx {
+        if h_bytes[i].to_ascii_lowercase() == first
+            && h_bytes[i..i + n_bytes.len()].eq_ignore_ascii_case(n_bytes)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+#[inline]
 fn match_latin_lexical(
     text: &str,
     latin: &super::detection_model::CompiledLatinDetection,
@@ -1217,10 +1245,21 @@ fn match_latin_lexical(
     let mut best: Option<(usize, &'static str)> = None;
 
     let mut check_tok = |tok: &str| -> bool {
-        if let Ok(idx) = latin
-            .latin_lexical_words
-            .binary_search_by(|(w, _, _)| w.as_str().cmp(tok))
-        {
+        let mut buf = [0u8; 32];
+        let search_res = if tok.len() <= 32 && tok.is_ascii() {
+            let b = &mut buf[..tok.len()];
+            b.copy_from_slice(tok.as_bytes());
+            b.make_ascii_lowercase();
+            let lower_tok = unsafe { std::str::from_utf8_unchecked(b) };
+            latin
+                .latin_lexical_words
+                .binary_search_by(|(w, _, _)| w.as_str().cmp(lower_tok))
+        } else {
+            latin
+                .latin_lexical_words
+                .binary_search_by(|(w, _, _)| cmp_ignore_unicode_case(w.as_str(), tok))
+        };
+        if let Ok(idx) = search_res {
             let (_, lang, prio) = latin.latin_lexical_words[idx];
             if prio == 0 {
                 best = Some((0, lang));
@@ -1255,7 +1294,12 @@ fn match_latin_lexical(
     }
 
     for (phrase, lang, prio) in latin.latin_lexical_phrases.iter() {
-        if best.map_or(true, |(p, _)| *prio < p) && text.contains(phrase.as_str()) {
+        if best.map_or(true, |(p, _)| *prio < p)
+            && (text.contains(phrase.as_str()) || contains_ignore_ascii_case(text, phrase.as_str()))
+        {
+            if *prio == 0 {
+                return Some(lang);
+            }
             best = Some((*prio, lang));
         }
     }

@@ -17,12 +17,12 @@
   {
     "target": "zh-Hans",
     "input": "Run `cargo test --release` to verify all test suites before submitting PR.",
-    "output": "在`cargo test --release`提交 PR 之前，先运行以验证所有测试套件。"
+    "output": "在 `cargo test --release` 提交 PR 之前，先运行以验证所有测试套件。"
   },
   {
     "target": "zh-Hans",
     "input": "Welcome, {username}! Your order #{order_id} has shipped to {address}.",
-    "output": "欢迎，{用户名}！您的订单 #{order_id} 已发货至 {address}。"
+    "output": "欢迎，{username}！您的订单 #{order_id} 已发货至 {address}。"
   },
   {
     "target": "zh-Hans",
@@ -32,7 +32,7 @@
   {
     "target": "en",
     "input": "早上好！请问今天下午两点的例会还在三楼会议室召开吗？",
-    "output": "Good morning!Is the meeting held at 2 p.m. in the conference room on the third floor?"
+    "output": "Good morning! Is the meeting held at 2 p.m. in the conference room on the third floor?"
   },
   {
     "target": "en",
@@ -312,12 +312,12 @@
   {
     "target": "zh-Hans",
     "input": "Configuration template: export PORT=${HTTP_PORT:-8080} and set SECRET=\"{{APP_SECRET_KEY}}\" with max_retries=%d.",
-    "output": "配置模板：导出 PORT=${HTTP_PORT:-8080}，并将 SECRET=\"{{APP_SECRET_KEY}}\" 设置为 max_retries=%d。"
+    "output": "配置模板：导出 PORT=${HTTP_PORT:-8080}，并将 SECRET=\"{{APP_SECRET_KEY}}\" 与 max_retries=%d 进行设置。"
   },
   {
     "target": "en",
     "input": "请参阅《计算机程序设计艺术》第三卷与“快速排序”章节。（详见附录 A）",
-    "output": "See Computer Programming Art Volume 3 and the Quick Sort Chapter.(See Appendix A for details)"
+    "output": "See Computer Programming Art Volume 3 and the Quick Sort Chapter. (See Appendix A for details)"
   },
   {
     "target": "en",
@@ -337,7 +337,7 @@
   {
     "target": "nl",
     "input": "Welcome {user}! Your order #{order_id} has shipped with **free delivery**.",
-    "output": "Welkom {gebruiker}! Uw bestelling #{order_id} heeft verzonden met **gratis levering**."
+    "output": "Welkom {user}! Uw bestelling #{order_id} heeft verzonden met **gratis levering**."
   },
   {
     "target": "pl",
@@ -567,7 +567,7 @@
   {
     "target": "zh-Hans",
     "input": "| Method | Route | Description |\n|:---|:---:|---:|\n| `GET` | `/api/v1/health` | Health Check |\n| `POST` | `/api/v1/translate` | Translate |",
-    "output": "| 方法 | 道路 | 描述 |\n|:---|:---:|---:|\n| `GET`| `/api/v1/health`健康检查 |\n|`POST` |`/api/v1/translate` 翻译 |"
+    "output": "| 方法 | 道路 | 描述 |\n|:---|:---:|---:|\n| `GET`| `/api/v1/health` 健康检查 |\n|`POST` |`/api/v1/translate` 翻译 |"
   },
   {
     "target": "zh-Hans",
@@ -582,17 +582,17 @@
   {
     "target": "zh-Hans",
     "input": "## System Overview\n\nThe server runs at `127.0.0.1:8080`. Please visit <a href=\"/dashboard\">Dashboard</a>.\n\n- Status: **Online** ✅\n- Memory: 512 MB / 16 GB\n- Uptime: 99.99%\n\n> Note: Backups occur at `02:00 UTC` daily.",
-    "output": "## 系统概述\n\n服务器运行在`127.0.0.1:8080`<a href=\"/dashboard\">。请访问仪表板</a>。\n\n- 状态：**在线** ✅\n- 内存：512 MB / 16 GB\n- 正常运行时间：99.99%\n\n> 注意：备份每天`02:00 UTC`发生。"
+    "output": "## 系统概述\n\n服务器运行在 `127.0.0.1:8080`<a href=\"/dashboard\">。请访问仪表板</a>。\n\n- 状态：**在线** ✅\n- 内存：512 MB / 16 GB\n- 正常运行时间：99.99%\n\n> 注意：备份每天 `02:00 UTC` 发生。"
   },
   {
     "target": "en",
     "input": "使用 Rust 2024 构建 0 内存泄漏的系统。在 100% 负载下，QPS 提升了 3.5 倍。",
-    "output": "Build a system with 0 memory leaks using Rust 2024.At 100% load, QPS is increased by 3.5 times."
+    "output": "Build a system with 0 memory leaks using Rust 2024. At 100% load, QPS is increased by 3.5 times."
   },
   {
     "target": "en",
     "input": "总监指出：“《软件工程规范》第 5.2 节【错误处理】必须严格遵循。”（参见附录 B）",
-    "output": "The Director noted that “the Software Engineering Specification, Section 5.2 [Mishanding] must be strictly followed.”(See Appendix B)"
+    "output": "The Director noted that “the Software Engineering Specification, Section 5.2 [Mishanding] must be strictly followed.” (See Appendix B)"
   },
   {
     "target": "de",
@@ -617,7 +617,7 @@
   {
     "target": "es",
     "input": "¡Bienvenido al sistema! ¿Cómo puedo ayudarte hoy? Por favor, ingresa tu consulta aquí.",
-    "output": "¡Bienvenido al sistema! ¿Cómo puedo ayudarte hoy? Por favor, tu consulta aquí ingresa."
+    "output": "¡Bienvenido al sistema! ¿Cómo puedo ayudarte hoy? Por favor, ingresa tu consulta aquí."
   },
   {
     "target": "es",

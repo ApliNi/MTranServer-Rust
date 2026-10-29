@@ -75,3 +75,13 @@ conditional_end_prefixes = [
 
 [detection]
 distinctive_chars = ['ñ', 'Ñ', '¡', '¿']
+substring_terms = [
+    "buenos días", "buenos dias", "buenas tardes", "buenas noches",
+    "muchas gracias", "por favor",
+]
+whole_words = [
+    "también", "después", "cuando", "siempre", "ahora", "donde",
+    "porque", "aunque", "entonces", "todos", "todas", "hacer",
+    "hasta", "desde", "sobre", "entre", "pero", "español",
+    "española", "hola", "gracias",
+]

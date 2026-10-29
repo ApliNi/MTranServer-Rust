@@ -169,7 +169,6 @@ mod tests {
             check_model_update: true,
             model_update_interval_secs: 0,
             cache_size: 2000,
-            fullwidth_zh_punctuation: true,
             keep_models: Vec::new(),
             keep_top_n: 0,
             max_loaded_models: 0,

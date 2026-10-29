@@ -10,7 +10,6 @@ pub use detect::{detect_dominant_language, detect_text_language, detect_text_lan
 pub use detection_model::CompiledDetectionModel;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1238,7 +1237,7 @@ impl RuleRegistry {
             .collect();
 
         let builtins: HashMap<String, Arc<LanguageRuleProfile>> = files
-            .into_par_iter()
+            .into_iter()
             .filter_map(|file| {
                 let embedded = BuiltinRules::get(&file)?;
                 let content = std::str::from_utf8(&embedded.data).ok()?;

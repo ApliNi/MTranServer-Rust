@@ -63,3 +63,21 @@ nonbreaking_prefixes = [
 conditional_end_prefixes = [
     "etc.", "p. ex.", "ex.", "éd.", "vol.",
 ]
+
+[detection]
+unique_chars = ['œ', 'Œ']
+distinctive_chars = ['ù', 'Ù']
+substring_terms = [
+    "s'il vous plaît", "s'il vous plait", "s'il te plaît", "s'il te plait",
+    "merci beaucoup", "c'est-à-dire", "au revoir", "à bientôt",
+    "s'il", "c'est", "n'est", "qu'il", "qu'elle", "qu'on", "d'un", "d'une",
+    "s’il", "c’est", "n’est", "qu’il", "qu’elle", "qu’on", "d’un", "d’une",
+    "aujourd'hui", "aujourd’hui",
+]
+whole_words = [
+    "bonjour", "bonsoir", "merci", "avec", "dans", "pour", "vous", "nous",
+    "sont", "cette", "aussi", "très", "toujours", "jamais", "été", "être",
+    "faire", "leur", "leurs", "notre", "votre", "beaucoup", "pourquoi",
+    "comment", "combien", "mais", "donc", "où", "chez", "sous", "elle",
+    "elles", "ceux", "celle", "celles", "celui", "plaît", "plait",
+]

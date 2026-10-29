@@ -65,3 +65,17 @@ nonbreaking_prefixes = [
 conditional_end_prefixes = [
     "ecc.", "es.", "art.", "all.", "dott.", "sig.",
 ]
+
+[detection]
+substring_terms = [
+    "buon pomeriggio", "buongiorno", "buona sera", "buona notte",
+    "arrivederci", "grazie mille", "per favore",
+]
+whole_words = [
+    "questo", "questa", "questi", "queste", "quello", "quella",
+    "quelli", "quelle", "anche", "ancora", "sempre", "dopo",
+    "molto", "perché", "mentre", "senza", "essere", "hanno",
+    "sono", "della", "dello", "degli", "delle", "nella",
+    "nello", "negli", "nelle", "italiano", "italiana", "grazie",
+    "ciao",
+]
