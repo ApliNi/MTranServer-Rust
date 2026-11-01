@@ -166,6 +166,8 @@ pub struct SyntaxRules {
     pub clustering_gap_threshold: usize,
     #[serde(default = "default_head_direction")]
     pub head_direction: String,
+    #[serde(default)]
+    pub ordinal_period: bool,
 }
 
 pub fn default_clustering_gap_threshold() -> usize {
@@ -181,6 +183,7 @@ impl Default for SyntaxRules {
         Self {
             clustering_gap_threshold: default_clustering_gap_threshold(),
             head_direction: default_head_direction(),
+            ordinal_period: false,
         }
     }
 }

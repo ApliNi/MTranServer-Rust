@@ -215,10 +215,110 @@ fn match_template_or_var_placeholder(text: &str, start: usize) -> Option<usize> 
     None
 }
 
-/// Hide emoji characters and template interpolation variables (`{{...}}`, `{var}`, `${VAR}`) behind `[EE<i>]` placeholders.
+/// Helper to detect C / POSIX / Python-style printf format placeholders (`%s`, `%d`, `%.2f`, `%%`, etc.)
+/// starting at byte index `start`.
+/// Returns the end byte index if a valid format specifier is matched.
+pub(crate) fn match_printf_placeholder(text: &str, start: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    if start >= len || bytes[start] != b'%' {
+        return None;
+    }
+    if start + 1 >= len {
+        return None;
+    }
+
+    // 1. Escaped percent: %%
+    if bytes[start + 1] == b'%' {
+        return Some(start + 2);
+    }
+
+    let mut i = start + 1;
+
+    // 2. Python mapping key: %(name)
+    if bytes[i] == b'(' {
+        let pos = bytes[i + 1..].iter().position(|&b| b == b')')?;
+        let key = &bytes[i + 1..i + 1 + pos];
+        if !key.is_empty() && key.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_') {
+            i = i + 1 + pos + 1;
+        } else {
+            return None;
+        }
+    } else {
+        // POSIX positional argument: %1$
+        let mut p = i;
+        while p < len && bytes[p].is_ascii_digit() {
+            p += 1;
+        }
+        if p > i && p < len && bytes[p] == b'$' {
+            i = p + 1;
+        }
+    }
+
+    // 3. Flags: zero or more of -, +, ' ', #, 0, '
+    while i < len && matches!(bytes[i], b'-' | b'+' | b' ' | b'#' | b'0' | b'\'') {
+        i += 1;
+    }
+
+    // 4. Width: digits or *
+    if i < len && bytes[i] == b'*' {
+        i += 1;
+    } else {
+        while i < len && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+    }
+
+    // 5. Precision: . followed by digits or *
+    if i < len && bytes[i] == b'.' {
+        i += 1;
+        if i < len && bytes[i] == b'*' {
+            i += 1;
+        } else {
+            while i < len && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+        }
+    }
+
+    // 6. Length modifier: hh, h, ll, l, j, z, t, L
+    if i < len {
+        if bytes[i..].starts_with(b"hh") || bytes[i..].starts_with(b"ll") {
+            i += 2;
+        } else if matches!(bytes[i], b'h' | b'l' | b'j' | b'z' | b't' | b'L') {
+            i += 1;
+        }
+    }
+
+    // 7. Conversion Specifier
+    if i >= len {
+        return None;
+    }
+    let spec = bytes[i];
+    let is_specifier = matches!(
+        spec,
+        b's' | b'd' | b'i' | b'o' | b'u' | b'x' | b'X' | b'f' | b'F' | b'e' | b'E' | b'g' | b'G' | b'a' | b'A' | b'c' | b'p'
+    );
+    if !is_specifier {
+        return None;
+    }
+
+    // 8. Terminal boundary defense: character immediately following specifier cannot be ASCII alphanumeric or '_'
+    let end = i + 1;
+    if end < len {
+        let next_b = bytes[end];
+        if next_b.is_ascii_alphanumeric() || next_b == b'_' {
+            return None;
+        }
+    }
+
+    Some(end)
+}
+
+/// Hide emoji characters and template interpolation variables (`{{...}}`, `{var}`, `${VAR}`, `%s`/`%d`) behind `[EE<i>]` placeholders.
 pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
     let has_emoji_lead = text.as_bytes().iter().any(|&b| b >= 0xE2);
-    let has_template_or_var = text.contains('{') || text.contains('$');
+    let has_template_or_var = text.contains('{') || text.contains('$') || text.contains('%');
     if !has_emoji_lead && !has_template_or_var {
         return (Cow::Borrowed(text), vec![]);
     }
@@ -231,20 +331,33 @@ pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
     let mut last = 0;
 
     while i < len {
-        if has_template_or_var
-            && (bytes[i] == b'{' || (bytes[i] == b'$' && i + 1 < len && bytes[i + 1] == b'{'))
-        {
-            if let Some(end) = match_template_or_var_placeholder(text, i) {
-                if i > last {
-                    clean.push_str(&text[last..i]);
+        if has_template_or_var {
+            if bytes[i] == b'{' || (bytes[i] == b'$' && i + 1 < len && bytes[i + 1] == b'{') {
+                if let Some(end) = match_template_or_var_placeholder(text, i) {
+                    if i > last {
+                        clean.push_str(&text[last..i]);
+                    }
+                    clean.push_str("[EE");
+                    push_usize(&mut clean, replacements.len());
+                    clean.push(']');
+                    replacements.push(text[i..end].to_string());
+                    i = end;
+                    last = end;
+                    continue;
                 }
-                clean.push_str("[EE");
-                push_usize(&mut clean, replacements.len());
-                clean.push(']');
-                replacements.push(text[i..end].to_string());
-                i = end;
-                last = end;
-                continue;
+            } else if bytes[i] == b'%' {
+                if let Some(end) = match_printf_placeholder(text, i) {
+                    if i > last {
+                        clean.push_str(&text[last..i]);
+                    }
+                    clean.push_str("[EE");
+                    push_usize(&mut clean, replacements.len());
+                    clean.push(']');
+                    replacements.push(text[i..end].to_string());
+                    i = end;
+                    last = end;
+                    continue;
+                }
             }
         }
 
@@ -1019,6 +1132,36 @@ mod tests {
 
         // Negative cases that should not be matched as placeholders
         let neg = "This is not { a variable } nor empty {} nor json {\"key\": 1} nor {a, b}.";
+        let (neg_clean, neg_repls) = hide_emojis(neg);
+        assert_eq!(neg_clean, neg);
+        assert!(neg_repls.is_empty());
+    }
+
+    #[test]
+    fn test_printf_format_placeholders() {
+        let input = "User %s consumed %d quota, remaining %.2f%%. Retries=%d, pos=%1$08d, name=%(user_name)s.";
+        let (clean, repls) = hide_emojis(input);
+        assert_eq!(
+            clean,
+            "User [EE0] consumed [EE1] quota, remaining [EE2][EE3]. Retries=[EE4], pos=[EE5], name=[EE6]."
+        );
+        assert_eq!(
+            repls,
+            vec![
+                "%s".to_string(),
+                "%d".to_string(),
+                "%.2f".to_string(),
+                "%%".to_string(),
+                "%d".to_string(),
+                "%1$08d".to_string(),
+                "%(user_name)s".to_string(),
+            ]
+        );
+        let restored = restore_emojis_with_source_and_spans(&clean, &repls, input, &mut []);
+        assert_eq!(restored, input);
+
+        // Negative cases (natural language percentages)
+        let neg = "50% off and 10% discount on 100% load.";
         let (neg_clean, neg_repls) = hide_emojis(neg);
         assert_eq!(neg_clean, neg);
         assert!(neg_repls.is_empty());

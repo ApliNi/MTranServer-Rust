@@ -1521,6 +1521,10 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
         // HTML tags (`<...>`) and entities (`&...;`) are kept verbatim: their
         // punctuation/attributes must not be fullwidth-converted.
         if b == b'<' {
+            if let Some(block_end) = html_pre_code_block_end(bytes, i) {
+                i = block_end;
+                continue;
+            }
             if let Some(tag_end) = html_tag_end(bytes, i) {
                 i = tag_end;
                 continue;
@@ -1780,6 +1784,12 @@ pub(crate) fn apply_pangu_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std::b
 
     while i < bytes.len() {
         if bytes[i] == b'<' {
+            if let Some(block_end) = html_pre_code_block_end(bytes, i) {
+                prev_char = None;
+                i = block_end;
+                prev_end = i;
+                continue;
+            }
             if let Some(tag_end) = html_tag_end(bytes, i) {
                 prev_char = None;
                 i = tag_end;
@@ -1945,6 +1955,12 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
         let b = bytes[i];
 
         if b == b'<' {
+            if let Some(block_end) = html_pre_code_block_end(bytes, i) {
+                prev_char = None;
+                i = block_end;
+                prev_end = i;
+                continue;
+            }
             if let Some(tag_end) = html_tag_end(bytes, i) {
                 prev_char = None;
                 i = tag_end;
@@ -2225,6 +2241,11 @@ pub fn apply_truecase_western<'a>(text: std::borrow::Cow<'a, str>, to_lang: &str
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'<' {
+            if let Some(block_end) = html_pre_code_block_end(bytes, i) {
+                i = block_end;
+                at_sentence_start = false;
+                continue;
+            }
             if let Some(tag_end) = html_tag_end(bytes, i) {
                 i = tag_end;
                 continue;
@@ -2365,6 +2386,76 @@ fn markdown_code_end(bytes: &[u8], start: usize) -> Option<usize> {
     }
     None
 }
+/// End index of YAML frontmatter block starting at index 0 (`---`).
+#[inline]
+fn yaml_frontmatter_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if start != 0 || bytes.len() < 3 || !bytes.starts_with(b"---") {
+        return None;
+    }
+    let after_dashes = if bytes.len() > 3 && bytes[3] == b'\n' {
+        4
+    } else if bytes.len() > 4 && bytes[3] == b'\r' && bytes[4] == b'\n' {
+        5
+    } else {
+        return None;
+    };
+
+    let rest = &bytes[after_dashes..];
+    let mut idx = 0;
+    while idx < rest.len() {
+        if rest[idx..].starts_with(b"\n---") || rest[idx..].starts_with(b"\r\n---") {
+            let offset = if rest[idx] == b'\r' { 5 } else { 4 };
+            let end_dashes = after_dashes + idx + offset;
+            if end_dashes == bytes.len()
+                || (end_dashes < bytes.len() && matches!(bytes[end_dashes], b'\r' | b'\n'))
+            {
+                let mut end = end_dashes;
+                if end < bytes.len() && bytes[end] == b'\r' {
+                    end += 1;
+                }
+                if end < bytes.len() && bytes[end] == b'\n' {
+                    end += 1;
+                }
+                return Some(end);
+            }
+        }
+        idx += 1;
+    }
+    None
+}
+
+/// End index (one past the closing `</pre>` or `</code>`) of an HTML `<pre>` or `<code>` block.
+#[inline]
+fn html_pre_code_block_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if start + 4 > bytes.len() || bytes[start] != b'<' {
+        return None;
+    }
+    let rest = &bytes[start + 1..];
+    let (tag_len, close_tag) = if rest.len() >= 3
+        && rest[..3].eq_ignore_ascii_case(b"pre")
+        && (rest.len() == 3 || matches!(rest[3], b' ' | b'>' | b'/' | b'\t' | b'\n' | b'\r'))
+    {
+        (3, b"</pre>".as_slice())
+    } else if rest.len() >= 4
+        && rest[..4].eq_ignore_ascii_case(b"code")
+        && (rest.len() == 4 || matches!(rest[4], b' ' | b'>' | b'/' | b'\t' | b'\n' | b'\r'))
+    {
+        (4, b"</code>".as_slice())
+    } else {
+        return None;
+    };
+
+    let search_slice = &bytes[start + 1 + tag_len..];
+    let limit = search_slice.len().min(100_000);
+    for idx in 0..limit {
+        if search_slice[idx..].len() >= close_tag.len()
+            && search_slice[idx..idx + close_tag.len()].eq_ignore_ascii_case(close_tag)
+        {
+            return Some(start + 1 + tag_len + idx + close_tag.len());
+        }
+    }
+    None
+}
 
 /// End index (one past the closing `>`) of the HTML tag starting at `start`,
 /// where `bytes[start] == b'<'`. Returns `None` when there is no closing `>`
@@ -2501,6 +2592,16 @@ pub fn postprocess_typography<'a>(
     text: std::borrow::Cow<'a, str>,
     to_lang: &str,
 ) -> std::borrow::Cow<'a, str> {
+    // If text begins with YAML frontmatter, isolate and preserve frontmatter without alteration
+    if let Some(fm_end) = yaml_frontmatter_end(text.as_ref().as_bytes(), 0) {
+        let (fm, body) = text.as_ref().split_at(fm_end);
+        let processed_body = postprocess_typography(std::borrow::Cow::Borrowed(body), to_lang);
+        let mut combined = String::with_capacity(fm.len() + processed_body.len());
+        combined.push_str(fm);
+        combined.push_str(&processed_body);
+        return std::borrow::Cow::Owned(combined);
+    }
+
     let mut cur = text;
 
     // 1. Query LanguageRuleProfile for target language
@@ -2637,6 +2738,10 @@ pub fn format_french_spacing<'a>(text: std::borrow::Cow<'a, str>) -> std::borrow
         let b = bytes[i];
 
         if b == b'<' {
+            if let Some(block_end) = html_pre_code_block_end(bytes, i) {
+                i = block_end;
+                continue;
+            }
             if let Some(tag_end) = html_tag_end(bytes, i) {
                 i = tag_end;
                 continue;
@@ -2860,6 +2965,10 @@ pub fn format_spanish_inverted<'a>(text: std::borrow::Cow<'a, str>) -> std::borr
         let b = bytes[i];
 
         if b == b'<' {
+            if let Some(block_end) = html_pre_code_block_end(bytes, i) {
+                i = block_end;
+                continue;
+            }
             if let Some(tag_end) = html_tag_end(bytes, i) {
                 i = tag_end;
                 continue;
@@ -3059,6 +3168,10 @@ pub fn apply_quote_style<'a>(
         let b = bytes[i];
 
         if b == b'<' {
+            if let Some(block_end) = html_pre_code_block_end(bytes, i) {
+                i = block_end;
+                continue;
+            }
             if let Some(tag_end) = html_tag_end(bytes, i) {
                 i = tag_end;
                 continue;

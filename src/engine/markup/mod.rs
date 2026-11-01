@@ -43,6 +43,25 @@ pub use document::{
 use std::ops::Range;
 use crate::engine::rules::SyntaxRules;
 
+/// Check if an opening markup tag represents an intra-word/character-level element
+/// (e.g. `<sub>`, `<sup>`, `<ruby>`, `<rt>`, `<rp>`) that should not be expanded to word boundaries.
+#[inline]
+pub fn is_intra_word_markup(open_markup: &str) -> bool {
+    let tag = open_markup.trim();
+    if !tag.starts_with('<') {
+        return false;
+    }
+    let rest = &tag[1..];
+    let tag_name = rest
+        .split(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/')
+        .next()
+        .unwrap_or("");
+    matches!(
+        tag_name.to_ascii_lowercase().as_str(),
+        "sub" | "sup" | "ruby" | "rt" | "rp"
+    )
+}
+
 /// An inline markup annotation (e.g. `<b>...</b>`, `<a href="...">...</a>`, or `**...**`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarkupSpan {
@@ -58,6 +77,8 @@ pub struct MarkupSpan {
     pub is_self_closing: bool,
     /// Original nesting depth in the parse tree (outer = 0, inner > 0).
     pub depth: usize,
+    /// Whether this markup represents an intra-word/character-level element (e.g. `<sub>`, `<sup>`, `<ruby>`).
+    pub is_intra_word: bool,
 }
 
 impl MarkupSpan {
@@ -68,6 +89,7 @@ impl MarkupSpan {
         close_markup: String,
         depth: usize,
     ) -> Self {
+        let is_intra_word = is_intra_word_markup(&open_markup);
         Self {
             source_range,
             target_range: None,
@@ -75,6 +97,7 @@ impl MarkupSpan {
             close_markup,
             is_self_closing: false,
             depth,
+            is_intra_word,
         }
     }
 
@@ -87,6 +110,7 @@ impl MarkupSpan {
             close_markup: String::new(),
             is_self_closing: true,
             depth,
+            is_intra_word: false,
         }
     }
 }
@@ -522,7 +546,7 @@ pub fn snap_markup_spans_to_word_boundaries(spans: &mut [MarkupSpan], target_tex
         return;
     }
     for span in spans.iter_mut() {
-        if span.is_self_closing {
+        if span.is_self_closing || span.is_intra_word {
             continue;
         }
         if let Some(target_range) = &span.target_range {
@@ -724,6 +748,7 @@ mod tests {
                 close_markup: "</a>".to_string(),
                 is_self_closing: false,
                 depth: 0,
+                is_intra_word: false,
             },
             MarkupSpan {
                 source_range: 5..15,
@@ -732,6 +757,7 @@ mod tests {
                 close_markup: "</b>".to_string(),
                 is_self_closing: false,
                 depth: 1,
+                is_intra_word: false,
             },
         ];
 
@@ -753,6 +779,7 @@ mod tests {
                 close_markup: "</b>".to_string(),
                 is_self_closing: false,
                 depth: 1,
+                is_intra_word: false,
             },
             MarkupSpan {
                 source_range: 0..15,
@@ -761,6 +788,7 @@ mod tests {
                 close_markup: "</a>".to_string(),
                 is_self_closing: false,
                 depth: 0,
+                is_intra_word: false,
             },
         ];
 
@@ -790,6 +818,7 @@ mod tests {
                 close_markup: "</b>".to_string(),
                 is_self_closing: false,
                 depth: 1,
+                is_intra_word: false,
             },
             MarkupSpan {
                 source_range: 0..15,
@@ -798,6 +827,7 @@ mod tests {
                 close_markup: "</a>".to_string(),
                 is_self_closing: false,
                 depth: 0,
+                is_intra_word: false,
             },
         ];
 
@@ -819,6 +849,7 @@ mod tests {
             close_markup: "</b>".to_string(),
             is_self_closing: false,
             depth: 0,
+            is_intra_word: false,
         }];
 
         snap_markup_spans_to_word_boundaries(&mut spans, text);
@@ -837,12 +868,31 @@ mod tests {
             close_markup: "</i>".to_string(),
             is_self_closing: false,
             depth: 0,
+            is_intra_word: false,
         }];
 
         snap_markup_spans_to_word_boundaries(&mut cjk_spans, cjk_text);
         let rendered_cjk = render_projected_markup(cjk_text, &cjk_spans);
         assert_eq!(rendered_cjk, "这是<i>测试</i>代码。");
+
+        // Verify intra-word tags (sub, sup) are not snapped outwards to word boundaries
+        let formula_text = "H2O and CO2";
+        let sub_start = formula_text.find('2').unwrap();
+        let sub_end = sub_start + 1; // exactly '2' in "H2O"
+        let mut formula_spans = vec![MarkupSpan::new_paired(
+            0..1,
+            "<sub>".to_string(),
+            "</sub>".to_string(),
+            0,
+        )];
+        formula_spans[0].target_range = Some(sub_start..sub_end);
+        assert!(formula_spans[0].is_intra_word);
+
+        snap_markup_spans_to_word_boundaries(&mut formula_spans, formula_text);
+        let rendered_formula = render_projected_markup(formula_text, &formula_spans);
+        assert_eq!(rendered_formula, "H<sub>2</sub>O and CO2");
     }
+
     #[test]
     fn test_cluster_1d_major_edge_cases() {
         assert_eq!(cluster_1d_major(&[], None), (0, 0));

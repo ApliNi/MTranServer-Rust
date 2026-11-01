@@ -642,6 +642,7 @@ impl CompiledDetectionModel {
         if let Some(prof) = profiles.get("sq") {
             if let Some(det) = &prof.detection {
                 sq_terms.extend_from_slice(&det.substring_terms);
+                sq_terms.extend_from_slice(&det.whole_words);
             }
         }
         if let Some(prof) = profiles.get("af") {

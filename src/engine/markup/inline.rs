@@ -8,7 +8,7 @@
 //! yielding a clean plain text suitable for neural translation (Marian NMT)
 //! and a sequence of [`MarkupSpan`]s that map onto exact byte offsets in the plain text.
 
-use super::MarkupSpan;
+use super::{is_cjk_character, MarkupSpan};
 
 /// Configuration options controlling which inline syntaxes to recognize.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,12 +273,22 @@ fn extract_inline_impl(
                         plain.push_str(&inner_plain);
                         let end_offset = plain.len();
 
-                        spans.push(MarkupSpan::new_paired(
+                        let mut span = MarkupSpan::new_paired(
                             start_offset..end_offset,
                             raw_tag.to_string(),
                             close_tag_raw.to_string(),
                             depth,
-                        ));
+                        );
+                        if !span.is_intra_word {
+                            let before_tag = if i > 0 { text[..i].chars().next_back() } else { None };
+                            let after_tag = text[tag_end + close_end_rel..].chars().next();
+                            if let (Some(b), Some(a)) = (before_tag, after_tag) {
+                                if b.is_alphanumeric() && a.is_alphanumeric() && !is_cjk_character(b) && !is_cjk_character(a) {
+                                    span.is_intra_word = true;
+                                }
+                            }
+                        }
+                        spans.push(span);
 
                         for mut span in inner_spans {
                             span.source_range.start += start_offset;

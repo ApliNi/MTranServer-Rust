@@ -52,7 +52,7 @@
   {
     "target": "en",
     "input": "尊敬的用户 %s，您今日已消耗 %d 点配额，剩余额度为 %.2f%%。",
-    "output": "Dear user %s, you have consumed %d the quota today, and the remaining amount is %.2f%%."
+    "output": "Dear User %s, you have consumed the %d quota today with a %.2f%% remaining amount."
   },
   {
     "target": "de",
@@ -242,7 +242,7 @@
   {
     "target": "zh-Hans",
     "input": "---\ntitle: \"Regression Benchmark\"\nauthor: \"Core Team\"\nversion: 1.0\n---\nHere begins the actual article content.",
-    "output": "---\ntitle: “Regression Benchmark”\nauthor: “Core Team”\nversion: 1.0\n---\n此处开始提供实际文章内容。"
+    "output": "---\ntitle: \"Regression Benchmark\"\nauthor: \"Core Team\"\nversion: 1.0\n---\n此处开始提供实际文章内容。"
   },
   {
     "target": "zh-Hans",
@@ -277,7 +277,7 @@
   {
     "target": "en",
     "input": "El Dr. García llegó temprano hoy. ¿Cómo está usted? ¡Todo está perfecto!",
-    "output": "El Dr. García llegó temprano hoy. How are you? Everything is perfect!"
+    "output": "Dr. Garcia arrived early today. How are you? Everything is perfect!"
   },
   {
     "target": "ko",
@@ -532,7 +532,7 @@
   {
     "target": "en",
     "input": "Ky shërbim ofron përkthim me shpejtësi të lartë dhe saktësi maksimale.",
-    "output": "Ky shërbim ofron përkthim me shpejtësi të lartë dhe saktesimale."
+    "output": "This service provides high-speed translation and maximum accuracy."
   },
   {
     "target": "en",
@@ -547,7 +547,7 @@
   {
     "target": "zh-Hans",
     "input": "<pre><code class=\"language-rust\">let <b>greeting</b> = \"Hello, World!\";</code></pre>",
-    "output": "<pre><code class=\"language-rust\">let <b>greeting</b> = “Hello，World！”；</code></pre>"
+    "output": "<pre><code class=\"language-rust\">let <b>greeting</b> = \"Hello, World!\";</code></pre>"
   },
   {
     "target": "zh-Hans",
@@ -562,12 +562,12 @@
   {
     "target": "zh-Hans",
     "input": "Chemical formula: H<sub>2</sub>O and CO<sub>2</sub>; Mathematical exponent: 2<sup>10</sup> = 1024.",
-    "output": "化学式：<sub>H2O</sub>和<sub>CO2</sub>；数学指数<sup>：210-</sup>104。"
+    "output": "化学式：H2<sub>O</sub>和 CO<sub>2</sub>；数学指数<sup>：210-</sup>104。"
   },
   {
     "target": "zh-Hans",
     "input": "| Method | Route | Description |\n|:---|:---:|---:|\n| `GET` | `/api/v1/health` | Health Check |\n| `POST` | `/api/v1/translate` | Translate |",
-    "output": "| 方法 | 道路 | 描述 |\n|:---|:---:|---:|\n| `GET`| `/api/v1/health` 健康检查 |\n|`POST` |`/api/v1/translate` 翻译 |"
+    "output": "| 方法 | 道路 | 描述 |\n|:---|:---:|---:|\n| `GET` | `/api/v1/health` | 健康检查 |\n| `POST` | `/api/v1/translate` | 翻译 |"
   },
   {
     "target": "zh-Hans",
@@ -597,22 +597,22 @@
   {
     "target": "de",
     "input": "\"Das neue Release enthält wichtige Verbesserungen\", erklärte Dr. Weber, \"z. B. eine um 40% reduzierte Latenz usw.\"",
-    "output": "„Das neue Release enthält wichtige Verbesserungen“, erklärte Dr. Weber, „z. B. eine um 40% reduzierte Latenz usw.“"
+    "output": "\"Das neue Release enthält wichtige Verbesserungen\", erklärte Dr. Weber, \"z. B. eine um 40% reduzierte Latenz usw.\""
   },
   {
     "target": "en",
     "input": "Das Bundesverfassungsgericht entschied: „Die Reform tritt am 1. Januar in Kraft.“",
-    "output": "The Federal Constitutional Court ruled: “The reform will take place on 1. Januar in Kraft.“"
+    "output": "The Federal Constitutional Court ruled: “The reform will come into force on 1 January.”"
   },
   {
     "target": "fr",
     "input": "« Ce nouveau protocole est essentiel », a souligné M. Laurent : « Pourquoi ne pas l'adopter dès maintenant ? »",
-    "output": "« Ce nouveau protocole est essentiel », un M. soulignés. Laurent : « Pourquoi ne pas l'adopter dès maintenant ? »"
+    "output": "« Ce nouveau protocole est essentiel », a souligné M. Laurent : « Pourquoi ne pas l'adopter dès maintenant ? »"
   },
   {
     "target": "en",
     "input": "Le Dr. Martin et Mme. Lefebvre habitent à Paris (France) ; ils étudient les énergies renouvelables.",
-    "output": "Le Dr. Martin et Mme. Lefebvre live in Paris (France); they study renewable energy."
+    "output": "Dr. Martin and Mrs. Lefebvre live in Paris (France); they study renewable energy."
   },
   {
     "target": "es",
@@ -622,7 +622,7 @@
   {
     "target": "es",
     "input": "¿Cuándo comenzará la reunión técnica? ¡No olvides traer los informes de la Dra. Morales!",
-    "output": "¿Cuándo comenzará la reunión técnica? ¡No olvides traer los informes de la Dra. ¡¡ Morales!"
+    "output": "¿Cuándo comenzará la reunión técnica? ¡No olvides traer los informes de la Dra. Morales!"
   },
   {
     "target": "ru",

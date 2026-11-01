@@ -1047,8 +1047,10 @@ pub fn detect_text_language_with_model_and_confidence(
         } else {
             0.1
         };
-        if info.is_reliable() || conf >= min_conf {
+        if info.is_reliable() {
             return (mapped, conf.max(0.6));
+        } else if conf >= min_conf {
+            return (mapped, conf);
         }
     }
 
@@ -1317,6 +1319,10 @@ mod tests {
         assert_eq!(detect_text_language("Hello world"), "en");
         assert_eq!(detect_text_language("こんにちは世界"), "ja");
         assert_eq!(detect_text_language("你好世界"), "zh-Hans");
+        assert_eq!(
+            detect_text_language("Ky shërbim ofron përkthim me shpejtësi të lartë dhe saktësi maksimale."),
+            "sq"
+        );
     }
 
     #[test]

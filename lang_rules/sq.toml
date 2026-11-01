@@ -74,3 +74,6 @@ conditional_end_prefixes = [
 
 [detection]
 substring_terms = ["Përshëndetje", "përshëndetje", "Tiranë", "Faleminderit"]
+whole_words = [
+    "është", "dhe", "nuk", "një", "për", "shumë", "nga", "shqip", "shqiptar"
+]

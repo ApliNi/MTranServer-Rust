@@ -495,6 +495,27 @@ fn should_split_western(
                 }
             }
         }
+        // Ordinal numbers with period (e.g. German "am 1. Januar", "20. Jahrhundert", "vom 1. bis...")
+        if word_start < pos
+            && text.get(word_start..pos).is_some_and(|s| s.chars().all(|ch| ch.is_ascii_digit()))
+            && profile.is_some_and(|p| p.syntax.ordinal_period)
+        {
+            let before = text.get(..word_start).unwrap_or("").trim_end();
+            let is_sentence_start = before.is_empty()
+                || before.ends_with('\n')
+                || before.ends_with('\r')
+                || before.ends_with('.')
+                || before.ends_with('!')
+                || before.ends_with('?');
+            if !is_sentence_start {
+                let remainder = text.get(pos + 1..).unwrap_or("").trim_start();
+                if let Some(next_c) = remainder.chars().next() {
+                    if !is_closing_bracket_or_quote(next_c) && !is_high_frequency_sentence_starter(remainder) {
+                        return false;
+                    }
+                }
+            }
+        }
 
         // 1. Decimals: digit before and digit after (e.g. 49.99, 3.14)
         let prev_digit = pos > 0 && bytes.get(pos - 1).is_some_and(|b| b.is_ascii_digit());

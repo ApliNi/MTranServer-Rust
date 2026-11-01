@@ -300,8 +300,16 @@ pub async fn detect_multiple_languages(text: &str) -> Vec<TextSegment> {
     };
 
 
-    // Split by sentence boundaries (mirrors Intl.Segmenter)
-    let spans = split_sentence_spans(text);
+    // Split by language-aware sentence boundaries
+    let split_sents = crate::engine::markup::split_sentences_with_lang(text, Some(&effective_fallback));
+    let spans: Vec<(usize, usize)> = if split_sents.is_empty() {
+        split_sentence_spans(text)
+    } else {
+        split_sents.into_iter().map(|s| {
+            let r = s.full_range();
+            (r.start, r.end)
+        }).collect()
+    };
     if spans.len() <= 1 {
         return vec![TextSegment {
             text: text.to_string(),
@@ -327,7 +335,7 @@ pub async fn detect_multiple_languages(text: &str) -> Vec<TextSegment> {
                 .unwrap_or_else(|| effective_fallback.clone())
         } else {
             let (detected_lang, confidence) = detect_language_from(sentence, MAX_DETECTION_BYTES).await;
-            if confidence >= DEFAULT_CONFIDENCE_THRESHOLD && !detected_lang.is_empty() && detected_lang != "un" {
+            let candidate = if confidence >= DEFAULT_CONFIDENCE_THRESHOLD && !detected_lang.is_empty() && detected_lang != "un" {
                 detected_lang
             } else {
                 let dom = detect_dominant_language(sentence);
@@ -336,11 +344,39 @@ pub async fn detect_multiple_languages(text: &str) -> Vec<TextSegment> {
                 } else if !detected_lang.is_empty() && detected_lang != "un" {
                     detected_lang
                 } else {
-                    previous_lang
-                        .as_ref()
-                        .cloned()
-                        .unwrap_or_else(|| effective_fallback.clone())
+                    effective_fallback.clone()
                 }
+            };
+
+            // Document-level dominant language prior / smoothing:
+            // A sentence within a document should not arbitrarily diverge from the document's
+            // supported dominant language (effective_fallback) unless:
+            // 1) It has a different script (e.g. CJK / Cyrillic / Arabic vs Latin), OR
+            // 2) It is a high-confidence, supported language within the same script (>= 0.75).
+            if candidate != effective_fallback {
+                let candidate_supported = crate::models::is_supported_language(&candidate) || candidate == "en";
+                let fallback_supported = crate::models::is_supported_language(&effective_fallback) || effective_fallback == "en";
+
+                let cand_is_cjk = crate::utils::lang::is_cjk_code(&candidate);
+                let fall_is_cjk = crate::utils::lang::is_cjk_code(&effective_fallback);
+                let is_cyrillic = |c: char| matches!(c as u32, 0x0400..=0x052F);
+                let cand_is_cyrillic = sentence.chars().any(is_cyrillic);
+                let fall_is_cyrillic = matches!(effective_fallback.as_str(), "ru" | "uk" | "be" | "bg" | "sr");
+                let script_differs = (cand_is_cjk != fall_is_cjk) || (cand_is_cyrillic != fall_is_cyrillic);
+
+                if !script_differs {
+                    if !candidate_supported && fallback_supported {
+                        effective_fallback.clone()
+                    } else if confidence < 0.75 && fallback_supported {
+                        previous_lang.as_ref().cloned().unwrap_or_else(|| effective_fallback.clone())
+                    } else {
+                        candidate
+                    }
+                } else {
+                    candidate
+                }
+            } else {
+                candidate
             }
         };
 
@@ -727,6 +763,7 @@ mod tests {
         assert_eq!(segments[0].language, "en");
         assert_eq!(segments[1].language, "es");
     }
+
     #[test]
     fn test_detect_dominant_language_sync() {
         assert_eq!(detect_dominant_language("こんにちは世界"), "ja");
