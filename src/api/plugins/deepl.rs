@@ -31,22 +31,13 @@ pub async fn translate(Json(body): Json<DeeplRequest>) -> Result<Json<DeeplRespo
     let source_lang = parse_source_lang(body.source_lang.as_deref());
     let target_lang = parse_target_lang(&body.target_lang, "target_lang")?;
 
-    let parse_formats = body.tag_handling.as_deref().and_then(|th| {
-        if th.eq_ignore_ascii_case("html") || th.eq_ignore_ascii_case("xml") {
-            Some(crate::config::ParseFormats {
-                html: true,
-                md: false,
-            })
-        } else {
-            None
-        }
-    });
+    let parse_markup = resolve_deepl_tag_handling(body.tag_handling.as_deref());
 
-    let results = service::translate_batch_with_pivot_formats(
+    let results = service::translate_batch_with_pivot_markup(
         &source_lang,
         &target_lang,
         body.text.as_slice(),
-        parse_formats,
+        parse_markup,
     )
     .await?;
 
@@ -60,6 +51,18 @@ pub async fn translate(Json(body): Json<DeeplRequest>) -> Result<Json<DeeplRespo
     }
 
     Ok(Json(DeeplResponse { translations }))
+}
+
+pub(crate) fn resolve_deepl_tag_handling(tag_handling: Option<&str>) -> Option<bool> {
+    tag_handling.and_then(|th| {
+        if th.eq_ignore_ascii_case("html") || th.eq_ignore_ascii_case("xml") {
+            Some(true)
+        } else if th.eq_ignore_ascii_case("off") {
+            Some(false)
+        } else {
+            None
+        }
+    })
 }
 
 pub(crate) fn convert_bcp47_to_deepl(lang: &str) -> Cow<'static, str> {
@@ -156,5 +159,16 @@ mod tests {
             req_array.text,
             OneOrMany::Many(vec!["Hello".to_string(), "world".to_string()])
         );
+    }
+    #[test]
+    fn test_resolve_deepl_tag_handling() {
+        assert_eq!(resolve_deepl_tag_handling(Some("html")), Some(true));
+        assert_eq!(resolve_deepl_tag_handling(Some("HTML")), Some(true));
+        assert_eq!(resolve_deepl_tag_handling(Some("xml")), Some(true));
+        assert_eq!(resolve_deepl_tag_handling(Some("XML")), Some(true));
+        assert_eq!(resolve_deepl_tag_handling(Some("off")), Some(false));
+        assert_eq!(resolve_deepl_tag_handling(Some("OFF")), Some(false));
+        assert_eq!(resolve_deepl_tag_handling(Some("other")), None);
+        assert_eq!(resolve_deepl_tag_handling(None), None);
     }
 }

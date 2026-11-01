@@ -1,5 +1,4 @@
 use std::ops::Range;
-use mtranserver_lib::config::ParseFormats;
 use mtranserver_lib::engine::markup::document::translate_document_with_alignment;
 use mtranserver_test::loader::load_text;
 
@@ -57,7 +56,7 @@ fn mock_translate(text: &str) -> MockTranslateResult {
 #[test]
 fn test_composite_document_preserves_structure() {
     let doc = load_text("documents/composite.md");
-    let translated = translate_document_with_alignment(&doc, ParseFormats::ALL, mock_translate);
+    let translated = translate_document_with_alignment(&doc, mock_translate);
 
     // Verify Frontmatter is preserved
     assert!(translated.contains("title: \"A Complex HTML + Markdown Mashup\""));

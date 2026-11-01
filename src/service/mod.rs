@@ -793,19 +793,30 @@ pub async fn translate_with_pivot(
     to_lang: &str,
     text: &str,
 ) -> Result<String, ServiceError> {
-    translate_with_pivot_formats(from_lang, to_lang, text, None).await
+    translate_with_pivot_markup(from_lang, to_lang, text, None).await
 }
 
-/// Translate a single text with caller-specified parse formats.
+/// Translate a single text with caller-specified parse markup flag.
+pub async fn translate_with_pivot_markup(
+    from_lang: &str,
+    to_lang: &str,
+    text: &str,
+    parse_markup: Option<bool>,
+) -> Result<String, ServiceError> {
+    translate_with_pivot_timed_markup(from_lang, to_lang, text, parse_markup)
+        .await
+        .map(|out| out.text.into_string())
+}
+
+/// Downward-compatible alias for `translate_with_pivot_markup`.
+#[inline]
 pub async fn translate_with_pivot_formats(
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    parse_formats: Option<config::ParseFormats>,
+    parse_markup: Option<bool>,
 ) -> Result<String, ServiceError> {
-    translate_with_pivot_timed_formats(from_lang, to_lang, text, parse_formats)
-        .await
-        .map(|out| out.text.into_string())
+    translate_with_pivot_markup(from_lang, to_lang, text, parse_markup).await
 }
 
 /// Translate a single text with pivot routing, returning both the translated text
@@ -815,20 +826,31 @@ pub async fn translate_with_pivot_detected(
     to_lang: &str,
     text: &str,
 ) -> Result<(String, String), ServiceError> {
-    translate_with_pivot_detected_formats(from_lang, to_lang, text, None).await
+    translate_with_pivot_detected_markup(from_lang, to_lang, text, None).await
 }
 
-/// Translate a single text with caller-specified parse formats, returning both
+/// Translate a single text with caller-specified parse markup flag, returning both
 /// the translated text and the effective source language code.
+pub async fn translate_with_pivot_detected_markup(
+    from_lang: &str,
+    to_lang: &str,
+    text: &str,
+    parse_markup: Option<bool>,
+) -> Result<(String, String), ServiceError> {
+    translate_with_pivot_timed_markup(from_lang, to_lang, text, parse_markup)
+        .await
+        .map(|out| (out.text.into_string(), out.detected_language))
+}
+
+/// Downward-compatible alias for `translate_with_pivot_detected_markup`.
+#[inline]
 pub async fn translate_with_pivot_detected_formats(
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    parse_formats: Option<config::ParseFormats>,
+    parse_markup: Option<bool>,
 ) -> Result<(String, String), ServiceError> {
-    translate_with_pivot_timed_formats(from_lang, to_lang, text, parse_formats)
-        .await
-        .map(|out| (out.text.into_string(), out.detected_language))
+    translate_with_pivot_detected_markup(from_lang, to_lang, text, parse_markup).await
 }
 
 /// Translate a single text with pivot routing, measuring translation duration and model load duration.
@@ -837,15 +859,15 @@ pub async fn translate_with_pivot_timed(
     to_lang: &str,
     text: &str,
 ) -> Result<TranslationOutput, ServiceError> {
-    translate_with_pivot_timed_formats(from_lang, to_lang, text, None).await
+    translate_with_pivot_timed_markup(from_lang, to_lang, text, None).await
 }
 
-/// Translate a single text with caller-specified parse formats, measuring translation duration and model load duration.
-pub async fn translate_with_pivot_timed_formats(
+/// Translate a single text with caller-specified parse markup flag, measuring translation duration and model load duration.
+pub async fn translate_with_pivot_timed_markup(
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    parse_formats: Option<config::ParseFormats>,
+    parse_markup: Option<bool>,
 ) -> Result<TranslationOutput, ServiceError> {
     if text.is_empty() {
         return Ok(TranslationOutput {
@@ -869,11 +891,11 @@ pub async fn translate_with_pivot_timed_formats(
         });
     }
 
-    let effective_formats = parse_formats.unwrap_or_else(|| {
+    let effective_markup = parse_markup.unwrap_or_else(|| {
         if config::is_initialized() {
-            config::get().parse_formats
+            config::get().parse_markup
         } else {
-            config::ParseFormats::default()
+            true
         }
     });
     let max_sent_len = if config::is_initialized() {
@@ -882,17 +904,16 @@ pub async fn translate_with_pivot_timed_formats(
         512
     };
 
-    let has_markup = (effective_formats.has_html() && text.contains('<'))
-        || (effective_formats.has_md() && crate::engine::has_markdown_syntax(text));
+    let has_markup = effective_markup && (text.contains('<') || crate::engine::has_markdown_syntax(text));
     let is_short = has_markup || !crate::engine::text::exceeds_char_limit(text, max_sent_len);
     if from_lang != "auto" {
         let (engines, model_load_duration) = ensure_required_engines(from_lang, to_lang).await?;
         let (translated, translation_duration) = if is_short {
-            let (t, d) = translate_segment_with_engines(&engines, from_lang, to_lang, text, effective_formats).await?;
+            let (t, d) = translate_segment_with_engines(&engines, from_lang, to_lang, text, effective_markup).await?;
             (t.normalize_punctuation(to_lang), d)
         } else {
             // Long explicit-language text goes through segmentation.
-            let (t, d) = translate_long_text_with_engines(&engines, from_lang, to_lang, text, effective_formats).await?;
+            let (t, d) = translate_long_text_with_engines(&engines, from_lang, to_lang, text, effective_markup).await?;
             (normalize_output_punctuation(t, to_lang), d)
         };
         Ok(TranslationOutput {
@@ -935,10 +956,10 @@ pub async fn translate_with_pivot_timed_formats(
                 !is_short
             };
             let (final_text, translation_duration) = if is_long {
-                let (t, d) = translate_long_text_with_engines(&engines, &effective_from, to_lang, text, effective_formats).await?;
+                let (t, d) = translate_long_text_with_engines(&engines, &effective_from, to_lang, text, effective_markup).await?;
                 (normalize_output_punctuation(t, to_lang), d)
             } else {
-                let (t, d) = translate_segment_with_engines(&engines, &effective_from, to_lang, text, effective_formats).await?;
+                let (t, d) = translate_segment_with_engines(&engines, &effective_from, to_lang, text, effective_markup).await?;
                 (t.normalize_punctuation(to_lang), d)
             };
 
@@ -976,7 +997,7 @@ pub async fn translate_with_pivot_timed_formats(
                 } else {
                     let seg_lang = supported_or_en(&seg.language);
                     let translated = if let Some(engines) = engine_map.get(&seg_lang) {
-                        match translate_segment_with_engines(engines, &seg_lang, to_lang, &seg.text, effective_formats).await {
+                        match translate_segment_with_engines(engines, &seg_lang, to_lang, &seg.text, effective_markup).await {
                             Ok((t, d)) => {
                                 total_translation_duration += d;
                                 t
@@ -987,7 +1008,7 @@ pub async fn translate_with_pivot_timed_formats(
                             }
                         }
                     } else {
-                        match translate_segment(&seg_lang, to_lang, &seg.text, effective_formats).await {
+                        match translate_segment(&seg_lang, to_lang, &seg.text, effective_markup).await {
                             Ok((t, d)) => {
                                 total_translation_duration += d;
                                 TranslatedText::String(t)
@@ -1017,13 +1038,24 @@ pub async fn translate_with_pivot_timed_formats(
     }
 }
 
-/// Translate a batch of texts with pivot routing and caller-specified parse formats.
+/// Downward-compatible alias for `translate_with_pivot_timed_markup`.
+#[inline]
+pub async fn translate_with_pivot_timed_formats(
+    from_lang: &str,
+    to_lang: &str,
+    text: &str,
+    parse_markup: Option<bool>,
+) -> Result<TranslationOutput, ServiceError> {
+    translate_with_pivot_timed_markup(from_lang, to_lang, text, parse_markup).await
+}
+
+/// Translate a batch of texts with pivot routing and caller-specified parse markup flag.
 /// Returns a vector of tuples containing `(translated_text, detected_language)` aligned with the input `texts`.
-pub async fn translate_batch_with_pivot_formats(
+pub async fn translate_batch_with_pivot_markup(
     from_lang: &str,
     to_lang: &str,
     texts: &[String],
-    parse_formats: Option<config::ParseFormats>,
+    parse_markup: Option<bool>,
 ) -> Result<Vec<(String, String)>, ServiceError> {
     if texts.is_empty() {
         return Ok(Vec::new());
@@ -1052,11 +1084,11 @@ pub async fn translate_batch_with_pivot_formats(
     }
 
     if from_lang != "auto" {
-        let effective_formats = parse_formats.unwrap_or_else(|| {
+        let effective_markup = parse_markup.unwrap_or_else(|| {
             if config::is_initialized() {
-                config::get().parse_formats
+                config::get().parse_markup
             } else {
-                config::ParseFormats::default()
+                true
             }
         });
         let limit = if config::is_initialized() {
@@ -1080,7 +1112,7 @@ pub async fn translate_batch_with_pivot_formats(
                     from_lang,
                     to_lang,
                     text,
-                    effective_formats,
+                    effective_markup,
                     limit,
                 )
                 .await
@@ -1100,7 +1132,7 @@ pub async fn translate_batch_with_pivot_formats(
     } else {
         let futures_iter: Vec<_> = texts
             .iter()
-            .map(|text| translate_batch_item_auto(to_lang, text, parse_formats))
+            .map(|text| translate_batch_item_auto(to_lang, text, parse_markup))
             .collect();
         futures::stream::iter(futures_iter)
             .buffered(concurrency)
@@ -1111,20 +1143,30 @@ pub async fn translate_batch_with_pivot_formats(
     }
 }
 
+/// Downward-compatible alias for `translate_batch_with_pivot_markup`.
+#[inline]
+pub async fn translate_batch_with_pivot_formats(
+    from_lang: &str,
+    to_lang: &str,
+    texts: &[String],
+    parse_markup: Option<bool>,
+) -> Result<Vec<(String, String)>, ServiceError> {
+    translate_batch_with_pivot_markup(from_lang, to_lang, texts, parse_markup).await
+}
+
 async fn translate_batch_item_with_engines(
     engines: &PreparedEngines,
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    effective_formats: config::ParseFormats,
+    effective_markup: bool,
     limit: usize,
 ) -> Result<String, ServiceError> {
     if text.is_empty() {
         return Ok(String::new());
     }
 
-    let has_markup = (effective_formats.has_html() && text.contains('<'))
-        || (effective_formats.has_md() && crate::engine::has_markdown_syntax(text));
+    let has_markup = effective_markup && (text.contains('<') || crate::engine::has_markdown_syntax(text));
     let is_short = has_markup || !crate::engine::text::exceeds_char_limit(text, limit);
 
     let translated = if is_short {
@@ -1133,7 +1175,7 @@ async fn translate_batch_item_with_engines(
             from_lang,
             to_lang,
             text,
-            effective_formats,
+            effective_markup,
         )
         .await?;
         t.normalize_punctuation(to_lang)
@@ -1143,7 +1185,7 @@ async fn translate_batch_item_with_engines(
             from_lang,
             to_lang,
             text,
-            effective_formats,
+            effective_markup,
         )
         .await?;
         normalize_output_punctuation(t, to_lang)
@@ -1155,12 +1197,12 @@ async fn translate_batch_item_with_engines(
 async fn translate_batch_item_auto(
     to_lang: &str,
     text: &str,
-    parse_formats: Option<config::ParseFormats>,
+    parse_markup: Option<bool>,
 ) -> Result<(String, String), ServiceError> {
     if text.is_empty() {
         return Ok((String::new(), String::new()));
     }
-    translate_with_pivot_detected_formats("auto", to_lang, text, parse_formats).await
+    translate_with_pivot_detected_markup("auto", to_lang, text, parse_markup).await
 }
 
 /// Convenience alias for batch translation with automatic pivot routing.
@@ -1179,7 +1221,7 @@ pub async fn translate_batch_with_pivot(
     to_lang: &str,
     texts: &[String],
 ) -> Result<Vec<(String, String)>, ServiceError> {
-    translate_batch_with_pivot_formats(from_lang, to_lang, texts, None).await
+    translate_batch_with_pivot_markup(from_lang, to_lang, texts, None).await
 }
 
 /// Translate a single segment using prepared engines (may use pivot).
@@ -1188,7 +1230,7 @@ async fn translate_segment_with_engines(
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    effective_formats: config::ParseFormats,
+    effective_markup: bool,
 ) -> Result<(TranslatedText, Duration), ServiceError> {
     if text.is_empty() {
         return Ok((TranslatedText::default(), Duration::ZERO));
@@ -1199,15 +1241,14 @@ async fn translate_segment_with_engines(
             Ok((TranslatedText::String(text.to_string()), Duration::ZERO))
         }
         PreparedEngines::Direct(engine) => {
-            translate_single_language_text_with_engine(engine, from_lang, to_lang, text, effective_formats).await
+            translate_single_language_text_with_engine(engine, from_lang, to_lang, text, effective_markup).await
         }
         PreparedEngines::Pivot(first, second) => {
-            let formats_str = effective_formats.as_static_str();
             let rules_version = crate::engine::rules::RuleRegistry::global().version();
             let cache_key = crate::utils::cache::enabled().then(|| {
                 crate::utils::cache::sync_rules_version(rules_version);
                 crate::utils::cache::compute_key_with_version(
-                    &[from_lang, to_lang, text, formats_str],
+                    &[from_lang, to_lang, text, if effective_markup { "1" } else { "0" }],
                     rules_version,
                 )
             });
@@ -1218,9 +1259,9 @@ async fn translate_segment_with_engines(
             }
 
             let (intermediate, d1) =
-                translate_single_language_text_with_engine(first, from_lang, "en", text, effective_formats).await?;
+                translate_single_language_text_with_engine(first, from_lang, "en", text, effective_markup).await?;
             let (final_text, d2) =
-                translate_single_language_text_with_engine(second, "en", to_lang, &intermediate, effective_formats).await?;
+                translate_single_language_text_with_engine(second, "en", to_lang, &intermediate, effective_markup).await?;
             if let Some(key) = cache_key {
                 match &final_text {
                     TranslatedText::Cached(arc) => crate::utils::cache::set(key, arc.clone()),
@@ -1237,7 +1278,7 @@ pub async fn translate_segment(
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    effective_formats: config::ParseFormats,
+    effective_markup: bool,
 ) -> Result<(String, Duration), ServiceError> {
     if text.is_empty() {
         return Ok((String::new(), Duration::ZERO));
@@ -1247,7 +1288,7 @@ pub async fn translate_segment(
     }
     let (engines, _) = ensure_required_engines(from_lang, to_lang).await?;
     let (translated, duration) =
-        translate_segment_with_engines(&engines, from_lang, to_lang, text, effective_formats).await?;
+        translate_segment_with_engines(&engines, from_lang, to_lang, text, effective_markup).await?;
     Ok((translated.into_string(), duration))
 }
 
@@ -1257,18 +1298,17 @@ async fn translate_single_language_text_with_engine(
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    effective_formats: config::ParseFormats,
+    effective_markup: bool,
 ) -> Result<(TranslatedText, Duration), ServiceError> {
     engine.record_call();
 
-    // Cache key incorporates effective_formats and language rules version to prevent cache collisions
+    // Cache key incorporates parse markup flag and language rules version to prevent cache collisions
     // between different parse modes or stale cache when rules are updated/reloaded.
-    let formats_str = effective_formats.as_static_str();
     let rules_version = crate::engine::rules::RuleRegistry::global().version();
     let cache_key = crate::utils::cache::enabled().then(|| {
         crate::utils::cache::sync_rules_version(rules_version);
         crate::utils::cache::compute_key_with_version(
-            &[from_lang, to_lang, text, formats_str],
+            &[from_lang, to_lang, text, if effective_markup { "1" } else { "0" }],
             rules_version,
         )
     });
@@ -1286,7 +1326,7 @@ async fn translate_single_language_text_with_engine(
     let text_owned = text.to_string();
     let (result, duration) = tokio::task::spawn_blocking(move || {
         let t0 = Instant::now();
-        let res = engine_ref.translate_with_formats(&text_owned, effective_formats);
+        let res = engine_ref.translate_with_markup(&text_owned, effective_markup);
         let dur = t0.elapsed();
         (res, dur)
     })
@@ -1300,14 +1340,13 @@ async fn translate_single_language_text_with_engine(
     Ok((TranslatedText::String(result), duration))
 }
 
-
 /// Translate a long text by splitting into sentences using prepared engines.
 pub async fn translate_long_text_with_engines(
     engines: &PreparedEngines,
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    effective_formats: config::ParseFormats,
+    effective_markup: bool,
 ) -> Result<(String, Duration), ServiceError> {
     if from_lang == to_lang {
         return Ok((text.to_string(), Duration::ZERO));
@@ -1334,7 +1373,7 @@ pub async fn translate_long_text_with_engines(
             from_lang,
             to_lang,
             &sent.text,
-            effective_formats,
+            effective_markup,
         )
         .await?;
         let mut out = t.into_string();
@@ -1347,7 +1386,6 @@ pub async fn translate_long_text_with_engines(
     let mut results: Vec<Option<TranslatedText>> = (0..num_sentences).map(|_| None).collect();
     let mut uncached_indices: Vec<usize> = Vec::new();
 
-    let formats_str = effective_formats.as_static_str();
     let rules_version = crate::engine::rules::RuleRegistry::global().version();
     let cache_enabled = crate::utils::cache::enabled();
     if cache_enabled {
@@ -1363,7 +1401,7 @@ pub async fn translate_long_text_with_engines(
 
         if cache_enabled {
             let key = crate::utils::cache::compute_key_with_version(
-                &[from_lang, to_lang, &sent.text, formats_str],
+                &[from_lang, to_lang, &sent.text, if effective_markup { "1" } else { "0" }],
                 rules_version,
             );
             if let Some(cached) = crate::utils::cache::read_cached(key) {
@@ -1384,7 +1422,7 @@ pub async fn translate_long_text_with_engines(
                 from_lang,
                 to_lang,
                 &sentences[idx].text,
-                effective_formats,
+                effective_markup,
             )
             .await?;
             results[idx] = Some(t);
@@ -1415,7 +1453,7 @@ pub async fn translate_long_text_with_engines(
                         from_lang,
                         to_lang,
                         &sent_text,
-                        effective_formats,
+                        effective_markup,
                     )
                     .await;
                     (idx, res)
@@ -1456,10 +1494,10 @@ pub async fn translate_long_text(
     from_lang: &str,
     to_lang: &str,
     text: &str,
-    effective_formats: config::ParseFormats,
+    effective_markup: bool,
 ) -> Result<(String, Duration), ServiceError> {
     let (engines, _) = ensure_required_engines(from_lang, to_lang).await?;
-    translate_long_text_with_engines(&engines, from_lang, to_lang, text, effective_formats).await
+    translate_long_text_with_engines(&engines, from_lang, to_lang, text, effective_markup).await
 }
 
 /// Format Chinese punctuation for `zh` targets: map ASCII punctuation to its
@@ -3449,7 +3487,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_text_short_circuit() {
-        let auto_res = translate_with_pivot_timed_formats("auto", "zh", "", None)
+        let auto_res = translate_with_pivot_timed_markup("auto", "zh", "", None)
             .await
             .expect("empty auto text should succeed");
         assert_eq!(auto_res.text.as_str(), "");
@@ -3457,7 +3495,7 @@ mod tests {
         assert_eq!(auto_res.translation_duration, Duration::ZERO);
         assert_eq!(auto_res.model_load_duration, Duration::ZERO);
 
-        let explicit_res = translate_with_pivot_timed_formats("en", "zh", "", None)
+        let explicit_res = translate_with_pivot_timed_markup("en", "zh", "", None)
             .await
             .expect("empty explicit text should succeed");
         assert_eq!(explicit_res.text.as_str(), "");
@@ -3465,7 +3503,7 @@ mod tests {
         assert_eq!(explicit_res.translation_duration, Duration::ZERO);
         assert_eq!(explicit_res.model_load_duration, Duration::ZERO);
 
-        let seg_res = translate_segment("en", "zh", "", config::ParseFormats::default())
+        let seg_res = translate_segment("en", "zh", "", true)
             .await
             .expect("empty segment should succeed");
         assert_eq!(seg_res.0, "");

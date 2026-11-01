@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::time::Instant;
-use mtranserver_lib::config::{self, Config, ParseFormats};
+use mtranserver_lib::config::{self, Config};
 use mtranserver_lib::{engine, models, service, utils};
 use serde::{Deserialize, Serialize};
 
@@ -77,7 +77,7 @@ fn setup_service() {
         trust_proxy: false,
         log_retention_days: 7,
         preprocess_symbols: false,
-        parse_formats: ParseFormats::ALL,
+        parse_markup: true,
         profile: false,
         bench_qps_input_length: 128,
     };
@@ -680,7 +680,7 @@ async fn test_batch_and_long_text() {
 
     // 2. Long text translation (sentence splitting)
     let long_text = "The Marian NMT engine is exceptionally fast. It executes translation using 8-bit integer matrix multiplication. Memory consumption is minimized while retaining high translation quality across languages.";
-    let (long_translated, duration) = service::translate_long_text("en", "zh-Hans", long_text, ParseFormats::ALL).await.unwrap();
+    let (long_translated, duration) = service::translate_long_text("en", "zh-Hans", long_text, true).await.unwrap();
     println!("\n[长文本分句翻译 en -> zh-Hans] (耗时 {:?}):", duration);
     println!("  源文: {}", long_text);
     println!("  译文: {}", long_translated);

@@ -49,7 +49,7 @@ data/
 | `--offline` | `MT_OFFLINE` | `false` | 离线模式, 不下载或更新模型 |
 | `--ui` | `MT_ENABLE_UI` | `true` | 启用 Web UI |
 | `--preprocess-symbols` | `MT_PREPROCESS_SYMBOLS` | `false` | 符号预处理 (驼峰/连字符/下划线拆词) |
-| `--parse-formats` | `MT_PARSE_FORMATS` | `html,md` | 详见下方 [标记格式解析与投影](#标记格式解析与投影---parse-formats) |
+| `--parse-markup` | `MT_PARSE_MARKUP` | `true` | 标记格式解析与词对齐投影，详见下方 [标记格式保留](#标记格式保留---parse-markup) |
 | `--check-model-update` | `MT_CHECK_MODEL_UPDATE` | `true` | 模型更新检查, 使用时间参数 (如 `24h`、`1d`,) 定期检查 |
 | `--keep-models` | `MT_KEEP_MODELS` | — | 常驻内存不卸载的模型, 特殊值 `all` 表示全部常驻 |
 | `--keep-top-n` | `MT_KEEP_TOP_N` | `0` | 额外保留最常用的 N 个模型不卸载 |
@@ -96,18 +96,16 @@ data/
 ./MTranServer-Rust --keep-top-n 5
 ```
 
-### 标记格式解析与投影 `--parse-formats`
+### 标记格式保留 `--parse-markup`
 
-指定启用词对齐标记投影与结构保护的格式, 可选值:
-- `html,md`: 默认
-- `html`: 仅启用 HTML 标记解析与词对齐投影
-- `md`: 仅启用 Markdown 标记解析与词对齐投影
-- `false` 或 `0`: 关闭标记解析, 直接将原始文本透传给底层神经网络模型
+控制是否启用标记格式解析与词对齐投影:
+- `true` (默认): 自动识别并保护 HTML 标签、实体、Markdown 格式 (粗体/斜体/删除线/行内代码/链接/图片) 及结构化文档块 (Frontmatter/代码围栏/表格/引用块)，并通过词对齐动态投影回译文语序。兼容传入 `1`、`html`、`md`、`all` 等。
+- `false` 或 `0`、`none`、`raw`、`off`: 关闭标记解析, 直接将原始文本透传给底层神经网络模型。
 
 词对齐标记投影机制说明：
 - 语义完整性：将文档划分为块级句边界, 提取行内标记, 将干净整句送入 Marian Transformer 模型推理
 - 跨语言倒装投影：基于 Transformer 最后一层交叉注意力矩阵输出的实时 Token 词对齐, 将行内标记动态投影回译文中对应的位置
-- API 覆盖：客户端调用 `/translate` 时, 可通过请求体 JSON 传入 `parse` 覆盖后端 `--parse-formats` 设置
+- API 覆盖：客户端调用 `/translate` 时, 可通过请求体 JSON 传入 `parse` 覆盖后端 `--parse-markup` 设置
 
 ## API
 

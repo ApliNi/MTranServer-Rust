@@ -10,7 +10,7 @@ pub mod inline;
 pub mod split;
 pub mod document;
 
-pub use inline::{extract_inline_markup, extract_unified_inline, unescape_html_entities, InlineParseOptions};
+pub use inline::{extract_inline_markup, extract_unified_inline, unescape_html_entities};
 pub use split::{
     detect_dominant_lang, fuse_discourse_chunks_inplace, is_discourse_chunk_starter,
     process_split_sentences, reassemble_sentences, remap_spans_to_sentences,

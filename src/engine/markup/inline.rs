@@ -10,43 +10,6 @@
 
 use super::{is_cjk_character, MarkupSpan};
 
-/// Configuration options controlling which inline syntaxes to recognize.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InlineParseOptions {
-    /// Whether to parse HTML inline tags, void elements, atomic tags, and HTML entities.
-    pub parse_html: bool,
-    /// Whether to parse Markdown inline markup (links, images, bold, italic, strike, code).
-    pub parse_markdown: bool,
-}
-
-impl Default for InlineParseOptions {
-    fn default() -> Self {
-        Self {
-            parse_html: true,
-            parse_markdown: true,
-        }
-    }
-}
-
-impl InlineParseOptions {
-    /// Parse both HTML and Markdown inline markup.
-    pub const ALL: Self = Self {
-        parse_html: true,
-        parse_markdown: true,
-    };
-
-    /// Parse HTML tags and entities only, treating Markdown syntax as plain text.
-    pub const HTML_ONLY: Self = Self {
-        parse_html: true,
-        parse_markdown: false,
-    };
-
-    /// Parse Markdown inline syntax only, treating HTML tags and entities as plain text.
-    pub const MARKDOWN_ONLY: Self = Self {
-        parse_html: false,
-        parse_markdown: true,
-    };
-}
 
 /// HTML tags whose inner contents must be protected verbatim as atomic literals (not translated).
 #[inline]
@@ -115,20 +78,21 @@ pub fn is_recognized_inline_tag(tag_name: &str) -> bool {
     )
 }
 
-/// Extract unified inline markup spans from text using default settings (both HTML and Markdown enabled).
+/// Extract unified inline markup spans from text (both HTML and Markdown enabled).
 pub fn extract_unified_inline(text: &str) -> (String, Vec<MarkupSpan>) {
-    extract_inline_markup(text, InlineParseOptions::default())
+    extract_inline_markup(text)
 }
+
 /// Maximum allowed nesting depth for recursive inline markup extraction.
 pub const MAX_INLINE_DEPTH: usize = 32;
 
-/// Extract inline markup annotations according to configured format options.
+/// Extract inline markup annotations from text.
 ///
 /// Returns:
 /// - `plain_text`: Sanitized natural language text suitable for NMT translation.
 /// - `spans`: Extracted `MarkupSpan` annotations referencing byte ranges in `plain_text`.
-pub fn extract_inline_markup(text: &str, options: InlineParseOptions) -> (String, Vec<MarkupSpan>) {
-    let (plain, mut spans) = extract_inline_impl(text, options, 0);
+pub fn extract_inline_markup(text: &str) -> (String, Vec<MarkupSpan>) {
+    let (plain, mut spans) = extract_inline_impl(text, 0);
     // Sort spans primarily by start offset ascending, then by depth ascending (outer first)
     spans.sort_by(|a, b| {
         a.source_range
@@ -142,7 +106,6 @@ pub fn extract_inline_markup(text: &str, options: InlineParseOptions) -> (String
 /// Core recursive parser for inline markup extraction.
 fn extract_inline_impl(
     text: &str,
-    options: InlineParseOptions,
     depth: usize,
 ) -> (String, Vec<MarkupSpan>) {
     let mut plain = String::with_capacity(text.len());
@@ -158,30 +121,28 @@ fn extract_inline_impl(
     let mut i = 0;
     while i < len {
         // 1. HTML Comment or CDATA
-        if options.parse_html {
-            if text[i..].starts_with("<!--") {
-                if let Some(pos) = text[i..].find("-->") {
-                    let end_idx = i + pos + 3;
-                    let raw = &text[i..end_idx];
-                    let pos = plain.len();
-                    spans.push(MarkupSpan::new_self_closing(pos, raw.to_string(), depth));
-                    i = end_idx;
-                    continue;
-                }
-            } else if text[i..].starts_with("<![CDATA[") {
-                if let Some(pos) = text[i..].find("]]>") {
-                    let end_idx = i + pos + 3;
-                    let raw = &text[i..end_idx];
-                    let pos = plain.len();
-                    spans.push(MarkupSpan::new_self_closing(pos, raw.to_string(), depth));
-                    i = end_idx;
-                    continue;
-                }
+        if text[i..].starts_with("<!--") {
+            if let Some(pos) = text[i..].find("-->") {
+                let end_idx = i + pos + 3;
+                let raw = &text[i..end_idx];
+                let pos = plain.len();
+                spans.push(MarkupSpan::new_self_closing(pos, raw.to_string(), depth));
+                i = end_idx;
+                continue;
+            }
+        } else if text[i..].starts_with("<![CDATA[") {
+            if let Some(pos) = text[i..].find("]]>") {
+                let end_idx = i + pos + 3;
+                let raw = &text[i..end_idx];
+                let pos = plain.len();
+                spans.push(MarkupSpan::new_self_closing(pos, raw.to_string(), depth));
+                i = end_idx;
+                continue;
             }
         }
 
         // 2. HTML Entities: atomic protection (is_self_closing = true, not sent to translation model)
-        if options.parse_html && bytes[i] == b'&' {
+        if bytes[i] == b'&' {
             if let Some(entity_len) = try_parse_html_entity(&text[i..]) {
                 let entity_raw = &text[i..i + entity_len];
                 let pos = plain.len();
@@ -192,7 +153,7 @@ fn extract_inline_impl(
         }
 
         // 3. Markdown Inline Code: `...` (atomic literal protection)
-        if options.parse_markdown && bytes[i] == b'`' {
+        if bytes[i] == b'`' {
             let start_idx = i;
             let mut fence_len = 0;
             while i < len && bytes[i] == b'`' {
@@ -214,7 +175,7 @@ fn extract_inline_impl(
         }
 
         // 4. HTML Tags
-        if options.parse_html && bytes[i] == b'<' {
+        if bytes[i] == b'<' {
             let is_tag_start = i + 1 < len
                 && matches!(bytes[i + 1], b'a'..=b'z' | b'A'..=b'Z' | b'!' | b'?' | b'/');
             if is_tag_start {
@@ -267,7 +228,7 @@ fn extract_inline_impl(
                         let inner_text = &text[tag_end..tag_end + close_start_rel];
                         let close_tag_raw = &text[tag_end + close_start_rel..tag_end + close_end_rel];
 
-                        let (inner_plain, inner_spans) = extract_inline_impl(inner_text, options, depth + 1);
+                        let (inner_plain, inner_spans) = extract_inline_impl(inner_text, depth + 1);
 
                         let start_offset = plain.len();
                         plain.push_str(&inner_plain);
@@ -311,7 +272,7 @@ fn extract_inline_impl(
         }
 
         // 5. Markdown Image: ![alt](url)
-        if options.parse_markdown && bytes[i] == b'!' && i + 1 < len && bytes[i + 1] == b'[' {
+        if bytes[i] == b'!' && i + 1 < len && bytes[i + 1] == b'[' {
             let bracket_open = i + 1;
             if let Some(bracket_close) = find_matching_bracket(bytes, bracket_open, b'[', b']') {
                 if bracket_close + 1 < len && bytes[bracket_close + 1] == b'(' {
@@ -328,7 +289,7 @@ fn extract_inline_impl(
         }
 
         // 6. Markdown Link: [text](url)
-        if options.parse_markdown && bytes[i] == b'[' {
+        if bytes[i] == b'[' {
             let bracket_open = i;
             if let Some(bracket_close) = find_matching_bracket(bytes, bracket_open, b'[', b']') {
                 if bracket_close + 1 < len && bytes[bracket_close + 1] == b'(' {
@@ -337,7 +298,7 @@ fn extract_inline_impl(
                         let inner_text = &text[bracket_open + 1..bracket_close];
                         let url_part = &text[paren_open + 1..paren_close];
 
-                        let (inner_plain, inner_spans) = extract_inline_impl(inner_text, options, depth + 1);
+                        let (inner_plain, inner_spans) = extract_inline_impl(inner_text, depth + 1);
 
                         let start_offset = plain.len();
                         plain.push_str(&inner_plain);
@@ -364,13 +325,13 @@ fn extract_inline_impl(
         }
 
         // 7. Markdown Strikethrough: ~~text~~
-        if options.parse_markdown && text[i..].starts_with("~~") {
+        if text[i..].starts_with("~~") {
             let can_open = text[i + 2..].chars().next().is_some_and(|c| !c.is_whitespace());
             if can_open {
                 if let Some(close_rel) = find_strikethrough_close(text, i + 2) {
                     let inner_text = &text[i + 2..close_rel];
                     if !inner_text.trim().is_empty() {
-                        let (inner_plain, inner_spans) = extract_inline_impl(inner_text, options, depth + 1);
+                        let (inner_plain, inner_spans) = extract_inline_impl(inner_text, depth + 1);
 
                         let start_offset = plain.len();
                         plain.push_str(&inner_plain);
@@ -397,7 +358,7 @@ fn extract_inline_impl(
         }
 
         // 8. Markdown Bold / Italic: ***, **, *, ___, __, _
-        if options.parse_markdown && (bytes[i] == b'*' || bytes[i] == b'_') {
+        if bytes[i] == b'*' || bytes[i] == b'_' {
             let marker_char = bytes[i];
             let start_idx = i;
             let mut marker_len = 0;
@@ -422,7 +383,7 @@ fn extract_inline_impl(
                     if let Some(close_idx) = find_markdown_delimiter_close(text, i, marker_char, marker_len) {
                         let inner_text = &text[i..close_idx];
                         if !inner_text.trim().is_empty() {
-                            let (inner_plain, inner_spans) = extract_inline_impl(inner_text, options, depth + 1);
+                            let (inner_plain, inner_spans) = extract_inline_impl(inner_text, depth + 1);
 
                             let start_offset = plain.len();
                             plain.push_str(&inner_plain);
@@ -460,14 +421,14 @@ fn extract_inline_impl(
         i += c.len_utf8();
         while i < len {
             let b = bytes[i];
-            let is_trigger = (options.parse_html && (b == b'<' || b == b'&'))
-                || (options.parse_markdown
-                    && (b == b'`'
-                        || b == b'*'
-                        || b == b'_'
-                        || b == b'~'
-                        || b == b'['
-                        || (b == b'!' && i + 1 < len && bytes[i + 1] == b'[')));
+            let is_trigger = b == b'<'
+                || b == b'&'
+                || b == b'`'
+                || b == b'*'
+                || b == b'_'
+                || b == b'~'
+                || b == b'['
+                || (b == b'!' && i + 1 < len && bytes[i + 1] == b'[');
             if is_trigger {
                 break;
             }
@@ -1005,23 +966,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_formats_control() {
+    fn test_unified_markup_extraction() {
         let text = "Use **bold** and <i>italic</i> and &copy; 2026";
-
-        // 1. ALL
-        let (plain_all, spans_all) = extract_inline_markup(text, InlineParseOptions::ALL);
-        assert_eq!(plain_all, "Use bold and italic and  2026");
-        assert_eq!(spans_all.len(), 3);
-
-        // 2. HTML ONLY: Markdown ** is not parsed
-        let (plain_html, spans_html) = extract_inline_markup(text, InlineParseOptions::HTML_ONLY);
-        assert_eq!(plain_html, "Use **bold** and italic and  2026");
-        assert_eq!(spans_html.len(), 2);
-
-        // 3. MARKDOWN ONLY: HTML <i> and &copy; are not parsed
-        let (plain_md, spans_md) = extract_inline_markup(text, InlineParseOptions::MARKDOWN_ONLY);
-        assert_eq!(plain_md, "Use bold and <i>italic</i> and &copy; 2026");
-        assert_eq!(spans_md.len(), 1);
+        let (plain, spans) = extract_inline_markup(text);
+        assert_eq!(plain, "Use bold and italic and  2026");
+        assert_eq!(spans.len(), 3);
     }
 
     #[test]

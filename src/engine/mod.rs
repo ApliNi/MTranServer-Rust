@@ -55,8 +55,6 @@ thread_local! {
     static SCRATCH: std::cell::RefCell<TranslationScratch> =
         std::cell::RefCell::new(TranslationScratch::new());
 }
-/// Re-export parse formats for direct engine consumption.
-pub use crate::config::ParseFormats;
 
 /// Configuration for the translation engine.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -76,9 +74,8 @@ pub struct EngineConfig {
     pub min_length_factor: Option<f32>,
     #[serde(default)]
     pub max_length_factor: Option<f32>,
-    #[serde(default)]
-    pub parse_formats: ParseFormats,
-    #[serde(default)]
+    #[serde(default = "default_true")]
+    pub parse_markup: bool,
     pub preprocess_symbols: bool,
 }
 
@@ -96,10 +93,15 @@ impl Default for EngineConfig {
             expansion_ratio: None,
             min_length_factor: None,
             max_length_factor: None,
-            parse_formats: ParseFormats::default(),
+            parse_markup: true,
             preprocess_symbols: false,
         }
     }
+}
+
+#[inline]
+fn default_true() -> bool {
+    true
 }
 
 impl EngineConfig {
@@ -117,7 +119,7 @@ impl EngineConfig {
             expansion_ratio: None,
             min_length_factor: None,
             max_length_factor: None,
-            parse_formats: config.parse_formats,
+            parse_markup: config.parse_markup,
             preprocess_symbols: config.preprocess_symbols,
         }
     }
@@ -209,7 +211,7 @@ pub struct TranslationEngine {
     // Text processing state
     max_sentence_length: usize,
     shortlist_policy: ShortlistPolicy,
-    parse_formats: ParseFormats,
+    parse_markup: bool,
     preprocess_symbols: bool,
     usage: Arc<EngineUsage>,
 }
@@ -227,7 +229,7 @@ impl TranslationEngine {
     ) -> Result<Self, EngineError> {
         let max_sentence_length = config.max_sentence_length;
         let shortlist_policy = config.shortlist_policy;
-        let parse_formats = config.parse_formats;
+        let parse_markup = config.parse_markup;
         let preprocess_symbols = config.preprocess_symbols;
         // Model, shortlist and vocab files are independent inputs (each parse
         // produces an owned value), so they load concurrently on scoped
@@ -288,7 +290,7 @@ impl TranslationEngine {
             target_lang: target_lang.to_string(),
             max_sentence_length,
             shortlist_policy,
-            parse_formats,
+            parse_markup,
             preprocess_symbols,
             usage: Arc::new(EngineUsage::new()),
         })
@@ -340,21 +342,21 @@ impl TranslationEngine {
         &self.target_lang
     }
 
-    /// Translate a single text using configured parse formats.
+    /// Translate a single text using configured parse markup flag.
     pub fn translate(&self, text: &str) -> String {
-        self.translate_with_formats(text, self.parse_formats)
+        self.translate_with_markup(text, self.parse_markup)
     }
 
-    /// Returns the currently configured parse formats.
+    /// Whether markup parsing and preservation is enabled.
     #[inline]
-    pub fn parse_formats(&self) -> ParseFormats {
-        self.parse_formats
+    pub fn parse_markup(&self) -> bool {
+        self.parse_markup
     }
 
-    /// Update parse formats for subsequent translations.
+    /// Update parse markup setting for subsequent translations.
     #[inline]
-    pub fn set_parse_formats(&mut self, parse_formats: ParseFormats) {
-        self.parse_formats = parse_formats;
+    pub fn set_parse_markup(&mut self, parse_markup: bool) {
+        self.parse_markup = parse_markup;
     }
 
     /// Whether symbol preprocessing is enabled.
@@ -368,25 +370,26 @@ impl TranslationEngine {
     pub fn set_preprocess_symbols(&mut self, enable: bool) {
         self.preprocess_symbols = enable;
     }
-    /// Translate a single text with caller-specified parse formats.
-    pub fn translate_with_formats(
-        &self,
-        text: &str,
-        parse_formats: crate::config::ParseFormats,
-    ) -> String {
-        if parse_formats.is_empty() {
-            // Disabled (false/0): pass raw input directly to the model
+
+    /// Translate a single text with caller-specified markup parsing.
+    pub fn translate_with_markup(&self, text: &str, parse_markup: bool) -> String {
+        if !parse_markup {
+            // Disabled: pass raw input directly to the model
             return self.translate_single_text(text);
         }
 
         markup::document::translate_document_dual_parallel_with_languages(
             text,
-            parse_formats,
             Some(&self.source_lang),
             Some(&self.target_lang),
             |segment| self.translate_single_text(segment),
             |segment| self.translate_single_text_with_alignment(segment),
         )
+    }
+
+    /// Downward-compatible alias for `translate_with_markup`.
+    pub fn translate_with_formats(&self, text: &str, parse_markup: bool) -> String {
+        self.translate_with_markup(text, parse_markup)
     }
     /// Translate a single plain text or protected text segment. Handles placeholder tagging,
     /// symbol preprocessing, long-text splitting, and emoji preservation.
@@ -763,15 +766,16 @@ impl TranslationEngine {
 /// Abstract translation engine trait allowing multiple inference backends
 /// (native SIMD, full Transformer self-attention, and future high-capacity engines).
 pub trait TranslationEngineTrait: Send + Sync {
-    /// Translate input text using configured parse formats.
+    /// Translate input text using configured markup settings.
     fn translate(&self, text: &str) -> String;
 
-    /// Translate input text with caller-specified markup formats.
-    fn translate_with_formats(
-        &self,
-        text: &str,
-        parse_formats: crate::config::ParseFormats,
-    ) -> String;
+    /// Translate input text with caller-specified markup parsing.
+    fn translate_with_markup(&self, text: &str, parse_markup: bool) -> String;
+
+    /// Downward-compatible alias for `translate_with_markup`.
+    fn translate_with_formats(&self, text: &str, parse_markup: bool) -> String {
+        self.translate_with_markup(text, parse_markup)
+    }
 
     /// Returns target language code.
     fn target_lang(&self) -> &str;
@@ -782,12 +786,12 @@ impl TranslationEngineTrait for TranslationEngine {
         self.translate(text)
     }
 
-    fn translate_with_formats(
-        &self,
-        text: &str,
-        parse_formats: crate::config::ParseFormats,
-    ) -> String {
-        self.translate_with_formats(text, parse_formats)
+    fn translate_with_markup(&self, text: &str, parse_markup: bool) -> String {
+        self.translate_with_markup(text, parse_markup)
+    }
+
+    fn translate_with_formats(&self, text: &str, parse_markup: bool) -> String {
+        self.translate_with_formats(text, parse_markup)
     }
 
     fn target_lang(&self) -> &str {

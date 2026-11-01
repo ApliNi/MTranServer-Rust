@@ -8,7 +8,7 @@ use mtranserver_lib::engine::markup::split::{
     split_long_sentence_semantic_with_profile, split_sentences,
 };
 use mtranserver_lib::engine::markup::{
-    extract_inline_markup, extract_unified_inline, InlineParseOptions,
+    extract_inline_markup, extract_unified_inline,
 };
 use mtranserver_lib::engine::rules::detect::{
     detect_text_language, detect_text_language_with_confidence,
@@ -557,11 +557,6 @@ fn test_audit_step2_shortlist_streaming_and_candidate_generation() {
 
 #[test]
 fn test_audit_step2_markup_inline_and_split_equivalence() {
-    let options = InlineParseOptions {
-        parse_html: true,
-        parse_markdown: true,
-    };
-
     let test_inputs = [
         "Plain text without any markup triggers whatsoever.",
         "Simple <b>bold</b> and <i>italic</i> tags.",
@@ -576,7 +571,7 @@ fn test_audit_step2_markup_inline_and_split_equivalence() {
 
     for &input in &test_inputs {
         let (plain, spans) = extract_unified_inline(input);
-        let (plain_opt, spans_opt) = extract_inline_markup(input, options);
+        let (plain_opt, spans_opt) = extract_inline_markup(input);
         assert_eq!(plain, plain_opt);
         assert_eq!(spans, spans_opt);
         // Verification 1: plain text must be valid UTF-8 and non-empty for non-empty text

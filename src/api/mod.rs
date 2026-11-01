@@ -17,6 +17,8 @@ use serde::Serialize;
 pub enum ApiError {
     /// 400 — malformed input (bad field type, oversized batch, ...).
     BadRequest(String),
+    /// 400 — invalid parameter value.
+    InvalidParameter(String),
     /// 401 — missing or invalid API token.
     Unauthorized,
     /// 404 — resource or model not found.
@@ -33,7 +35,9 @@ struct ApiErrorBody<'a> {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, std::borrow::Cow::Owned(msg)),
+            ApiError::BadRequest(msg) | ApiError::InvalidParameter(msg) => {
+                (StatusCode::BAD_REQUEST, std::borrow::Cow::Owned(msg))
+            }
             ApiError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 std::borrow::Cow::Borrowed("Unauthorized"),
@@ -178,7 +182,7 @@ mod tests {
             trust_proxy: false,
             log_retention_days: 7,
             preprocess_symbols: false,
-            parse_formats: config::ParseFormats::default(),
+            parse_markup: true,
             profile: false,
             bench_qps_input_length: 128,
         }

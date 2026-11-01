@@ -9,7 +9,7 @@ use std::sync::Once;
 
 use serde::{Deserialize, Serialize};
 
-use mtranserver_lib::config::{self, Config, ParseFormats};
+use mtranserver_lib::config::{self, Config};
 use mtranserver_lib::{engine, models, service, utils};
 
 static SERVICE_INIT: Once = Once::new();
@@ -95,7 +95,7 @@ pub fn setup_test_service() {
             trust_proxy: false,
             log_retention_days: 7,
             preprocess_symbols: false,
-            parse_formats: ParseFormats::ALL,
+            parse_markup: true,
             profile: false,
             bench_qps_input_length: 128,
         };

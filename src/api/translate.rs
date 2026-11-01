@@ -77,17 +77,16 @@ pub struct TranslateBatchResponse {
     pub detected_languages: Option<Vec<Option<String>>>,
 }
 
-fn resolve_parse_formats(
+fn resolve_parse_markup(
     body_parse: Option<&serde_json::Value>,
-) -> Result<Option<crate::config::ParseFormats>, ApiError> {
-    if let Some(val) = body_parse {
-        if !val.is_null() {
-            return crate::config::ParseFormats::parse_from_json_value(val)
-                .map(Some)
-                .map_err(ApiError::BadRequest);
-        }
+) -> Result<Option<bool>, ApiError> {
+    match body_parse {
+        None => Ok(None),
+        Some(val) if val.is_null() => Ok(None),
+        Some(val) => crate::config::parse_markup_from_json_value(val)
+            .map(Some)
+            .map_err(ApiError::InvalidParameter),
     }
-    Ok(None)
 }
 
 #[axum::debug_handler]
@@ -96,9 +95,9 @@ pub async fn translate(
 ) -> Result<Json<TranslateResponse>, ApiError> {
     let to = parse_target_lang(&body.to, "to")?;
     let from = parse_source_lang(Some(&body.from));
-    let parse_formats = resolve_parse_formats(body.parse.as_ref())?;
+    let parse_markup = resolve_parse_markup(body.parse.as_ref())?;
     validate_batch(std::slice::from_ref(&body.text))?;
-    match service::translate_with_pivot_timed_formats(&from, &to, &body.text, parse_formats).await {
+    match service::translate_with_pivot_timed_markup(&from, &to, &body.text, parse_markup).await {
         Ok(output) => {
             let detected_language = if from == "auto" {
                 (!output.detected_language.is_empty()).then_some(output.detected_language)
@@ -120,14 +119,14 @@ pub async fn translate_batch(
 ) -> Result<Json<TranslateBatchResponse>, ApiError> {
     let to = parse_target_lang(&body.to, "to")?;
     let from = parse_source_lang(Some(&body.from));
-    let parse_formats = resolve_parse_formats(body.parse.as_ref())?;
+    let parse_markup = resolve_parse_markup(body.parse.as_ref())?;
     validate_batch(&body.texts)?;
 
-    let results = service::translate_batch_with_pivot_formats(
+    let results = service::translate_batch_with_pivot_markup(
         &from,
         &to,
         &body.texts,
-        parse_formats,
+        parse_markup,
     )
     .await?;
 
@@ -212,87 +211,48 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_parse_formats() {
-        use crate::config::ParseFormats;
-
+    fn test_resolve_parse_markup() {
         // Default (None in body)
-        assert_eq!(resolve_parse_formats(None).unwrap(), None);
+        assert_eq!(resolve_parse_markup(None).unwrap(), None);
 
-        // Body variations: case-insensitive html and md
-        let body_html: serde_json::Value = serde_json::json!("html");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_html)).unwrap(),
-            Some(ParseFormats { html: true, md: false })
-        );
+        // Null value in body
+        assert_eq!(resolve_parse_markup(Some(&serde_json::Value::Null)).unwrap(), None);
 
-        let body_html_upper: serde_json::Value = serde_json::json!("HTML");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_html_upper)).unwrap(),
-            Some(ParseFormats { html: true, md: false })
-        );
+        // Booleans
+        assert_eq!(resolve_parse_markup(Some(&serde_json::json!(true))).unwrap(), Some(true));
+        assert_eq!(resolve_parse_markup(Some(&serde_json::json!(false))).unwrap(), Some(false));
 
-        let body_md: serde_json::Value = serde_json::json!("md");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_md)).unwrap(),
-            Some(ParseFormats { html: false, md: true })
-        );
+        // Numbers
+        assert_eq!(resolve_parse_markup(Some(&serde_json::json!(1))).unwrap(), Some(true));
+        assert_eq!(resolve_parse_markup(Some(&serde_json::json!(0))).unwrap(), Some(false));
 
-        let body_md_upper: serde_json::Value = serde_json::json!("MD");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_md_upper)).unwrap(),
-            Some(ParseFormats { html: false, md: true })
-        );
+        // Strings enabling markup
+        for val in ["html", "HTML", "md", "MD", "html,md", "HTML,MD", "true", "TRUE", "1", "all", "yes", "on"] {
+            let body_str = serde_json::json!(val);
+            assert_eq!(resolve_parse_markup(Some(&body_str)).unwrap(), Some(true), "Failed for {}", val);
+        }
 
-        let body_html_md: serde_json::Value = serde_json::json!("html,md");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_html_md)).unwrap(),
-            Some(ParseFormats { html: true, md: true })
-        );
+        // Strings disabling markup
+        for val in ["false", "FALSE", "0", "none", "raw", "off", "no", "disable", "text"] {
+            let body_str = serde_json::json!(val);
+            assert_eq!(resolve_parse_markup(Some(&body_str)).unwrap(), Some(false), "Failed for {}", val);
+        }
 
-        let body_html_md_upper: serde_json::Value = serde_json::json!("HTML,MD");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_html_md_upper)).unwrap(),
-            Some(ParseFormats { html: true, md: true })
-        );
+        // Invalid strings
+        for invalid in ["mod", "markdown", "invalid_xyz"] {
+            let body_invalid = serde_json::json!(invalid);
+            assert!(resolve_parse_markup(Some(&body_invalid)).is_err(), "Should fail for {}", invalid);
+        }
 
-        let body_false_bool: serde_json::Value = serde_json::json!(false);
-        assert_eq!(
-            resolve_parse_formats(Some(&body_false_bool)).unwrap(),
-            Some(ParseFormats::NONE)
-        );
-
-        let body_false_str: serde_json::Value = serde_json::json!("false");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_false_str)).unwrap(),
-            Some(ParseFormats::NONE)
-        );
-
-        let body_zero_num: serde_json::Value = serde_json::json!(0);
-        assert_eq!(
-            resolve_parse_formats(Some(&body_zero_num)).unwrap(),
-            Some(ParseFormats::NONE)
-        );
-
-        let body_zero_str: serde_json::Value = serde_json::json!("0");
-        assert_eq!(
-            resolve_parse_formats(Some(&body_zero_str)).unwrap(),
-            Some(ParseFormats::NONE)
-        );
-
-        // Invalid formats (including mod, markdown, unknown)
-        let body_mod: serde_json::Value = serde_json::json!("mod");
-        assert!(resolve_parse_formats(Some(&body_mod)).is_err());
-
-        let body_markdown: serde_json::Value = serde_json::json!("markdown");
-        assert!(resolve_parse_formats(Some(&body_markdown)).is_err());
-
-        let body_invalid: serde_json::Value = serde_json::json!("invalid_xyz");
-        assert!(resolve_parse_formats(Some(&body_invalid)).is_err());
-
-        let body_all: serde_json::Value = serde_json::json!("all");
-        assert!(resolve_parse_formats(Some(&body_all)).is_err());
         // Oversized string injection attempt
-        let body_oversized: serde_json::Value = serde_json::json!("a".repeat(1024));
-        assert!(resolve_parse_formats(Some(&body_oversized)).is_err());
+        let body_oversized = serde_json::json!("a".repeat(1024));
+        assert!(resolve_parse_markup(Some(&body_oversized)).is_err());
+
+        // Invalid types and out-of-range numbers
+        assert!(resolve_parse_markup(Some(&serde_json::json!(2))).is_err());
+        assert!(resolve_parse_markup(Some(&serde_json::json!(-1))).is_err());
+        assert!(resolve_parse_markup(Some(&serde_json::json!(0.5))).is_err());
+        assert!(resolve_parse_markup(Some(&serde_json::json!(["html"]))).is_err());
+        assert!(resolve_parse_markup(Some(&serde_json::json!({"html": true}))).is_err());
     }
 }

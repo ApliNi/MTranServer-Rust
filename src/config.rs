@@ -55,10 +55,17 @@ pub struct Cli {
     pub preprocess_symbols: bool,
 
 
-    /// Markup formats to parse and preserve using word-alignment projection:
-    /// 'html', 'md', 'html,md' (default), or 'false'/'0' to pass raw text to the model.
-    #[arg(long, visible_alias = "formats", env = "MT_PARSE_FORMATS", default_value = "html,md", value_parser = parse_formats)]
-    pub parse_formats: ParseFormats,
+    /// Parse and preserve markup (HTML, Markdown, links, formatting).
+    /// Pass 'false', '0', 'none', 'raw', 'off' to disable and send raw text directly to the model.
+    #[arg(
+        long,
+        env = "MT_PARSE_MARKUP",
+        default_value_t = true,
+        num_args = 0..=1,
+        default_missing_value = "true",
+        value_parser = parse_markup_bool
+    )]
+    pub parse_markup: bool,
     /// Log HTTP requests (method, status, path, duration, bytes, client IP).
     /// Bare `--log-requests` or `--log-requests=false` both work.
     #[arg(long, env = "MT_LOG_REQUESTS", default_value_t = true, num_args = 0..=1, default_missing_value = "true", value_parser = boolish())]
@@ -209,160 +216,61 @@ pub struct Config {
     /// Preprocess source symbols (hyphens, camelCase, snake_case) before
     /// translation. Disabled by default. See the `preprocess_symbols` CLI flag.
     pub preprocess_symbols: bool,
-    /// Markup formats to parse. See the `parse_formats` CLI flag.
-    pub parse_formats: ParseFormats,
+    /// Parse and preserve markup (HTML, Markdown, links, formatting).
+    /// Defaults to true. See the `parse_markup` CLI flag.
+    pub parse_markup: bool,
     pub profile: bool,
     /// Input text length in characters for `--bench-qps`.
     pub bench_qps_input_length: usize,
 }
 
-/// Markup formats to parse and project using word alignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ParseFormats {
-    pub html: bool,
-    pub md: bool,
-}
-
-impl Default for ParseFormats {
-    fn default() -> Self {
-        Self {
-            html: true,
-            md: true,
-        }
+/// Parse a markup boolean flag supporting both boolean and legacy format aliases.
+pub fn parse_markup_bool(value: &str) -> Result<bool, String> {
+    const MAX_PARSE_MARKUP_LEN: usize = 64;
+    let trimmed = value.trim();
+    if trimmed.len() > MAX_PARSE_MARKUP_LEN {
+        return Err(format!(
+            "parse markup string exceeds maximum allowed length of {} bytes",
+            MAX_PARSE_MARKUP_LEN
+        ));
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    match lower.as_str() {
+        "true" | "1" | "html" | "md" | "html,md" | "md,html" | "all" | "yes" | "on" => Ok(true),
+        "false" | "0" | "none" | "raw" | "off" | "no" | "disable" | "text" => Ok(false),
+        other => Err(format!(
+            "invalid parse markup value '{}': expected 'true'/'false', '1'/'0', 'html', 'md', 'none', 'raw', or 'all'",
+            other
+        )),
     }
 }
 
-impl ParseFormats {
-    pub const NONE: Self = Self {
-        html: false,
-        md: false,
-    };
-
-    pub const ALL: Self = Self {
-        html: true,
-        md: true,
-    };
-
-    pub fn has_html(&self) -> bool {
-        self.html
-    }
-
-    pub fn has_md(&self) -> bool {
-        self.md
-    }
-
-    pub fn is_empty(&self) -> bool {
-        !self.html && !self.md
-    }
-
-    #[inline]
-    pub const fn as_static_str(&self) -> &'static str {
-        match (self.html, self.md) {
-            (true, true) => "html,md",
-            (true, false) => "html",
-            (false, true) => "md",
-            (false, false) => "",
-        }
-    }
-
-    pub fn parse_from_json_value(val: &serde_json::Value) -> Result<Self, String> {
-        match val {
-            serde_json::Value::Bool(b) => Ok(if *b { Self::ALL } else { Self::NONE }),
-            serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    match i {
-                        0 => Ok(Self::NONE),
-                        1 => Ok(Self::ALL),
-                        _ => Err(format!("invalid numeric format '{}': expected 0 or 1", i)),
-                    }
-                } else {
-                    Err("invalid numeric format: expected integer 0 or 1".to_string())
+/// Parse markup boolean configuration from an arbitrary JSON value.
+pub fn parse_markup_from_json_value(val: &serde_json::Value) -> Result<bool, String> {
+    match val {
+        serde_json::Value::Bool(b) => Ok(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                match i {
+                    0 => Ok(false),
+                    1 => Ok(true),
+                    _ => Err(format!("invalid numeric format '{}': expected 0 or 1", i)),
                 }
-            }
-            serde_json::Value::String(s) => s.parse::<Self>(),
-            serde_json::Value::Null => Ok(Self::default()),
-            other => Err(format!(
-                "invalid parse format type: expected string, boolean, or integer, got {}",
-                match other {
-                    serde_json::Value::Array(_) => "array",
-                    serde_json::Value::Object(_) => "object",
-                    _ => "unknown",
-                }
-            )),
-        }
-    }
-}
-
-impl std::fmt::Display for ParseFormats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (self.html, self.md) {
-            (true, true) => write!(f, "html,md"),
-            (true, false) => write!(f, "html"),
-            (false, true) => write!(f, "md"),
-            (false, false) => write!(f, "false"),
-        }
-    }
-}
-
-impl std::str::FromStr for ParseFormats {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        const MAX_PARSE_FORMAT_LEN: usize = 64;
-
-        let trimmed = s.trim();
-        if trimmed.len() > MAX_PARSE_FORMAT_LEN {
-            return Err(format!(
-                "parse format string exceeds maximum allowed length of {} bytes",
-                MAX_PARSE_FORMAT_LEN
-            ));
-        }
-        if trimmed.is_empty() {
-            return Ok(Self::NONE);
-        }
-
-        // Stack buffer for in-place lowercase conversion without heap allocation
-        let mut buf = [0u8; MAX_PARSE_FORMAT_LEN];
-        let bytes = trimmed.as_bytes();
-        for (i, &b) in bytes.iter().enumerate() {
-            buf[i] = b.to_ascii_lowercase();
-        }
-        let lower = std::str::from_utf8(&buf[..bytes.len()])
-            .map_err(|_| "invalid utf-8 in parse format string".to_string())?;
-
-        if matches!(lower, "false" | "0" | "none" | "off" | "no" | "disable") {
-            return Ok(Self::NONE);
-        }
-        if matches!(lower, "true" | "1") {
-            return Ok(Self::ALL);
-        }
-
-        let mut html = false;
-        let mut md = false;
-
-        for part in lower.split([',', '+']) {
-            match part.trim() {
-                "html" => html = true,
-                "md" => md = true,
-                other => {
-                    return Err(format!(
-                        "invalid format '{}': expected 'html', 'md', 'html,md', or 'false'/'0'",
-                        other
-                    ));
-                }
+            } else {
+                Err("invalid numeric format: expected integer 0 or 1".to_string())
             }
         }
-
-        if !html && !md {
-            return Err("invalid parse format: at least one format ('html' or 'md') must be specified".to_string());
-        }
-
-        Ok(Self { html, md })
+        serde_json::Value::String(s) => parse_markup_bool(s),
+        serde_json::Value::Null => Ok(true),
+        other => Err(format!(
+            "invalid parse format type: expected string, boolean, or integer, got {}",
+            match other {
+                serde_json::Value::Array(_) => "array",
+                serde_json::Value::Object(_) => "object",
+                _ => "unknown",
+            }
+        )),
     }
-}
-
-fn parse_formats(value: &str) -> Result<ParseFormats, String> {
-    value.parse::<ParseFormats>()
 }
 /// Parse a human-readable size such as "512kb", "1mb", "1gb", or a raw byte count.
 pub fn parse_size(value: &str) -> Result<usize, String> {
@@ -556,7 +464,7 @@ pub fn init(cli: Cli) {
         max_concurrency_per_ip,
         trust_proxy: cli.trust_proxy,
         preprocess_symbols: cli.preprocess_symbols,
-        parse_formats: cli.parse_formats,
+        parse_markup: cli.parse_markup,
         profile: cli.profile,
         bench_qps_input_length: cli.bench_qps_input_length,
     };
@@ -760,52 +668,60 @@ mod tests {
         assert_eq!(get().port, "9999");
     }
     #[test]
-    fn test_parse_formats_parsing() {
-        assert_eq!("html".parse::<ParseFormats>().unwrap(), ParseFormats { html: true, md: false });
-        assert_eq!("HTML".parse::<ParseFormats>().unwrap(), ParseFormats { html: true, md: false });
-        assert_eq!("md".parse::<ParseFormats>().unwrap(), ParseFormats { html: false, md: true });
-        assert_eq!("MD".parse::<ParseFormats>().unwrap(), ParseFormats { html: false, md: true });
-        assert_eq!("html,md".parse::<ParseFormats>().unwrap(), ParseFormats { html: true, md: true });
-        assert_eq!("HTML,MD".parse::<ParseFormats>().unwrap(), ParseFormats { html: true, md: true });
-        assert_eq!("Md,Html".parse::<ParseFormats>().unwrap(), ParseFormats { html: true, md: true });
-        assert!("all".parse::<ParseFormats>().is_err());
-        assert_eq!("0".parse::<ParseFormats>().unwrap(), ParseFormats::NONE);
-        assert_eq!("none".parse::<ParseFormats>().unwrap(), ParseFormats::NONE);
-        assert!("mod".parse::<ParseFormats>().is_err());
-        assert!("markdown".parse::<ParseFormats>().is_err());
-        assert!("invalid".parse::<ParseFormats>().is_err());
-        assert!("html,".parse::<ParseFormats>().is_err());
-        assert!(",html".parse::<ParseFormats>().is_err());
-        assert!("html,invalid".parse::<ParseFormats>().is_err());
+    fn test_parse_markup_bool_parsing() {
+        assert!(parse_markup_bool("true").unwrap());
+        assert!(parse_markup_bool("TRUE").unwrap());
+        assert!(parse_markup_bool("1").unwrap());
+        assert!(parse_markup_bool("html").unwrap());
+        assert!(parse_markup_bool("HTML").unwrap());
+        assert!(parse_markup_bool("md").unwrap());
+        assert!(parse_markup_bool("MD").unwrap());
+        assert!(parse_markup_bool("html,md").unwrap());
+        assert!(parse_markup_bool("HTML,MD").unwrap());
+        assert!(parse_markup_bool("Md,Html").unwrap());
+        assert!(parse_markup_bool("all").unwrap());
+        assert!(parse_markup_bool("yes").unwrap());
+        assert!(parse_markup_bool("on").unwrap());
+
+        assert!(!parse_markup_bool("false").unwrap());
+        assert!(!parse_markup_bool("FALSE").unwrap());
+        assert!(!parse_markup_bool("0").unwrap());
+        assert!(!parse_markup_bool("none").unwrap());
+        assert!(!parse_markup_bool("raw").unwrap());
+        assert!(!parse_markup_bool("off").unwrap());
+        assert!(!parse_markup_bool("no").unwrap());
+        assert!(!parse_markup_bool("disable").unwrap());
+        assert!(!parse_markup_bool("text").unwrap());
+        assert!(parse_markup_bool("mod").is_err());
+        assert!(parse_markup_bool("invalid").is_err());
 
         // Injection attack / oversized string protection
         let oversized = "a".repeat(65);
-        assert!(oversized.parse::<ParseFormats>().is_err());
-        let oversized_huge = "html,".repeat(1000);
-        assert!(oversized_huge.parse::<ParseFormats>().is_err());
+        assert!(parse_markup_bool(&oversized).is_err());
 
-        // Test parse_from_json_value
-        assert_eq!(ParseFormats::parse_from_json_value(&serde_json::json!("html")).unwrap(), ParseFormats { html: true, md: false });
-        assert_eq!(ParseFormats::parse_from_json_value(&serde_json::json!("MD")).unwrap(), ParseFormats { html: false, md: true });
-        assert_eq!(ParseFormats::parse_from_json_value(&serde_json::json!(false)).unwrap(), ParseFormats::NONE);
-        assert_eq!(ParseFormats::parse_from_json_value(&serde_json::json!(0)).unwrap(), ParseFormats::NONE);
-        assert_eq!(ParseFormats::parse_from_json_value(&serde_json::json!("false")).unwrap(), ParseFormats::NONE);
-        assert_eq!(ParseFormats::parse_from_json_value(&serde_json::json!("0")).unwrap(), ParseFormats::NONE);
-        assert_eq!(ParseFormats::parse_from_json_value(&serde_json::Value::Null).unwrap(), ParseFormats::default());
-        assert!(ParseFormats::parse_from_json_value(&serde_json::json!("mod")).is_err());
-        assert!(ParseFormats::parse_from_json_value(&serde_json::json!(2)).is_err());
-        assert!(ParseFormats::parse_from_json_value(&serde_json::json!(0.5)).is_err());
-        assert!(ParseFormats::parse_from_json_value(&serde_json::json!(["html"])).is_err());
-        assert!(ParseFormats::parse_from_json_value(&serde_json::json!({"html": true})).is_err());
-        assert!(ParseFormats::parse_from_json_value(&serde_json::json!("a".repeat(100))).is_err());
+        // Test parse_markup_from_json_value
+        assert!(parse_markup_from_json_value(&serde_json::json!(true)).unwrap());
+        assert!(!parse_markup_from_json_value(&serde_json::json!(false)).unwrap());
+        assert!(parse_markup_from_json_value(&serde_json::json!(1)).unwrap());
+        assert!(!parse_markup_from_json_value(&serde_json::json!(0)).unwrap());
+        assert!(parse_markup_from_json_value(&serde_json::json!("html")).unwrap());
+        assert!(!parse_markup_from_json_value(&serde_json::json!("raw")).unwrap());
+        assert!(parse_markup_from_json_value(&serde_json::Value::Null).unwrap());
+        assert!(parse_markup_from_json_value(&serde_json::json!(2)).is_err());
+        assert!(parse_markup_from_json_value(&serde_json::json!(0.5)).is_err());
+        assert!(parse_markup_from_json_value(&serde_json::json!(["html"])).is_err());
+        assert!(parse_markup_from_json_value(&serde_json::json!({"html": true})).is_err());
+        assert!(parse_markup_from_json_value(&serde_json::json!("a".repeat(100))).is_err());
+
+        // Test CLI parsing
         let cli_default = Cli::try_parse_from(["mtranserver"]).unwrap();
-        assert_eq!(cli_default.parse_formats, ParseFormats::ALL);
-        let cli_html = Cli::try_parse_from(["mtranserver", "--parse-formats", "html"]).unwrap();
-        assert_eq!(cli_html.parse_formats, ParseFormats { html: true, md: false });
-        let cli_false = Cli::try_parse_from(["mtranserver", "--parse-formats", "false"]).unwrap();
-        assert_eq!(cli_false.parse_formats, ParseFormats::NONE);
-        let cli_alias = Cli::try_parse_from(["mtranserver", "--formats=md"]).unwrap();
-        assert_eq!(cli_alias.parse_formats, ParseFormats { html: false, md: true });
+        assert!(cli_default.parse_markup);
+        let cli_bare = Cli::try_parse_from(["mtranserver", "--parse-markup"]).unwrap();
+        assert!(cli_bare.parse_markup);
+        let cli_true = Cli::try_parse_from(["mtranserver", "--parse-markup=true"]).unwrap();
+        assert!(cli_true.parse_markup);
+        let cli_false = Cli::try_parse_from(["mtranserver", "--parse-markup=false"]).unwrap();
+        assert!(!cli_false.parse_markup);
     }
 
     #[test]

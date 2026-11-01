@@ -9,9 +9,7 @@
 
 use std::ops::Range;
 
-use crate::config::ParseFormats;
-
-use super::inline::{extract_inline_markup, find_tag_end, parse_tag_info, InlineParseOptions};
+use super::inline::{extract_inline_markup, find_tag_end, parse_tag_info};
 use super::split::{
     remap_spans_to_sentences, split_sentences_with_lang,
     translate_prepared_split_sentences_dual_with_lang,
@@ -357,46 +355,42 @@ impl<'a> TranslateHandler<'a> {
 /// while preserving formatting, verbatim code, and projecting inline markup via token alignments.
 pub fn translate_document_with_alignment<F>(
     doc: &str,
-    parse_formats: ParseFormats,
     mut translate_fn: F,
 ) -> String
 where
     F: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>),
 {
-    translate_document_with_alignment_dyn(doc, parse_formats, &mut translate_fn)
+    translate_document_with_alignment_dyn(doc, &mut translate_fn)
 }
 
 /// Dynamic dispatch implementation of composite document translation to prevent monomorphization recursion.
 pub fn translate_document_with_alignment_dyn(
     doc: &str,
-    parse_formats: ParseFormats,
     translate_fn: &mut AlignmentTranslateFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::sequential_single(translate_fn);
-    translate_document_internal(doc, parse_formats, &mut handler, 0)
+    translate_document_internal(doc, &mut handler, 0)
 }
 
 /// Translate a composite document (Markdown + HTML + Frontmatter + Tables + Code Fences)
 /// concurrently across multiple threads via Rayon.
 pub fn translate_document_with_alignment_parallel<F>(
     doc: &str,
-    parse_formats: ParseFormats,
     translate_fn: F,
 ) -> String
 where
     F: Fn(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + Sync + Send,
 {
-    translate_document_with_alignment_parallel_dyn(doc, parse_formats, &translate_fn)
+    translate_document_with_alignment_parallel_dyn(doc, &translate_fn)
 }
 
 /// Dynamic dispatch implementation of parallel composite document translation.
 pub fn translate_document_with_alignment_parallel_dyn(
     doc: &str,
-    parse_formats: ParseFormats,
     translate_fn: &AlignmentTranslateSyncFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::parallel_single(translate_fn);
-    translate_document_internal(doc, parse_formats, &mut handler, 0)
+    translate_document_internal(doc, &mut handler, 0)
 }
 
 /// Translate a composite document (Markdown + HTML + Frontmatter + Tables + Code Fences)
@@ -404,7 +398,6 @@ pub fn translate_document_with_alignment_parallel_dyn(
 /// while text with inline markup uses `align_fn` with token alignment markup projection.
 pub fn translate_document_dual<P, A>(
     doc: &str,
-    parse_formats: ParseFormats,
     mut plain_fn: P,
     mut align_fn: A,
 ) -> String
@@ -412,22 +405,20 @@ where
     P: FnMut(&str) -> String,
     A: FnMut(&str) -> AlignmentOutput,
 {
-    translate_document_dual_dyn(doc, parse_formats, &mut plain_fn, &mut align_fn)
+    translate_document_dual_dyn(doc, &mut plain_fn, &mut align_fn)
 }
 
 pub fn translate_document_dual_dyn(
     doc: &str,
-    parse_formats: ParseFormats,
     plain_fn: &mut PlainTranslateFn<'_>,
     align_fn: &mut AlignmentTranslateFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::sequential_dual(plain_fn, align_fn);
-    translate_document_internal(doc, parse_formats, &mut handler, 0)
+    translate_document_internal(doc, &mut handler, 0)
 }
 /// Translate a composite document sequentially using dual-track translation with explicit languages.
 pub fn translate_document_dual_with_languages<P, A>(
     doc: &str,
-    parse_formats: ParseFormats,
     source_lang: Option<&str>,
     target_lang: Option<&str>,
     mut plain_fn: P,
@@ -444,14 +435,13 @@ where
     if let Some(tl) = target_lang {
         handler = handler.with_target_lang(tl);
     }
-    translate_document_internal(doc, parse_formats, &mut handler, 0)
+    translate_document_internal(doc, &mut handler, 0)
 }
 
 
 /// Translate a composite document concurrently across multiple threads via Rayon using dual-track translation.
 pub fn translate_document_dual_parallel<P, A>(
     doc: &str,
-    parse_formats: ParseFormats,
     plain_fn: P,
     align_fn: A,
 ) -> String
@@ -459,12 +449,11 @@ where
     P: Fn(&str) -> String + Sync + Send,
     A: Fn(&str) -> AlignmentOutput + Sync + Send,
 {
-    translate_document_dual_parallel_with_lang(doc, parse_formats, None, plain_fn, align_fn)
+    translate_document_dual_parallel_with_lang(doc, None, plain_fn, align_fn)
 }
 
 pub fn translate_document_dual_parallel_with_lang<P, A>(
     doc: &str,
-    parse_formats: ParseFormats,
     lang: Option<&str>,
     plain_fn: P,
     align_fn: A,
@@ -473,14 +462,13 @@ where
     P: Fn(&str) -> String + Sync + Send,
     A: Fn(&str) -> AlignmentOutput + Sync + Send,
 {
-    translate_document_dual_parallel_with_languages(doc, parse_formats, lang, None, plain_fn, align_fn)
+    translate_document_dual_parallel_with_languages(doc, lang, None, plain_fn, align_fn)
 }
 
 /// Translate a composite document concurrently across multiple threads via Rayon using dual-track translation
 /// with explicit source and target language rule profiles.
 pub fn translate_document_dual_parallel_with_languages<P, A>(
     doc: &str,
-    parse_formats: ParseFormats,
     source_lang: Option<&str>,
     target_lang: Option<&str>,
     plain_fn: P,
@@ -497,31 +485,28 @@ where
     if let Some(tl) = target_lang {
         handler = handler.with_target_lang(tl);
     }
-    translate_document_internal(doc, parse_formats, &mut handler, 0)
+    translate_document_internal(doc, &mut handler, 0)
 }
 
 pub fn translate_document_dual_parallel_dyn(
     doc: &str,
-    parse_formats: ParseFormats,
     plain_fn: &PlainTranslateSyncFn<'_>,
     align_fn: &AlignmentTranslateSyncFn<'_>,
 ) -> String {
     let mut handler = TranslateHandler::parallel_dual(plain_fn, align_fn);
-    translate_document_internal(doc, parse_formats, &mut handler, 0)
+    translate_document_internal(doc, &mut handler, 0)
 }
 
 /// Translate a document with a pre-configured [`TranslateHandler`].
 pub fn translate_document_with_handler(
     doc: &str,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
 ) -> String {
-    translate_document_internal(doc, parse_formats, handler, 0)
+    translate_document_internal(doc, handler, 0)
 }
 
 fn translate_document_internal(
     doc: &str,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
     depth: usize,
 ) -> String {
@@ -530,11 +515,7 @@ fn translate_document_internal(
     }
 
     if depth >= MAX_DOCUMENT_DEPTH {
-        return translate_translatable_content(doc, parse_formats, handler);
-    }
-
-    if parse_formats.is_empty() {
-        return handler.translate_plain(doc);
+        return translate_translatable_content(doc, handler);
     }
 
     let blocks = parse_document_blocks(doc);
@@ -556,7 +537,7 @@ fn translate_document_internal(
                             lang: l,
                             target_lang: tl,
                         };
-                        translate_block(block, parse_formats, &mut h, depth)
+                        translate_block(block, &mut h, depth)
                     })
                     .collect();
                 return pieces.concat();
@@ -574,7 +555,7 @@ fn translate_document_internal(
                             lang: l,
                             target_lang: tl,
                         };
-                        translate_block(block, parse_formats, &mut h, depth)
+                        translate_block(block, &mut h, depth)
                     })
                     .collect();
                 return pieces.concat();
@@ -585,7 +566,7 @@ fn translate_document_internal(
 
     let mut out = String::with_capacity(doc.len() + 64);
     for block in blocks {
-        out.push_str(&translate_block(block, parse_formats, handler, depth));
+        out.push_str(&translate_block(block, handler, depth));
     }
 
     out
@@ -593,7 +574,6 @@ fn translate_document_internal(
 
 fn translate_block(
     block: DocumentBlock,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
     depth: usize,
 ) -> String {
@@ -609,13 +589,13 @@ fn translate_block(
         } => {
             out.push_str(&prefix);
             let translated =
-                translate_translatable_content(&text, parse_formats, handler);
+                translate_translatable_content(&text, handler);
             out.push_str(&translated);
             out.push_str(&suffix);
         }
         DocumentBlock::Paragraph { text, suffix } => {
             let translated =
-                translate_translatable_content(&text, parse_formats, handler);
+                translate_translatable_content(&text, handler);
             out.push_str(&translated);
             out.push_str(&suffix);
         }
@@ -626,23 +606,23 @@ fn translate_block(
             suffix,
         } => {
             let translated_header =
-                translate_table_row(&header_raw, parse_formats, handler);
+                translate_table_row(&header_raw, handler);
             out.push_str(&translated_header);
             out.push_str(&delimiter_raw);
             for body_row in body_rows {
                 let translated_row =
-                    translate_table_row(&body_row, parse_formats, handler);
+                    translate_table_row(&body_row, handler);
                 out.push_str(&translated_row);
             }
             out.push_str(&suffix);
         }
         DocumentBlock::Blockquote { raw } => {
             let translated_bq =
-                translate_blockquote_block(&raw, parse_formats, handler, depth);
+                translate_blockquote_block(&raw, handler, depth);
             out.push_str(&translated_bq);
         }
         DocumentBlock::HtmlBlock { raw } => {
-            let translated_html = translate_html_block(&raw, parse_formats, handler, depth);
+            let translated_html = translate_html_block(&raw, handler, depth);
             out.push_str(&translated_html);
         }
     }
@@ -655,7 +635,6 @@ fn translate_block(
 /// and projecting markup spans back onto target text.
 fn translate_translatable_content(
     raw_text: &str,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
 ) -> String {
     if raw_text.trim().is_empty() {
@@ -668,12 +647,7 @@ fn translate_translatable_content(
     let trailing_ws = &raw_text[trailing_ws_start..];
     let trimmed_text = &raw_text[leading_ws_len..trailing_ws_start];
 
-    let options = InlineParseOptions {
-        parse_html: parse_formats.html,
-        parse_markdown: parse_formats.md,
-    };
-
-    let (plain_text, mut spans) = extract_inline_markup(trimmed_text, options);
+    let (plain_text, mut spans) = extract_inline_markup(trimmed_text);
 
     if plain_text.trim().is_empty() {
         return raw_text.to_string();
@@ -733,7 +707,6 @@ fn translate_single_unit(
 /// Translate cells in a Markdown table row while preserving pipe delimiters and cell spacing.
 fn translate_table_row(
     row: &str,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
 ) -> String {
     let (content, ending) = split_line_ending(row);
@@ -768,7 +741,7 @@ fn translate_table_row(
             out.push_str(leading_ws);
             if !cell_text.is_empty() {
                 let translated =
-                    translate_translatable_content(cell_text, parse_formats, handler);
+                    translate_translatable_content(cell_text, handler);
                 out.push_str(&translated);
             }
             out.push_str(trailing_ws);
@@ -787,7 +760,6 @@ fn translate_table_row(
 /// and re-prefixing each line with `>` or `> `.
 fn translate_blockquote_block(
     raw: &str,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
     depth: usize,
 ) -> String {
@@ -807,7 +779,7 @@ fn translate_blockquote_block(
     }
 
     let translated_inner =
-        translate_document_internal(&stripped, parse_formats, &mut handler.reborrow(), depth + 1);
+        translate_document_internal(&stripped, &mut handler.reborrow(), depth + 1);
 
     // Re-apply `> ` prefix to each line
     let translated_lines = split_lines_with_endings(&translated_inner);
@@ -831,7 +803,6 @@ fn translate_blockquote_block(
 /// and translating text segments with inline markup.
 fn translate_html_block(
     raw: &str,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
     depth: usize,
 ) -> String {
@@ -865,7 +836,6 @@ fn translate_html_block(
                         flush_html_text_buffer(
                             &mut out,
                             &mut text_buf,
-                            parse_formats,
                             handler,
                             depth,
                         );
@@ -895,8 +865,7 @@ fn translate_html_block(
         }
     }
 
-    // Flush any remaining text buffer
-    flush_html_text_buffer(&mut out, &mut text_buf, parse_formats, handler, depth);
+    flush_html_text_buffer(&mut out, &mut text_buf, handler, depth);
     out
 }
 
@@ -904,7 +873,6 @@ fn translate_html_block(
 fn flush_html_text_buffer(
     out: &mut String,
     text_buf: &mut String,
-    parse_formats: ParseFormats,
     handler: &mut TranslateHandler<'_>,
     depth: usize,
 ) {
@@ -921,11 +889,11 @@ fn flush_html_text_buffer(
     // Check if the text inside the HTML block has Markdown sub-blocks (e.g. lists, blank-line separated paragraphs)
     if contains_markdown_blocks(text_buf) {
         let translated =
-            translate_document_internal(text_buf, parse_formats, &mut handler.reborrow(), depth + 1);
+            translate_document_internal(text_buf, &mut handler.reborrow(), depth + 1);
         out.push_str(&translated);
     } else {
         let translated =
-            translate_translatable_content(text_buf, parse_formats, handler);
+            translate_translatable_content(text_buf, handler);
         out.push_str(&translated);
     }
 
@@ -1711,7 +1679,7 @@ mod tests {
     #[test]
     fn test_yaml_frontmatter_protection() {
         let doc = "---\ntitle: \"Hello World\"\nauthor: Test\n---\n\n# Header\n\nBody paragraph.";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
 
         assert!(res.starts_with("---\ntitle: \"Hello World\"\nauthor: Test\n---\n"));
         assert!(res.contains("# TR(Header)"));
@@ -1721,7 +1689,7 @@ mod tests {
     #[test]
     fn test_fenced_code_block_protection() {
         let doc = "Here is code:\n\n```python\ndef foo():\n    return 42\n```\n\nDone.";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
 
         assert!(res.contains("```python\ndef foo():\n    return 42\n```"));
         assert!(res.contains("TR(Here) TR(is) TR(code:)"));
@@ -1731,7 +1699,7 @@ mod tests {
     #[test]
     fn test_markdown_table_protection_and_translation() {
         let doc = "| Feature | Value |\n| :--- | ---: |\n| Bold | **text** |\n";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
 
         assert!(res.contains("| :--- | ---: |"));
         assert!(res.contains("| TR(Feature) | TR(Value) |"));
@@ -1741,7 +1709,7 @@ mod tests {
     #[test]
     fn test_task_list_preservation() {
         let doc = "- [x] Finished task\n- [ ] Pending **important** task\n";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
 
         assert!(res.starts_with("- [x] TR(Finished) TR(task)\n"));
         assert!(res.contains("- [ ] TR(Pending) **TR(important)** TR(task)\n"));
@@ -1750,7 +1718,7 @@ mod tests {
     #[test]
     fn test_html_blocks_and_inlines() {
         let doc = "<div class=\"note\">\n  <p>Hello <b>world</b> and <code>var x = 1;</code></p>\n</div>";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
 
         assert!(res.starts_with("<div class=\"note\">\n  <p>"));
         assert!(res.contains("<b>TR(world)</b>"));
@@ -1766,7 +1734,6 @@ mod tests {
         let mut sentences_translated = Vec::new();
         let res = translate_document_with_alignment(
             long_para,
-            ParseFormats::default(),
             |sent| {
                 sentences_translated.push(sent.to_string());
                 mock_translate(sent)
@@ -1797,7 +1764,6 @@ mod tests {
         let mut sentences_translated = Vec::new();
         let _ = translate_document_with_alignment(
             long_para_multi,
-            ParseFormats::default(),
             |sent| {
                 sentences_translated.push(sent.to_string());
                 mock_translate(sent)
@@ -1815,7 +1781,6 @@ mod tests {
         let soft_break_doc = "This is line one\nthat continues seamlessly on line two.\n";
         let res = translate_document_with_alignment(
             soft_break_doc,
-            ParseFormats::default(),
             mock_translate,
         );
         assert!(res.contains("TR(This) TR(is) TR(line) TR(one)"));
@@ -1823,7 +1788,6 @@ mod tests {
         let hard_break_doc = "First line with hard break  \nSecond line.\n";
         let res_hard = translate_document_with_alignment(
             hard_break_doc,
-            ParseFormats::default(),
             mock_translate,
         );
         assert!(res_hard.contains("  \n"));
@@ -1832,7 +1796,7 @@ mod tests {
     #[test]
     fn test_footnote_and_divider() {
         let doc = "Reference.[^1]\n\n---\n\n[^1]: Note with *italic* text.\n";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
 
         assert!(res.contains("---\n"));
         assert!(res.contains("[^1]: TR(Note) TR(with) *TR(italic)* TR(text.)"));
@@ -1841,7 +1805,7 @@ mod tests {
     #[test]
     fn test_blockquote_with_inner_content() {
         let doc = "> Quote line 1\n>\n> Quote line 2 with `code`\n";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
 
         assert!(res.contains("> TR(Quote) TR(line) TR(1)"));
         assert!(res.contains(">\n"));
@@ -1875,7 +1839,7 @@ fn main() { println!("Hello"); }
 </details>
 "#;
 
-        let res = translate_document_with_alignment(input, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(input, mock_translate);
 
         // Verify all key structural anchors
         assert!(res.starts_with("---\ntitle: \"Demo\"\n---"));
@@ -1896,7 +1860,7 @@ fn main() { println!("Hello"); }
     #[test]
     fn test_standalone_image_and_void_tags_preservation() {
         let doc = "![Alt text](https://example.com/logo.png)\n\n<img src=\"pic.png\" />\n\n`var x = 1;`\n";
-        let res = translate_document_with_alignment(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(doc, mock_translate);
         assert!(res.contains("![Alt text](https://example.com/logo.png)"));
         assert!(res.contains("<img src=\"pic.png\" />"));
         assert!(res.contains("`var x = 1;`"));
@@ -1919,7 +1883,7 @@ fn main() { println!("Hello"); }
     #[test]
     fn test_translate_document_with_alignment_parallel() {
         let doc = "# Hello World\n\nThis is paragraph one with **bold** text.\n\nThis is paragraph two. It has multiple sentences. And another sentence.\n";
-        let res = translate_document_with_alignment_parallel(doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment_parallel(doc, mock_translate);
         assert!(res.contains("# TR(Hello) TR(World)"));
         assert!(res.contains("**TR(bold)**"));
         assert!(res.contains("TR(This) TR(is) TR(paragraph) TR(two.)"));
@@ -1946,7 +1910,6 @@ fn main() { println!("Hello"); }
 
         let res_seq = translate_document_dual(
             doc,
-            ParseFormats::default(),
             |plain| {
                 plain_called += 1;
                 assert!(!plain.contains("**"));
@@ -1967,7 +1930,6 @@ fn main() { println!("Hello"); }
 
         let res_par = translate_document_dual_parallel(
             doc,
-            ParseFormats::default(),
             |plain| format!("PLAIN({})", plain),
             mock_translate,
         );
@@ -2029,7 +1991,6 @@ The Example Registrar team
         let mut translated_segments = Vec::new();
         let res = translate_document_with_alignment(
             input,
-            ParseFormats::default(),
             |text| {
                 translated_segments.push(text.to_string());
                 mock_translate(text)
@@ -2053,7 +2014,6 @@ The Example Registrar team
         let mut segments = Vec::new();
         let res = translate_document_with_alignment(
             input,
-            ParseFormats::default(),
             |text| {
                 segments.push(text.to_string());
                 mock_translate(text)
@@ -2074,7 +2034,7 @@ The Example Registrar team
         }
         doc.push_str("Deep quote\n");
 
-        let res = translate_document_with_alignment(&doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(&doc, mock_translate);
         assert!(res.contains("TR(Deep) TR(quote)"));
         let gt_count = res.chars().filter(|&c| c == '>').count();
         assert!(gt_count >= MAX_DOCUMENT_DEPTH);
@@ -2088,7 +2048,7 @@ The Example Registrar team
         }
         doc.push_str("Nested\n");
 
-        let res = translate_document_with_alignment(&doc, ParseFormats::default(), mock_translate);
+        let res = translate_document_with_alignment(&doc, mock_translate);
         assert!(res.contains("TR(Nested)"));
     }
 }

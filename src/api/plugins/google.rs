@@ -70,24 +70,13 @@ pub async fn translate_compat(
     let source = parse_source_lang(Some(&body.source));
     let target = parse_target_lang(&body.target, "target")?;
 
-    let parse_formats = body.format.as_deref().and_then(|f| {
-        if f.eq_ignore_ascii_case("html") {
-            Some(crate::config::ParseFormats {
-                html: true,
-                md: false,
-            })
-        } else if f.eq_ignore_ascii_case("text") {
-            Some(crate::config::ParseFormats::NONE)
-        } else {
-            None
-        }
-    });
+    let parse_markup = resolve_google_format(body.format.as_deref());
 
-    let results = service::translate_batch_with_pivot_formats(
+    let results = service::translate_batch_with_pivot_markup(
         &source,
         &target,
         body.q.as_slice(),
-        parse_formats,
+        parse_markup,
     )
     .await?;
 
@@ -149,6 +138,18 @@ pub async fn translate_single(
         None,
         [],
     )))
+}
+
+pub(crate) fn resolve_google_format(format: Option<&str>) -> Option<bool> {
+    format.and_then(|f| {
+        if f.eq_ignore_ascii_case("html") {
+            Some(true)
+        } else if f.eq_ignore_ascii_case("text") {
+            Some(false)
+        } else {
+            None
+        }
+    })
 }
 
 pub(crate) fn convert_bcp47_to_google(lang: &str) -> &str {
@@ -293,5 +294,14 @@ mod tests {
         );
         let serialized = serde_json::to_string(&res_auto_empty.0).unwrap();
         assert!(!serialized.contains("detectedSourceLanguage"), "Should omit detectedSourceLanguage when None: {serialized}");
+    }
+    #[test]
+    fn test_resolve_google_format() {
+        assert_eq!(resolve_google_format(Some("html")), Some(true));
+        assert_eq!(resolve_google_format(Some("HTML")), Some(true));
+        assert_eq!(resolve_google_format(Some("text")), Some(false));
+        assert_eq!(resolve_google_format(Some("TEXT")), Some(false));
+        assert_eq!(resolve_google_format(Some("other")), None);
+        assert_eq!(resolve_google_format(None), None);
     }
 }

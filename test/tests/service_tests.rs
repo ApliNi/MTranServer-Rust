@@ -3,8 +3,9 @@ use std::time::Duration;
 use mtranserver_lib::config::{self, Cli};
 use mtranserver_lib::service::{
     ensure_engine_loaded, ensure_required_engines, translate_batch_with_pivot_formats,
-    translate_long_text, translate_long_text_with_engines, translate_segment, translate_with_pivot,
-    translate_with_pivot_detected, translate_with_pivot_timed, PreparedEngines, ServiceError,
+    translate_batch_with_pivot_markup, translate_long_text, translate_long_text_with_engines,
+    translate_segment, translate_with_pivot, translate_with_pivot_detected,
+    translate_with_pivot_markup, translate_with_pivot_timed, PreparedEngines, ServiceError,
 };
 
 static INIT: std::sync::Once = std::sync::Once::new();
@@ -13,7 +14,7 @@ fn ensure_config_init() {
     INIT.call_once(|| {
         if !config::is_initialized() {
             use clap::Parser;
-            let cli = Cli::parse_from(["mtranserver", "--parse-formats", "false"]);
+            let cli = Cli::parse_from(["mtranserver", "--parse-markup", "false"]);
             config::init(cli);
         }
     });
@@ -47,7 +48,7 @@ async fn test_translate_wrappers_same_language() {
 #[tokio::test]
 async fn test_translate_segment_same_language() {
     ensure_config_init();
-    let (text, duration) = translate_segment("de", "de", "hallo", config::ParseFormats::default())
+    let (text, duration) = translate_segment("de", "de", "hallo", true)
         .await
         .unwrap();
     assert_eq!(text, "hallo");
@@ -66,7 +67,7 @@ async fn test_ensure_required_engines_same_language() {
 async fn test_translate_long_text_same_language() {
     ensure_config_init();
     let text = "First sentence. Second sentence. Third sentence.";
-    let (out, duration) = translate_long_text("en", "en", text, config::ParseFormats::default())
+    let (out, duration) = translate_long_text("en", "en", text, true)
         .await
         .unwrap();
     assert_eq!(out, text);
@@ -92,6 +93,32 @@ async fn test_translate_batch_empty() {
         .await
         .unwrap();
     assert!(results.is_empty());
+
+    let results_markup = translate_batch_with_pivot_markup("en", "zh", &[], None)
+        .await
+        .unwrap();
+    assert!(results_markup.is_empty());
+}
+
+#[tokio::test]
+async fn test_translate_with_pivot_markup_wrapper() {
+    ensure_config_init();
+    let res_true = translate_with_pivot_markup("en", "en", "hello world", Some(true))
+        .await
+        .unwrap();
+    assert_eq!(res_true, "hello world");
+
+    let res_false = translate_with_pivot_markup("en", "en", "hello world", Some(false))
+        .await
+        .unwrap();
+    assert_eq!(res_false, "hello world");
+
+    let texts = vec!["Foo".to_string(), "Bar".to_string()];
+    let batch_true = translate_batch_with_pivot_markup("en", "en", &texts, Some(true))
+        .await
+        .unwrap();
+    assert_eq!(batch_true.len(), 2);
+    assert_eq!(batch_true[0].0, "Foo");
 }
 
 #[tokio::test]
@@ -104,7 +131,7 @@ async fn test_translate_long_text_western_spacing() {
         "zh",
         "en",
         text,
-        config::ParseFormats::default(),
+        true,
     )
     .await
     .unwrap();
@@ -116,7 +143,7 @@ async fn test_translate_long_text_western_spacing() {
         "zh",
         "en",
         text_spaced,
-        config::ParseFormats::default(),
+        true,
     )
     .await
     .unwrap();
@@ -127,7 +154,7 @@ async fn test_translate_long_text_western_spacing() {
         "ja",
         "zh",
         "第一句。第二句！第三句？",
-        config::ParseFormats::default(),
+        true,
     )
     .await
     .unwrap();

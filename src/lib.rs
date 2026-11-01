@@ -13,7 +13,6 @@ pub mod utils;
 pub mod version;
 
 // Convenient top-level re-exports for testing and direct embedding
-pub use config::ParseFormats;
 pub use engine::{EngineConfig, EngineError, Model, SentencePiece, Shortlist, TranslationEngine};
 pub use service::{
     translate, translate_batch, ServiceError, TranslatedText, TranslationOutput,

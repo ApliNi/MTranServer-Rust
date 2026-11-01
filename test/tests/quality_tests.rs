@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use mtranserver_lib::config::ParseFormats;
 use mtranserver_lib::engine::{EngineConfig, TranslationEngine};
 use mtranserver_test::loader::load_text;
 
@@ -37,13 +36,7 @@ fn test_html_modes_comparison() {
     let input_html = r#"<div class="card" id="main"><h2 class="title">User Guide</h2><p>Please visit <a href="https://example.com/help" class="link">our website</a> for more details.</p></div>"#;
 
     // 1. Dom 模式 (默认火狐官方方案)
-    let dom_result = engine.translate_with_formats(
-        input_html,
-        ParseFormats {
-            html: true,
-            md: false,
-        },
-    );
+    let dom_result = engine.translate_with_markup(input_html, true);
     println!("\n[Mode 1: DOM (Default Firefox Architecture)]");
     println!("Input:  {}", input_html);
     println!("Output: {}", dom_result);
@@ -55,7 +48,7 @@ fn test_html_modes_comparison() {
     assert!(dom_result.contains(r#"</a>"#));
     assert!(dom_result.contains(r#"</p></div>"#));
 
-    let native_result = engine.translate_with_formats(input_html, ParseFormats::NONE);
+    let native_result = engine.translate_with_markup(input_html, false);
     println!("\n[Mode 2: Native (Direct Model Passthrough)]");
     println!("Input:  {}", input_html);
     println!("Output: {}", native_result);
@@ -83,7 +76,7 @@ fn test_real_composite_markdown_document() {
 
     let test_md = load_text("documents/composite.md");
 
-    let translated = engine.translate_with_formats(&test_md, ParseFormats::ALL);
+    let translated = engine.translate_with_markup(&test_md, true);
     let normalized = translated.replace("\r\n", "\n");
     // 1. YAML Frontmatter must remain 100% verbatim
     assert!(normalized.starts_with("---\ntitle: \"A Complex HTML + Markdown Mashup\"\nauthor: Jane Doe\ntags: [markdown, html, demo]\n---"));
@@ -226,7 +219,7 @@ Thank you for your attention.
 The Example Registrar team
 "#;
 
-    let res = engine.translate_with_formats(input, ParseFormats::ALL);
+    let res = engine.translate_with_markup(input, true);
     // 1. Verify key newlines are strictly preserved
     assert!(res.contains("example.org\n"), "actual: {}", res);
     assert!(res.contains("ns1.example.org\n"), "actual: {}", res);
@@ -263,7 +256,7 @@ fn test_subword_continuation_markup_alignment_en_pt() {
     .expect("Failed to load en_pt engine");
 
     let input = "This is <b>bold</b> and <i>italic</i> text.";
-    let output = engine.translate_with_formats(input, ParseFormats::ALL);
+    let output = engine.translate_with_markup(input, true);
     println!("en->pt markup output: {}", output);
     // 1. Must not split "negrito" into "<b>neg</b>rito"
     assert!(

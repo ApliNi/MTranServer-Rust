@@ -41,9 +41,9 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
 | `from` | string | 是 | 源语言代码,可用 `"auto"` 自动检测 |
 | `to` | string | 是 | 目标语言代码 |
 | `text` | string | 是 | 待翻译文本 |
-| `parse` | string / bool / int | 否 | 标记解析格式: `html,md`、`html`、`md`、`false`、`0` |
+| `parse` | bool / string / int | 否 | 是否启用标记格式保留: `true`/`false`、`1`/`0`、`"raw"`、`"none"` (兼容 `"html"`, `"md"`) |
 
-> 复合文档与富文本标记（包含 YAML Frontmatter、代码围栏、表格、HTML 块级容器/注释、LaTeX 数学公式、HTML 实体及各种行内标记）由统一 Hybrid AST 流水线自动解析与保护，行内标记通过 Marian Transformer Cross-Attention 词对齐动态投影回译文语序。未传入 `parse` 参数时使用后端全局 `--parse-formats` 配置（默认 `html,md`）。
+> 复合文档与富文本标记（包含 YAML Frontmatter、代码围栏、表格、HTML 块级容器/注释、LaTeX 数学公式、HTML 实体及各种行内标记）由统一 Hybrid AST 流水线自动解析与保护，行内标记通过 Marian Transformer Cross-Attention 词对齐动态投影回译文语序。未传入 `parse` 参数时使用后端全局 `--parse-markup` 配置（默认开启）。
 成功响应:
 
 ```json
