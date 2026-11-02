@@ -72,11 +72,8 @@ pub fn create_router(cfg: &crate::config::Config) -> Router {
         .route("/detect", post(self::languages::detect_language))
         .route("/translate", post(self::translate::translate))
         .route("/translate/batch", post(self::translate::translate_batch))
-        .route("/imme", post(self::plugins::imme::translate))
         .route("/deepl", post(self::plugins::deepl::translate))
         .route("/deeplx", post(self::plugins::deeplx::translate))
-        .route("/kiss", post(self::plugins::kiss::translate))
-        .route("/hcfy", post(self::plugins::hcfy::translate))
         .route(
             "/google/language/translate/v2",
             post(self::plugins::google::translate_compat),

@@ -125,11 +125,8 @@ data/
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
-| `/deeplx` | POST | 兼容 DeepLX (推荐) |
+| `/deeplx` | POST | 兼容 DeepLX (推荐) (支持富文本翻译) |
 | `/deepl` | POST | 兼容 DeepL API v2 |
-| `/imme` | POST | 兼容 [沉浸式翻译](https://immersivetranslate.com/) |
-| `/kiss` | POST | 兼容 [简约翻译](https://github.com/fishjar/kiss-translator) |
-| `/hcfy` | POST | 兼容 [划词翻译](https://github.com/Selection-Translator/crx-selection-translate) |
 | `/google/language/translate/v2` | POST | 兼容 Google Translate API v2 |
 | `/google/translate_a/single` | GET | 兼容 Google translate_a/single |
 
@@ -142,6 +139,24 @@ data/
 该文件包含一些测试用例, 并将翻译结果一并保存在该文件中, 以便后续对比翻译质量变化.
 
 https://github.com/ApliNi/MTranServer-Rust/commits/main/test/cases/regression.json
+
+### 已知问题
+
+**多语言混排文本无法正确翻译**
+
+单个翻译模型的设计决定它无法处理多语言文本.
+而语言检测目前无法逐字区分语言.
+
+### 关于 LLM 和其他翻译 API
+
+本项目的翻译质量在现有的其他免费服务里几乎垫底, 这是我们很难改进的.
+目前它被设计为在基本可用的翻译质量下的提供极高的并发能力.
+
+实际上有许多本地部署友好的小体积 LLM 也可胜任并发翻译任务, 并且它们的能力更好.
+大部分 1b 左右的专用翻译 LLM 足以胜任网页浏览相关的实时翻译任务, 并且可以自定义翻译要求.
+
+对于 Google 翻译等免费翻译服务, 它们的翻译质量也比本项目好的多.
+如果不追求本地部署和批量处理, 直接使用这些服务也是很好的选择.
 
 ## 性能基准
 

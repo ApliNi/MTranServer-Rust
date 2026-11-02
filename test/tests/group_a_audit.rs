@@ -625,9 +625,6 @@ fn test_audit_step2_markup_inline_and_split_equivalence() {
 use mtranserver_lib::api::plugins::deepl::{DeeplRequest, DeeplResponse};
 use mtranserver_lib::api::plugins::deeplx::{DeeplxRequest, DeeplxResponse};
 use mtranserver_lib::api::plugins::google::{GoogleRequest, GoogleResponse};
-use mtranserver_lib::api::plugins::hcfy::{HcfyRequest, HcfyResponse};
-use mtranserver_lib::api::plugins::imme::{ImmeRequest, ImmeResponse};
-use mtranserver_lib::api::plugins::kiss::{KissRequest, KissResponse};
 use mtranserver_lib::api::plugins::{parse_source_lang, parse_target_lang, OneOrMany};
 use mtranserver_lib::api::translate::validate_batch;
 
@@ -765,98 +762,6 @@ fn test_audit_step3_google_protocol_compatibility() {
         r#"{"data":{"translations":[{"translatedText":"你好","detectedSourceLanguage":"en"}]}}"#
     );
 
-}
-
-#[test]
-fn test_audit_step3_hcfy_protocol_compatibility() {
-    let json = r#"{"text":"Hello world","source":"英语","destination":["中文(简体)"]}"#;
-    let req: HcfyRequest = serde_json::from_str(json).unwrap();
-    assert_eq!(req.text, "Hello world");
-    assert_eq!(req.source.as_deref(), Some("英语"));
-    assert_eq!(req.destination, vec!["中文(简体)".to_string()]);
-
-    let json_empty = r#"{"text":"","destination":[]}"#;
-    let req_empty: HcfyRequest = serde_json::from_str(json_empty).unwrap();
-    assert_eq!(req_empty.source, None);
-    assert!(req_empty.destination.is_empty());
-
-    let resp = HcfyResponse {
-        text: "你好世界".to_string(),
-        from: "英语".to_string(),
-        to: "中文(简体)".to_string(),
-        result: None,
-    };
-    let serialized = serde_json::to_string(&resp).unwrap();
-    assert_eq!(
-        serialized,
-        r#"{"text":"你好世界","from":"英语","to":"中文(简体)"}"#
-    );
-}
-#[test]
-fn test_audit_step3_kiss_protocol_compatibility() {
-    let json_text = r#"{"text":"Hello","from":"en","to":"zh"}"#;
-    let req: KissRequest = serde_json::from_str(json_text).unwrap();
-    assert_eq!(req.text.as_deref(), Some("Hello"));
-    assert_eq!(req.texts, None);
-    assert_eq!(req.from, "en");
-    assert_eq!(req.to, "zh");
-
-    let json_texts = r#"{"texts":["A","B"],"from":null,"to":"zh"}"#;
-    let req2: KissRequest = serde_json::from_str(json_texts).unwrap();
-    assert_eq!(req2.text, None);
-    assert_eq!(
-        req2.texts,
-        Some(vec!["A".to_string(), "B".to_string()])
-    );
-    assert_eq!(req2.from, "");
-
-    let resp_single = KissResponse {
-        text: Some("你好".to_string()),
-        src: Some("en".to_string()),
-        translations: None,
-    };
-    let s_single = serde_json::to_string(&resp_single).unwrap();
-    assert_eq!(s_single, r#"{"text":"你好","src":"en"}"#);
-
-    let resp_multi = KissResponse {
-        text: None,
-        src: None,
-        translations: Some(vec![
-            mtranserver_lib::api::plugins::kiss::KissTranslation {
-                text: "甲".to_string(),
-                src: "en".to_string(),
-            },
-        ]),
-    };
-    let s_multi = serde_json::to_string(&resp_multi).unwrap();
-    assert_eq!(s_multi, r#"{"translations":[{"text":"甲","src":"en"}]}"#);
-}
-
-#[test]
-fn test_audit_step3_imme_protocol_compatibility() {
-    let json = r#"{"text_list":["Hello","World"],"source_lang":"en","target_lang":"zh"}"#;
-    let req: ImmeRequest = serde_json::from_str(json).unwrap();
-    assert_eq!(req.text_list, vec!["Hello", "World"]);
-    assert_eq!(req.source_lang, "en");
-    assert_eq!(req.target_lang, "zh");
-
-    let json_null = r#"{"text_list":[],"source_lang":null,"target_lang":"zh"}"#;
-    let req_null: ImmeRequest = serde_json::from_str(json_null).unwrap();
-    assert_eq!(req_null.source_lang, "");
-
-    let resp = ImmeResponse {
-        translations: vec![
-            mtranserver_lib::api::plugins::imme::ImmeTranslation {
-                detected_source_lang: "en".to_string(),
-                text: "你好".to_string(),
-            },
-        ],
-    };
-    let s = serde_json::to_string(&resp).unwrap();
-    assert_eq!(
-        s,
-        r#"{"translations":[{"detected_source_lang":"en","text":"你好"}]}"#
-    );
 }
 
 #[test]

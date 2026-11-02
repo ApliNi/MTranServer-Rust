@@ -150,40 +150,6 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
 
 服务端兼容以下第三方翻译 API 的请求格式,可直接替换使用。
 
-### 极简翻译 — `/kiss`
-
-**POST** `http://localhost:8989/kiss`
-
-请求体:
-
-```json
-{
-  "from": "en",
-  "to": "zh-Hans",
-  "text": "Hello world"
-}
-```
-
-单条响应:
-
-```json
-{"text": "你好，世界", "src": "en"}
-```
-
-支持 `texts` 数组批量:
-
-```json
-{"texts": ["Hello", "World"]}
-```
-
-批量响应:
-
-```json
-{"translations": [{"text": "你好", "src": "en"}, {"text": "世界", "src": "en"}]}
-```
-
-`texts` 为非空数组时进入批量分支并返回 `translations`; 否则读取 `text` 字段, 两者均缺失时返回 `500`。
-
 ### DeepL — `/deepl`
 
 **POST** `http://localhost:8989/deepl`
@@ -247,33 +213,6 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
 }
 ```
 
-### 划词翻译 — `/hcfy`
-
-**POST** `http://localhost:8989/hcfy`
-
-兼容划词翻译扩展格式:
-
-```json
-{
-  "text": "Hello world",
-  "destination": ["中文(简体)"],
-  "source": "英语"
-}
-```
-
-语言代码支持中文名称: `"英语"`、`"中文(简体)"`、`"日语"` 等。
-
-响应:
-
-```json
-{
-  "text": "Hello world",
-  "from": "英语",
-  "to": "中文(简体)",
-  "result": ["你好，世界"]
-}
-```
-
 ### Google Translate — `/google`
 
 **POST** `http://localhost:8989/google/language/translate/v2`
@@ -317,33 +256,6 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
 
 ```json
 [[["你好，世界","Hello",null,null,1]],null,"en",null,null,null,null,[]]
-```
-
-### 浏览器插件 — `/imme`
-
-**POST** `http://localhost:8989/imme`
-
-兼容 Immersive Translate 扩展格式:
-
-```json
-{
-  "source_lang": "en",
-  "target_lang": "zh-Hans",
-  "text_list": ["Hello world", "Good morning"]
-}
-```
-
-鉴权遵循全局规则 (见顶部「鉴权」章节), 兼容查询参数 `?token=<token>`。
-
-`source_lang` 为源语言(仅用于标识, 翻译时始终自动检测语言); `text_list` 中的空字符串条目直接返回空文本, 单条翻译失败时该条目返回原文。
-
-```json
-{
-  "translations": [
-    {"detected_source_lang": "en", "text": "你好，世界"},
-    {"detected_source_lang": "en", "text": "Good morning"}
-  ]
-}
 ```
 
 ## 错误响应

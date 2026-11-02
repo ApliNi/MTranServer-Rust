@@ -1,9 +1,6 @@
 pub mod deepl;
 pub mod deeplx;
 pub mod google;
-pub mod hcfy;
-pub mod imme;
-pub mod kiss;
 
 use std::borrow::Cow;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
