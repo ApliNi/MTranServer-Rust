@@ -674,7 +674,7 @@ mod fused_add_layer_norm_tests {
     }
     #[test]
     fn test_gelu_accuracy_and_vectorization() {
-        use crate::engine::tensor::{Tensor2, gelu, gelu_f32, gelu_inplace, gelu_into};
+        use crate::engine::tensor::{gelu, gelu_f32, gelu_inplace, gelu_into, Tensor2};
 
         // Test over a broad range of values: negative, zero, positive, tail cases
         let test_vals: Vec<f32> = (-200..=200).map(|i| i as f32 * 0.1).collect();
@@ -774,7 +774,9 @@ mod fused_add_layer_norm_tests {
     fn test_quantized_matmul_pair_multi_row_matches_individual() {
         let mut rng = 987654321u64;
         let mut rand_f = || {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (rng >> 33) as f32 / (u32::MAX as f32) - 0.5
         };
 
@@ -786,16 +788,30 @@ mod fused_add_layer_norm_tests {
             (33, 64, 96, 64),
         ] {
             let x_data: Vec<f32> = (0..m * k).map(|_| rand_f()).collect();
-            let w1_data: Vec<i8> = (0..n1 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
-            let w2_data: Vec<i8> = (0..n2 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
+            let w1_data: Vec<i8> = (0..n1 * k)
+                .map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8)
+                .collect();
+            let w2_data: Vec<i8> = (0..n2 * k)
+                .map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8)
+                .collect();
             let b1_data: Vec<f32> = (0..n1).map(|_| rand_f() * 0.1).collect();
             let b2_data: Vec<f32> = (0..n2).map(|_| rand_f() * 0.1).collect();
 
             let x = Tensor2::from_vec([m, k], x_data);
             let rs1 = crate::engine::tensor::simd::compute_row_sums(&w1_data, n1, k).into_owned();
             let rs2 = crate::engine::tensor::simd::compute_row_sums(&w2_data, n2, k).into_owned();
-            let w1 = Quant8Tensor { shape: vec![n1, k], data: w1_data.into(), quant_mult: 64.0, row_sums: Some(rs1) };
-            let w2 = Quant8Tensor { shape: vec![n2, k], data: w2_data.into(), quant_mult: 64.0, row_sums: Some(rs2) };
+            let w1 = Quant8Tensor {
+                shape: vec![n1, k],
+                data: w1_data.into(),
+                quant_mult: 64.0,
+                row_sums: Some(rs1),
+            };
+            let w2 = Quant8Tensor {
+                shape: vec![n2, k],
+                data: w2_data.into(),
+                quant_mult: 64.0,
+                row_sums: Some(rs2),
+            };
             let bias1 = Tensor2::from_vec([1, n1], b1_data);
             let bias2 = Tensor2::from_vec([1, n2], b2_data);
 
@@ -804,28 +820,56 @@ mod fused_add_layer_norm_tests {
             // With bias
             let mut p_out1 = Tensor2::zeros([m, n1]);
             let mut p_out2 = Tensor2::zeros([m, n2]);
-            x.quantized_matmul_pair_into(&w1, Some(&bias1), &mut p_out1, &w2, Some(&bias2), &mut p_out2, qa);
+            x.quantized_matmul_pair_into(
+                &w1,
+                Some(&bias1),
+                &mut p_out1,
+                &w2,
+                Some(&bias2),
+                &mut p_out2,
+                qa,
+            );
 
             let mut ind_out1 = Tensor2::zeros([m, n1]);
             let mut ind_out2 = Tensor2::zeros([m, n2]);
             x.quantized_matmul_biased_into(&w1, qa, Some(&bias1), &mut ind_out1);
             x.quantized_matmul_biased_into(&w2, qa, Some(&bias2), &mut ind_out2);
 
-            assert_eq!(p_out1.data, ind_out1.data, "pair out1 mismatch at m={m} k={k} n1={n1}");
-            assert_eq!(p_out2.data, ind_out2.data, "pair out2 mismatch at m={m} k={k} n2={n2}");
+            assert_eq!(
+                p_out1.data, ind_out1.data,
+                "pair out1 mismatch at m={m} k={k} n1={n1}"
+            );
+            assert_eq!(
+                p_out2.data, ind_out2.data,
+                "pair out2 mismatch at m={m} k={k} n2={n2}"
+            );
 
             // Without bias
             let mut p_out1_nobias = Tensor2::zeros([m, n1]);
             let mut p_out2_nobias = Tensor2::zeros([m, n2]);
-            x.quantized_matmul_pair_into(&w1, None, &mut p_out1_nobias, &w2, None, &mut p_out2_nobias, qa);
+            x.quantized_matmul_pair_into(
+                &w1,
+                None,
+                &mut p_out1_nobias,
+                &w2,
+                None,
+                &mut p_out2_nobias,
+                qa,
+            );
 
             let mut ind_out1_nobias = Tensor2::zeros([m, n1]);
             let mut ind_out2_nobias = Tensor2::zeros([m, n2]);
             x.quantized_matmul_biased_into(&w1, qa, None, &mut ind_out1_nobias);
             x.quantized_matmul_biased_into(&w2, qa, None, &mut ind_out2_nobias);
 
-            assert_eq!(p_out1_nobias.data, ind_out1_nobias.data, "pair out1 (nobias) mismatch at m={m}");
-            assert_eq!(p_out2_nobias.data, ind_out2_nobias.data, "pair out2 (nobias) mismatch at m={m}");
+            assert_eq!(
+                p_out1_nobias.data, ind_out1_nobias.data,
+                "pair out1 (nobias) mismatch at m={m}"
+            );
+            assert_eq!(
+                p_out2_nobias.data, ind_out2_nobias.data,
+                "pair out2 (nobias) mismatch at m={m}"
+            );
         }
     }
 
@@ -833,7 +877,9 @@ mod fused_add_layer_norm_tests {
     fn test_quantized_matmul_triple_multi_row_matches_individual() {
         let mut rng = 543216789u64;
         let mut rand_f = || {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (rng >> 33) as f32 / (u32::MAX as f32) - 0.5
         };
 
@@ -845,9 +891,15 @@ mod fused_add_layer_norm_tests {
             (35, 64, 64, 64, 64),
         ] {
             let x_data: Vec<f32> = (0..m * k).map(|_| rand_f()).collect();
-            let w1_data: Vec<i8> = (0..n1 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
-            let w2_data: Vec<i8> = (0..n2 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
-            let w3_data: Vec<i8> = (0..n3 * k).map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8).collect();
+            let w1_data: Vec<i8> = (0..n1 * k)
+                .map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8)
+                .collect();
+            let w2_data: Vec<i8> = (0..n2 * k)
+                .map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8)
+                .collect();
+            let w3_data: Vec<i8> = (0..n3 * k)
+                .map(|_| ((rand_f() * 40.0) as i32).clamp(-127, 127) as i8)
+                .collect();
             let b1_data: Vec<f32> = (0..n1).map(|_| rand_f() * 0.1).collect();
             let b2_data: Vec<f32> = (0..n2).map(|_| rand_f() * 0.1).collect();
             let b3_data: Vec<f32> = (0..n3).map(|_| rand_f() * 0.1).collect();
@@ -856,9 +908,24 @@ mod fused_add_layer_norm_tests {
             let rs1 = crate::engine::tensor::simd::compute_row_sums(&w1_data, n1, k).into_owned();
             let rs2 = crate::engine::tensor::simd::compute_row_sums(&w2_data, n2, k).into_owned();
             let rs3 = crate::engine::tensor::simd::compute_row_sums(&w3_data, n3, k).into_owned();
-            let w1 = Quant8Tensor { shape: vec![n1, k], data: w1_data.into(), quant_mult: 64.0, row_sums: Some(rs1) };
-            let w2 = Quant8Tensor { shape: vec![n2, k], data: w2_data.into(), quant_mult: 64.0, row_sums: Some(rs2) };
-            let w3 = Quant8Tensor { shape: vec![n3, k], data: w3_data.into(), quant_mult: 64.0, row_sums: Some(rs3) };
+            let w1 = Quant8Tensor {
+                shape: vec![n1, k],
+                data: w1_data.into(),
+                quant_mult: 64.0,
+                row_sums: Some(rs1),
+            };
+            let w2 = Quant8Tensor {
+                shape: vec![n2, k],
+                data: w2_data.into(),
+                quant_mult: 64.0,
+                row_sums: Some(rs2),
+            };
+            let w3 = Quant8Tensor {
+                shape: vec![n3, k],
+                data: w3_data.into(),
+                quant_mult: 64.0,
+                row_sums: Some(rs3),
+            };
             let bias1 = Tensor2::from_vec([1, n1], b1_data);
             let bias2 = Tensor2::from_vec([1, n2], b2_data);
             let bias3 = Tensor2::from_vec([1, n3], b3_data);
@@ -869,9 +936,15 @@ mod fused_add_layer_norm_tests {
             let mut t_out2 = Tensor2::zeros([m, n2]);
             let mut t_out3 = Tensor2::zeros([m, n3]);
             x.quantized_matmul_triple_into(
-                &w1, Some(&bias1), &mut t_out1,
-                &w2, Some(&bias2), &mut t_out2,
-                &w3, Some(&bias3), &mut t_out3,
+                &w1,
+                Some(&bias1),
+                &mut t_out1,
+                &w2,
+                Some(&bias2),
+                &mut t_out2,
+                &w3,
+                Some(&bias3),
+                &mut t_out3,
                 qa,
             );
 
@@ -882,9 +955,18 @@ mod fused_add_layer_norm_tests {
             x.quantized_matmul_biased_into(&w2, qa, Some(&bias2), &mut ind_out2);
             x.quantized_matmul_biased_into(&w3, qa, Some(&bias3), &mut ind_out3);
 
-            assert_eq!(t_out1.data, ind_out1.data, "triple out1 mismatch at m={m} k={k} n1={n1}");
-            assert_eq!(t_out2.data, ind_out2.data, "triple out2 mismatch at m={m} k={k} n2={n2}");
-            assert_eq!(t_out3.data, ind_out3.data, "triple out3 mismatch at m={m} k={k} n3={n3}");
+            assert_eq!(
+                t_out1.data, ind_out1.data,
+                "triple out1 mismatch at m={m} k={k} n1={n1}"
+            );
+            assert_eq!(
+                t_out2.data, ind_out2.data,
+                "triple out2 mismatch at m={m} k={k} n2={n2}"
+            );
+            assert_eq!(
+                t_out3.data, ind_out3.data,
+                "triple out3 mismatch at m={m} k={k} n3={n3}"
+            );
         }
     }
 
@@ -896,7 +978,12 @@ mod fused_add_layer_norm_tests {
 
         let w_data: Vec<i8> = vec![1; 32 * 16];
         let rs = crate::engine::tensor::simd::compute_row_sums(&w_data, 16, 32).into_owned();
-        let w = Quant8Tensor { shape: vec![16, 32], data: w_data.into(), quant_mult: 64.0, row_sums: Some(rs) };
+        let w = Quant8Tensor {
+            shape: vec![16, 32],
+            data: w_data.into(),
+            quant_mult: 64.0,
+            row_sums: Some(rs),
+        };
         let b = Tensor2::from_vec([1, 16], vec![0.1; 16]);
         let mut out1 = Tensor2::zeros([2, 16]);
         let mut out2 = Tensor2::zeros([2, 16]);
@@ -919,5 +1006,192 @@ mod fused_add_layer_norm_tests {
         assert_eq!(out2.data, exp_nob.data);
         assert_eq!(out3.data, exp_b.data);
         assert_eq!(out4.data, exp_nob.data);
+    }
+
+    #[test]
+    fn test_avx2_prebiased_nested_borrow() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !crate::utils::arch::has_avx2() {
+                return;
+            }
+            let k_small = 64;
+            let x_outer = vec![42i8; k_small];
+            let x_inner_small = vec![-15i8; k_small];
+            let k_large = 5000;
+            let x_inner_large = vec![7i8; k_large];
+
+            unsafe {
+                let mut exp_lo_small = Vec::new();
+                let mut exp_hi_small = Vec::new();
+                with_avx2_prebiased(&x_inner_small, 1, k_small, |lo, hi| {
+                    exp_lo_small.extend_from_slice(std::slice::from_raw_parts(
+                        lo.as_ptr() as *const u8,
+                        lo.len() * 32,
+                    ));
+                    exp_hi_small.extend_from_slice(std::slice::from_raw_parts(
+                        hi.as_ptr() as *const u8,
+                        hi.len() * 32,
+                    ));
+                });
+
+                let mut exp_lo_large = Vec::new();
+                let mut exp_hi_large = Vec::new();
+                with_avx2_prebiased(&x_inner_large, 1, k_large, |lo, hi| {
+                    exp_lo_large.extend_from_slice(std::slice::from_raw_parts(
+                        lo.as_ptr() as *const u8,
+                        lo.len() * 32,
+                    ));
+                    exp_hi_large.extend_from_slice(std::slice::from_raw_parts(
+                        hi.as_ptr() as *const u8,
+                        hi.len() * 32,
+                    ));
+                });
+
+                with_avx2_prebiased(&x_outer, 1, k_small, |lo_out, hi_out| {
+                    assert_eq!(lo_out.len(), 2);
+                    assert_eq!(hi_out.len(), 2);
+
+                    with_avx2_prebiased(&x_inner_small, 1, k_small, |lo_in, hi_in| {
+                        let got_lo = std::slice::from_raw_parts(
+                            lo_in.as_ptr() as *const u8,
+                            lo_in.len() * 32,
+                        );
+                        let got_hi = std::slice::from_raw_parts(
+                            hi_in.as_ptr() as *const u8,
+                            hi_in.len() * 32,
+                        );
+                        assert_eq!(got_lo, exp_lo_small.as_slice());
+                        assert_eq!(got_hi, exp_hi_small.as_slice());
+
+                        with_avx2_prebiased(&x_inner_large, 1, k_large, |lo_l, hi_l| {
+                            let got_lo_l = std::slice::from_raw_parts(
+                                lo_l.as_ptr() as *const u8,
+                                lo_l.len() * 32,
+                            );
+                            let got_hi_l = std::slice::from_raw_parts(
+                                hi_l.as_ptr() as *const u8,
+                                hi_l.len() * 32,
+                            );
+                            assert_eq!(got_lo_l, exp_lo_large.as_slice());
+                            assert_eq!(got_hi_l, exp_hi_large.as_slice());
+                        });
+                    });
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn test_vnni_prebiased_nested_borrow() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !crate::utils::arch::has_avx2() {
+                return;
+            }
+            let k_small = 64;
+            let x_outer = vec![42i8; k_small];
+            let x_inner_small = vec![-15i8; k_small];
+            let k_large = 5000;
+            let x_inner_large = vec![7i8; k_large];
+
+            unsafe {
+                let mut exp_small = Vec::new();
+                with_vnni_prebiased(&x_inner_small, 1, k_small, |xb| {
+                    exp_small.extend_from_slice(std::slice::from_raw_parts(
+                        xb.as_ptr() as *const u8,
+                        xb.len() * 32,
+                    ));
+                });
+
+                let mut exp_large = Vec::new();
+                with_vnni_prebiased(&x_inner_large, 1, k_large, |xb| {
+                    exp_large.extend_from_slice(std::slice::from_raw_parts(
+                        xb.as_ptr() as *const u8,
+                        xb.len() * 32,
+                    ));
+                });
+
+                with_vnni_prebiased(&x_outer, 1, k_small, |xb_out| {
+                    assert_eq!(xb_out.len(), 2);
+
+                    with_vnni_prebiased(&x_inner_small, 1, k_small, |xb_in| {
+                        let got = std::slice::from_raw_parts(
+                            xb_in.as_ptr() as *const u8,
+                            xb_in.len() * 32,
+                        );
+                        assert_eq!(got, exp_small.as_slice());
+
+                        with_vnni_prebiased(&x_inner_large, 1, k_large, |xb_l| {
+                            let got_l = std::slice::from_raw_parts(
+                                xb_l.as_ptr() as *const u8,
+                                xb_l.len() * 32,
+                            );
+                            assert_eq!(got_l, exp_large.as_slice());
+                        });
+                    });
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn test_matmul_nested_within_prebiased() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !crate::utils::arch::has_avx2() {
+                return;
+            }
+            let k = 64;
+            let n = 32;
+            let m = 2;
+            let x = vec![1i8; m * k];
+            let w = vec![2i8; n * k];
+            let rs = crate::engine::tensor::simd::compute_row_sums(&w, n, k);
+
+            unsafe {
+                with_avx2_prebiased(&x, m, k, |_lo, _hi| {
+                    let mut out = vec![0.0f32; m * n];
+                    matmul_i8_avx2(&x, &w, m, k, n, None, Some(&rs), &mut out, 1.0, false);
+                    assert!(out.iter().all(|&v| (v - 128.0).abs() < 1e-4));
+
+                    let mut row_out = vec![0.0f32; n];
+                    matmul_row_i8_avx2(
+                        &x[..k],
+                        &w,
+                        k,
+                        n,
+                        None,
+                        Some(&rs),
+                        &mut row_out,
+                        1.0,
+                        false,
+                    );
+                    assert!(row_out.iter().all(|&v| (v - 128.0).abs() < 1e-4));
+                });
+
+                if crate::utils::arch::has_avxvnni() {
+                    with_vnni_prebiased(&x, m, k, |_xb| {
+                        let mut out = vec![0.0f32; m * n];
+                        matmul_i8_avxvnni(&x, &w, m, k, n, None, Some(&rs), &mut out, 1.0, false);
+                        assert!(out.iter().all(|&v| (v - 128.0).abs() < 1e-4));
+
+                        let mut row_out = vec![0.0f32; n];
+                        matmul_row_i8_avxvnni(
+                            &x[..k],
+                            &w,
+                            k,
+                            n,
+                            None,
+                            Some(&rs),
+                            &mut row_out,
+                            1.0,
+                            false,
+                        );
+                        assert!(row_out.iter().all(|&v| (v - 128.0).abs() < 1e-4));
+                    });
+                }
+            }
+        }
     }
 }

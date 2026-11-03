@@ -19,7 +19,7 @@ use super::split::{
 };
 use super::{
     is_cjk_character, project_markup_spans_with_syntax, render_projected_markup,
-    snap_markup_spans_to_word_boundaries, MarkupSpan,
+    snap_markup_spans_to_word_boundaries_with_syntax, MarkupSpan,
 };
 /// Character length threshold beyond which multi-sentence paragraph blocks
 /// are partitioned into individual sentences for neural machine translation.
@@ -699,7 +699,7 @@ fn translate_single_unit(
             target_text.len(),
             syntax,
         );
-        snap_markup_spans_to_word_boundaries(spans, &target_text);
+        snap_markup_spans_to_word_boundaries_with_syntax(spans, &target_text, syntax);
         render_projected_markup(&target_text, spans)
     }
 }

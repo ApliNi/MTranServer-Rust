@@ -1617,6 +1617,7 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
                 let eq_after = i + 1 < bytes.len() && bytes[i + 1] == b'=';
                 let excl_after = i + 1 < bytes.len() && bytes[i + 1] == b'!';
                 let excl_before = i > 0 && bytes[i - 1] == b'!';
+                let bracket_after = i + 1 < bytes.len() && bytes[i + 1] == b'[';
                 let macro_call = i > 0
                     && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_')
                     && i + 1 < bytes.len()
@@ -1630,7 +1631,7 @@ pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::
                             bytes[i - 1],
                             b'(' | b'[' | b'{' | b'!' | b'&' | b'|' | b'+' | b'-' | b'*' | b'/' | b'='
                         ));
-                if eq_after || excl_after || excl_before || macro_call || ident_op {
+                if eq_after || excl_after || excl_before || bracket_after || macro_call || ident_op {
                     None
                 } else {
                     Some(('！', next_after_punct_byte(bytes, i)))
@@ -2106,6 +2107,7 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
                 let eq_after = i + 1 < bytes.len() && bytes[i + 1] == b'=';
                 let excl_after = i + 1 < bytes.len() && bytes[i + 1] == b'!';
                 let excl_before = i > 0 && bytes[i - 1] == b'!';
+                let bracket_after = i + 1 < bytes.len() && bytes[i + 1] == b'[';
                 let macro_call = i > 0
                     && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_')
                     && i + 1 < bytes.len()
@@ -2119,7 +2121,7 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
                             bytes[i - 1],
                             b'(' | b'[' | b'{' | b'!' | b'&' | b'|' | b'+' | b'-' | b'*' | b'/' | b'='
                         ));
-                if eq_after || excl_after || excl_before || macro_call || ident_op {
+                if eq_after || excl_after || excl_before || bracket_after || macro_call || ident_op {
                     None
                 } else {
                     Some(('！', next_after_punct_byte(bytes, i)))
@@ -2697,6 +2699,11 @@ fn is_technical_or_code_punctuation(s: &str, i: usize, b: u8) -> bool {
     } else if b == b'!' {
         // Non-null assertion or field access `!.`
         if i + 1 < len && bytes[i + 1] == b'.' {
+            return true;
+        }
+
+        // Bracket immediately following (e.g. Markdown image `![alt](url)`)
+        if i + 1 < len && bytes[i + 1] == b'[' {
             return true;
         }
 

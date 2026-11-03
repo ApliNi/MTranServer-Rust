@@ -202,7 +202,7 @@
   {
     "target": "zh-Hans",
     "input": "<div id=\"main\" style=\"color: red;\">Nested <b>bold</b> and <i>italic</i> tags with <a href=\"/target\" target=\"_blank\">links</a>.</div>",
-    "output": "<div id=\"main\" style=\"color: red;\">嵌有<b>带有<a href=\"/target\" target=\"_blank\">链接</a>的大胆</b>而<i>具有讽刺</i>性的标签。</div>"
+    "output": "<div id=\"main\" style=\"color: red;\">嵌有<b>带有链接的大胆</b>而<i>具有讽刺</i><a href=\"/target\" target=\"_blank\">性的</a>标签。</div>"
   },
   {
     "target": "zh-Hans",
@@ -227,12 +227,12 @@
   {
     "target": "zh-Hans",
     "input": "Please review the document below:<br><img src=\"https://example.com/diagram.png\" alt=\"Architecture Overview\" width=\"600\" /><hr>End of section.",
-    "output": "请在下方查看文件<br><img src=\"https://example.com/diagram.png\" alt=\"Architecture Overview\" width=\"600\" /><hr>：部分的结尾。"
+    "output": "请在下方查看文件：<br><img src=\"https://example.com/diagram.png\" alt=\"Architecture Overview\" width=\"600\" /><hr>部分的结尾。"
   },
   {
     "target": "zh-Hans",
     "input": "Condition: x &lt; 10 &amp;&amp; y &gt; 20; reserved copyright &copy; 2024 &quot;MTran&quot; &nbsp; Inc.",
-    "output": "条件：20 年&lt;10 点&amp;&amp;；&gt;保留版权归 2024&quot;年 MT&copy;ran 公司&quot;所有&nbsp;。"
+    "output": "条件：20 年&lt;10 点&amp;&amp;；&gt;保留版权归 2024 年&copy;&quot;MTran 公司&quot;所有&nbsp;。"
   },
   {
     "target": "zh-Hans",
@@ -252,7 +252,7 @@
   {
     "target": "zh-Hans",
     "input": "Visit [The Rust Book](https://doc.rust-lang.org/book/) for tutorials and inspect ![Flowchart](https://example.org/flow.png).",
-    "output": "请访问[《The RusT](https://doc.rust-lang.org/book/).Book》以获取教程并进行检查。！[Flowchart](https://example.org/flow.png)"
+    "output": "请访问[《The RusT](https://doc.rust-lang.org/book/).Book》以获取教程并进行检查。![Flowchart](https://example.org/flow.png)"
   },
   {
     "target": "zh-Hans",
@@ -402,7 +402,7 @@
   {
     "target": "id",
     "input": "- Step 1: Clone the git repository\n- Step 2: Run `cargo test` to verify all components",
-    "output": "- Langkah 1: Kloning repositori git\n- Langkah 2: Jalankan`cargo test` untuk memverifikasi semua komponen"
+    "output": "- Langkah 1: Kloning repositori git\n- Langkah 2: Jalankan untuk`cargo test` memverifikasi semua komponen"
   },
   {
     "target": "ms",
@@ -552,7 +552,7 @@
   {
     "target": "zh-Hans",
     "input": "Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> to open command palette. Highlighted: <mark>important note</mark>.",
-    "output": "按<kbd>Shift</kbd> +<kbd>P</kbd>+<kbd>Ctrl</kbd> 以打开命令调色板。突出：<mark>重要说明</mark>。"
+    "output": "按 +<kbd>Ctrl</kbd><kbd>Shift</kbd>+<kbd>P</kbd> 以打开命令调色板。突出：<mark>重要说明</mark>。"
   },
   {
     "target": "zh-Hans",
@@ -562,7 +562,7 @@
   {
     "target": "zh-Hans",
     "input": "Chemical formula: H<sub>2</sub>O and CO<sub>2</sub>; Mathematical exponent: 2<sup>10</sup> = 1024.",
-    "output": "化学式：H2<sub>O</sub>和 CO<sub>2</sub>；数学指数<sup>：210-</sup>104。"
+    "output": "化学式：H2<sub>O</sub>和 CO<sub>2</sub>；数学指数<sup>：210-104</sup>。"
   },
   {
     "target": "zh-Hans",
@@ -577,7 +577,7 @@
   {
     "target": "zh-Hans",
     "input": "Read the [**Official Guide** with `sample code`](https://example.com/guide) before starting.",
-    "output": "开始前请阅读[`sample code`**官方指南**](https://example.com/guide)。"
+    "output": "开始前请阅读[**官方指南**`sample code`](https://example.com/guide)。"
   },
   {
     "target": "zh-Hans",

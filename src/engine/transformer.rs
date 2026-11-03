@@ -1047,6 +1047,7 @@ pub struct ForwardConfig {
     pub beam_size: usize,
     pub length_penalty: f32,
     pub repetition_penalty: f32,
+    pub repetition_penalty_window: usize,
     pub no_repeat_ngram_size: usize,
     pub expansion_ratio: f32,
     pub min_length_factor: f32,
@@ -1054,6 +1055,12 @@ pub struct ForwardConfig {
 }
 
 impl ForwardConfig {
+    /// Override the repetition penalty sliding window size.
+    #[inline]
+    pub fn with_repetition_penalty_window(mut self, window: usize) -> Self {
+        self.repetition_penalty_window = window;
+        self
+    }
     /// Resolve the transformer configuration from the model's embedded YAML
     /// plus the engine config. Called once from `TranslationEngine::new`;
     /// an unsupported `transformer-ffn-activation` aborts model loading here.
@@ -1152,6 +1159,7 @@ impl ForwardConfig {
         } else {
             config.repetition_penalty
         };
+        let repetition_penalty_window = DEFAULT_REPETITION_PENALTY_WINDOW;
 
         let mut no_repeat_ngram_size = if config.no_repeat_ngram_size == default_config.no_repeat_ngram_size {
             trg_ngram_size.unwrap_or(config.no_repeat_ngram_size)
@@ -1195,6 +1203,7 @@ impl ForwardConfig {
             beam_size,
             length_penalty,
             repetition_penalty,
+            repetition_penalty_window,
             no_repeat_ngram_size,
             expansion_ratio,
             min_length_factor,
@@ -2997,14 +3006,22 @@ pub(crate) fn google_length_penalty(length: usize, alpha: f32) -> f32 {
 ///   if logit > 0: logit /= penalty
 ///   if logit <= 0: logit *= penalty
 ///
+/// Default sliding window size for repetition penalty (number of most recent tokens to consider).
+/// Prevents excessive suppression of technical terms and grammatical function words in long sentences
+/// while maintaining repetition suppression for local autoregressive loops.
+/// A value of 0 indicates an unlimited window (penalizing all historical tokens).
+pub const DEFAULT_REPETITION_PENALTY_WINDOW: usize = 64;
+
 /// Default soft damping delta for candidate tokens completing an n-gram seen once in history.
 pub const NGRAM_SOFT_DAMPING: f32 = 3.5;
 
 /// Apply repetition penalty and 2-stage n-gram repetition prevention to `logit_buf` in-place.
+/// Uses `DEFAULT_REPETITION_PENALTY_WINDOW` (64 tokens) for the repetition penalty sliding window.
 ///
 /// 1. Repetition penalty:
 ///    - if logit > 0: `logit /= penalty`
 ///    - if logit <= 0: `logit *= penalty`
+///    - applied within a sliding window of recent tokens (default 64)
 ///
 /// 2. N-gram 2-stage damping & frequency escalation:
 ///    - Candidate completing an n-gram matched 1 time (first repeat, e.g. legitimate rhetoric / 'step by step'):
@@ -3032,6 +3049,7 @@ pub(crate) fn apply_penalties(
 }
 
 /// Apply repetition penalty and 2-stage n-gram repetition prevention with explicit token exemptions.
+/// Uses `DEFAULT_REPETITION_PENALTY_WINDOW` (64 tokens) for the repetition penalty sliding window.
 #[cfg(test)]
 #[inline]
 pub(crate) fn apply_penalties_with_exemptions(
@@ -3049,6 +3067,32 @@ pub(crate) fn apply_penalties_with_exemptions(
         prefix_len,
         tokens,
         repetition_penalty,
+        DEFAULT_REPETITION_PENALTY_WINDOW,
+        no_repeat_ngram_size,
+        exempt_tokens,
+    );
+}
+
+/// Apply repetition penalty with explicit sliding window and token exemptions.
+#[cfg(test)]
+#[inline]
+pub(crate) fn apply_penalties_with_window_and_exemptions(
+    logit_buf: &mut [f32],
+    shortlist_indices: &[u32],
+    tokens: &[u32],
+    repetition_penalty: f32,
+    repetition_penalty_window: usize,
+    no_repeat_ngram_size: usize,
+    exempt_tokens: &[u32],
+) {
+    let prefix_len = find_contiguous_prefix_len(shortlist_indices);
+    apply_penalties_with_exemptions_fast(
+        logit_buf,
+        shortlist_indices,
+        prefix_len,
+        tokens,
+        repetition_penalty,
+        repetition_penalty_window,
         no_repeat_ngram_size,
         exempt_tokens,
     );
@@ -3062,6 +3106,7 @@ pub(crate) fn apply_penalties_with_exemptions_fast(
     prefix_len: usize,
     tokens: &[u32],
     repetition_penalty: f32,
+    repetition_penalty_window: usize,
     no_repeat_ngram_size: usize,
     exempt_tokens: &[u32],
 ) {
@@ -3069,17 +3114,22 @@ pub(crate) fn apply_penalties_with_exemptions_fast(
         return;
     }
 
-    // 1. Repetition penalty
+    // 1. Repetition penalty (bounded by sliding window)
     if repetition_penalty > 0.0 && (repetition_penalty - 1.0).abs() > 1e-5 {
         let inv_penalty = 1.0 / repetition_penalty;
+        let rep_tokens = if repetition_penalty_window > 0 && tokens.len() > repetition_penalty_window {
+            &tokens[tokens.len() - repetition_penalty_window..]
+        } else {
+            tokens
+        };
 
-        if tokens.len() <= 64 {
+        if rep_tokens.len() <= 64 {
             // In-place single-pass linear deduplication (L1 cache scan faster than sort_unstable)
-            for (i, &tok) in tokens.iter().enumerate() {
+            for (i, &tok) in rep_tokens.iter().enumerate() {
                 if exempt_tokens.contains(&tok) {
                     continue;
                 }
-                if !tokens[..i].contains(&tok) {
+                if !rep_tokens[..i].contains(&tok) {
                     if let Some(idx) = shortlist_index_of(shortlist_indices, prefix_len, tok) {
                         let logit = &mut logit_buf[idx];
                         if *logit > 0.0 {
@@ -3093,9 +3143,9 @@ pub(crate) fn apply_penalties_with_exemptions_fast(
         } else {
             let mut stack_buf = [0u32; 256];
             let mut heap_buf;
-            let unique_tokens: &[u32] = if tokens.len() <= stack_buf.len() {
-                stack_buf[..tokens.len()].copy_from_slice(tokens);
-                let s = &mut stack_buf[..tokens.len()];
+            let unique_tokens: &[u32] = if rep_tokens.len() <= stack_buf.len() {
+                stack_buf[..rep_tokens.len()].copy_from_slice(rep_tokens);
+                let s = &mut stack_buf[..rep_tokens.len()];
                 s.sort_unstable();
                 let mut len = 0;
                 for i in 0..s.len() {
@@ -3106,7 +3156,7 @@ pub(crate) fn apply_penalties_with_exemptions_fast(
                 }
                 &s[..len]
             } else {
-                heap_buf = tokens.to_vec();
+                heap_buf = rep_tokens.to_vec();
                 heap_buf.sort_unstable();
                 heap_buf.dedup();
                 heap_buf.retain(|tok| !exempt_tokens.contains(tok));
@@ -3682,6 +3732,7 @@ impl Transformer {
         let heads = config.heads;
         let autoreg_type = config.autoreg_type;
         let repetition_penalty = config.repetition_penalty;
+        let repetition_penalty_window = config.repetition_penalty_window;
         let no_repeat_ngram_size = config.no_repeat_ngram_size;
         let max_length_break = config.max_length_break;
         let length_penalty = config.length_penalty;
@@ -3838,6 +3889,7 @@ impl Transformer {
                         prefix_len,
                         out_tokens.as_slice(),
                         repetition_penalty,
+                        repetition_penalty_window,
                         no_repeat_ngram_size,
                         &[eos_id],
                     );
@@ -4123,6 +4175,7 @@ impl Transformer {
                             prefix_len,
                             &beam.tokens,
                             repetition_penalty,
+                            repetition_penalty_window,
                             no_repeat_ngram_size,
                             &[eos_id],
                         );
@@ -4494,6 +4547,84 @@ mod tests {
         let tokens_ngram4_loop = vec![1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3];
         apply_penalties(&mut logits_ngram4_loop, &shortlist_ngram4, &tokens_ngram4_loop, 1.0, 4);
         assert!(logits_ngram4_loop[3] <= -1e8); // token 4 hard blocked (match_count == 2)
+    }
+
+    #[test]
+    fn test_repetition_penalty_sliding_window() {
+        // Test that repetition penalty sliding window protects tokens that appeared outside the window,
+        // preventing long sentences from over-penalizing technical terms and function words,
+        // while properly penalizing tokens within the active window.
+        let shortlist = vec![10, 20, 30];
+
+        // Sequence of 75 tokens:
+        // Position 0: token 10 (technical keyword / function word in early clause)
+        // Position 1..73: 73 copies of token 20
+        // Position 74: token 30
+        let mut tokens = vec![10];
+        tokens.extend(vec![20; 73]);
+        tokens.push(30);
+        assert_eq!(tokens.len(), 75);
+
+        // 1. With standard window = 64:
+        // Window spans the last 64 tokens (positions 11..74).
+        // Token 10 was at position 0, which is outside the 64-token window (distance = 74).
+        // Therefore, token 10 should NOT be penalized!
+        // Tokens 20 and 30 are inside the window, so they SHOULD be penalized.
+        let mut logits_w64 = vec![4.0, 4.0, 4.0];
+        apply_penalties_with_window_and_exemptions(
+            &mut logits_w64,
+            &shortlist,
+            &tokens,
+            2.0, // penalty = 2.0 (positive logit halved)
+            64,  // sliding window = 64
+            0,   // no n-gram blocking
+            &[],
+        );
+        // Token 10: outside window -> preserved at 4.0
+        assert_eq!(logits_w64[0], 4.0);
+        // Token 20: inside window -> penalized from 4.0 to 2.0
+        assert!((logits_w64[1] - 2.0).abs() < 1e-5);
+        // Token 30: inside window -> penalized from 4.0 to 2.0
+        assert!((logits_w64[2] - 2.0).abs() < 1e-5);
+
+        // 2. Default apply_penalties also uses DEFAULT_REPETITION_PENALTY_WINDOW (64)
+        let mut logits_default = vec![4.0, 4.0, 4.0];
+        apply_penalties(&mut logits_default, &shortlist, &tokens, 2.0, 0);
+        assert_eq!(logits_default[0], 4.0);
+        assert!((logits_default[1] - 2.0).abs() < 1e-5);
+        assert!((logits_default[2] - 2.0).abs() < 1e-5);
+
+        // 3. With window = 0 (unlimited window / penalize all historical tokens):
+        // Token 10 at position 0 MUST be penalized.
+        let mut logits_unlimited = vec![4.0, 4.0, 4.0];
+        apply_penalties_with_window_and_exemptions(
+            &mut logits_unlimited,
+            &shortlist,
+            &tokens,
+            2.0,
+            0, // window = 0 (unlimited)
+            0,
+            &[],
+        );
+        assert!((logits_unlimited[0] - 2.0).abs() < 1e-5);
+        assert!((logits_unlimited[1] - 2.0).abs() < 1e-5);
+        assert!((logits_unlimited[2] - 2.0).abs() < 1e-5);
+
+        // 4. Custom smaller window = 10:
+        // Only tokens in the last 10 steps (positions 65..74: tokens 20 and 30) are penalized.
+        let mut logits_w10 = vec![4.0, 4.0, 4.0];
+        apply_penalties_with_window_and_exemptions(
+            &mut logits_w10,
+            &shortlist,
+            &tokens,
+            2.0,
+            10, // window = 10
+            0,
+            &[],
+        );
+        assert_eq!(logits_w10[0], 4.0);
+        assert!((logits_w10[1] - 2.0).abs() < 1e-5);
+        assert!((logits_w10[2] - 2.0).abs() < 1e-5);
     }
 
     #[test]
@@ -5291,11 +5422,23 @@ mod tests {
         assert_eq!(fwd_de.no_repeat_ngram_size, 3);
 
         // 5. Explicitly specified repetition_penalty / no_repeat_ngram_size should NOT be overridden
-        let mut custom_cfg = EngineConfig::default();
-        custom_cfg.repetition_penalty = 1.25;
-        custom_cfg.no_repeat_ngram_size = 4;
+        let custom_cfg = EngineConfig {
+            repetition_penalty: 1.25,
+            no_repeat_ngram_size: 4,
+            ..EngineConfig::default()
+        };
         let fwd_custom = ForwardConfig::resolve_with_languages(&model, &custom_cfg, "en", "ja").unwrap();
         assert!((fwd_custom.repetition_penalty - 1.25).abs() < 1e-5);
         assert_eq!(fwd_custom.no_repeat_ngram_size, 4);
+
+        // Verify default repetition_penalty_window
+        assert_eq!(fwd_ja.repetition_penalty_window, DEFAULT_REPETITION_PENALTY_WINDOW);
+        assert_eq!(fwd_ko.repetition_penalty_window, DEFAULT_REPETITION_PENALTY_WINDOW);
+        assert_eq!(fwd_zh.repetition_penalty_window, DEFAULT_REPETITION_PENALTY_WINDOW);
+        assert_eq!(fwd_de.repetition_penalty_window, DEFAULT_REPETITION_PENALTY_WINDOW);
+
+        // Builder override
+        let fwd_custom_win = fwd_custom.with_repetition_penalty_window(32);
+        assert_eq!(fwd_custom_win.repetition_penalty_window, 32);
     }
 }

@@ -11,7 +11,7 @@ use rayon::prelude::*;
 
 use std::sync::Arc;
 use crate::engine::rules::{LanguageRuleProfile, RuleRegistry};
-use super::{render_projected_markup, snap_markup_spans_to_word_boundaries, MarkupSpan};
+use super::{render_projected_markup, snap_markup_spans_to_word_boundaries_with_syntax, MarkupSpan};
 
 /// A segmented sentence within a paragraph or document block.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -133,6 +133,15 @@ pub fn split_sentences_with_profile<'a>(
     if text.is_empty() {
         return Vec::new();
     }
+
+    let detected_profile;
+    let profile = match profile {
+        Some(p) => Some(p),
+        None => {
+            detected_profile = resolve_profile_for_text(text, None);
+            detected_profile.as_deref()
+        }
+    };
 
     let estimated_cap = (text.len() / 64).clamp(1, 64);
     let mut sentences = Vec::with_capacity(estimated_cap);
@@ -319,124 +328,6 @@ fn is_closing_bracket_or_quote(c: char) -> bool {
             | '‹'
     )
 }
-
-/// Check if abbreviation token is strictly an absolute non-sentence-ending marker.
-#[inline]
-fn is_absolute_abbreviation(token: &str) -> bool {
-    let clean = token.strip_suffix('.').unwrap_or(token);
-    matches!(
-        clean.to_ascii_lowercase().as_str(),
-        "e.g" | "eg" | "i.e" | "ie" | "vs" | "v" | "cf" | "ca" | "viz"
-    )
-}
-
-/// Check if abbreviation token is a label or reference prefix (Fig., Eq., No.).
-#[inline]
-fn is_label_abbreviation(token: &str) -> bool {
-    let clean = token.strip_suffix('.').unwrap_or(token);
-    matches!(
-        clean.to_ascii_lowercase().as_str(),
-        "fig" | "figs" | "eq" | "eqs" | "no" | "nos" | "ref" | "refs" | "sec" | "chap" | "vol" | "vols" | "tab"
-    )
-}
-
-/// Check if abbreviation token is an honorific or personal title prefix (Dr., Prof., Mr.).
-#[inline]
-fn is_honorific_abbreviation(token: &str) -> bool {
-    let clean = token.strip_suffix('.').unwrap_or(token);
-    matches!(
-        clean.to_ascii_lowercase().as_str(),
-        "dr" | "mr" | "mrs" | "ms" | "prof" | "rev" | "hon" | "st" | "pres" | "gov" | "sen" | "rep"
-    )
-}
-
-/// Evaluate whether Western punctuation at index `pos` represents a true sentence split boundary.
-#[inline]
-fn matches_conditional_end(token: &str) -> bool {
-    let clean = token.strip_suffix('.').unwrap_or(token);
-    clean.eq_ignore_ascii_case("etc")
-        || clean.eq_ignore_ascii_case("al")
-        || clean.eq_ignore_ascii_case("inc")
-        || clean.eq_ignore_ascii_case("ltd")
-        || clean.eq_ignore_ascii_case("co")
-        || clean.eq_ignore_ascii_case("corp")
-        || clean.eq_ignore_ascii_case("usw")
-        || clean.eq_ignore_ascii_case("bzw")
-}
-
-/// Check if remainder starts with a high-frequency Western sentence starter word.
-#[inline]
-fn is_high_frequency_sentence_starter(remainder: &str) -> bool {
-    let word_end = remainder
-        .find(|c: char| !c.is_alphabetic())
-        .unwrap_or(remainder.len());
-    let word = &remainder[..word_end];
-    matches!(
-        word,
-        "The"
-            | "A"
-            | "An"
-            | "This"
-            | "That"
-            | "These"
-            | "Those"
-            | "He"
-            | "She"
-            | "It"
-            | "They"
-            | "We"
-            | "You"
-            | "In"
-            | "On"
-            | "At"
-            | "If"
-            | "When"
-            | "There"
-            | "Please"
-            | "Wait"
-            | "Turn"
-            | "Switch"
-            | "Open"
-            | "Close"
-            | "Click"
-            | "Press"
-            | "Start"
-            | "Stop"
-            | "Check"
-            | "Look"
-            | "Do"
-            | "Make"
-            | "Take"
-            | "Get"
-            | "See"
-            | "Go"
-            | "Come"
-            | "Run"
-            | "Use"
-            | "Set"
-            | "Now"
-            | "Then"
-            | "Here"
-            | "So"
-            | "However"
-            | "Also"
-    )
-}
-
-/// Check if text preceding a Japanese comma or dunhao ends with a head-final subordinating conjunction marker.
-#[inline]
-fn is_japanese_head_final_clause_marker(before: &str) -> bool {
-    let s = before.trim_end();
-    s.ends_with("ので")
-        || s.ends_with("から")
-        || s.ends_with("たら")
-        || s.ends_with("なら")
-        || s.ends_with("ば")
-        || s.ends_with("けれども")
-        || s.ends_with("けれど")
-        || s.ends_with("ものの")
-}
-
 fn should_split_western(
     text: &str,
     pos: usize,
@@ -510,7 +401,8 @@ fn should_split_western(
             if !is_sentence_start {
                 let remainder = text.get(pos + 1..).unwrap_or("").trim_start();
                 if let Some(next_c) = remainder.chars().next() {
-                    if !is_closing_bracket_or_quote(next_c) && !is_high_frequency_sentence_starter(remainder) {
+                    let is_discourse = profile.is_some_and(|p| p.is_discourse_chunk_starter(remainder));
+                    if !is_closing_bracket_or_quote(next_c) && !is_discourse {
                         return false;
                     }
                 }
@@ -546,21 +438,14 @@ fn should_split_western(
             }
         }
 
-        // 4. Dynamic abbreviation / nonbreaking prefix check via LanguageRuleProfile or Universal Semiotic Topology
-        let is_nonbreaking = if let Some(prof) = profile {
-            prof.is_nonbreaking_prefix(text, pos, word_start)
-        } else {
-            is_absolute_abbreviation(token)
-                || is_label_abbreviation(token)
-                || is_honorific_abbreviation(token)
-                || matches_conditional_end(token)
-        };
+        // 4. Dynamic abbreviation / nonbreaking prefix check via LanguageRuleProfile
+        let is_nonbreaking = profile.is_some_and(|p| p.is_nonbreaking_prefix(text, pos, word_start));
 
         if is_nonbreaking {
             // Check lookahead after dot and following whitespace
             let remainder = text.get(pos + 1..).unwrap_or("").trim_start();
             if let Some(next_c) = remainder.chars().next() {
-                // If followed by lowercase, digit, or comma, it is within the sentence
+                // If followed by lowercase, digit, or comma/semicolon, it is within the sentence
                 if next_c.is_lowercase()
                     || next_c.is_ascii_digit()
                     || next_c == ','
@@ -569,26 +454,12 @@ fn should_split_western(
                     return false;
                 }
 
-                // Non-conditional abbreviations (e.g. Dr., Fig., e.g., Mr., vs.) NEVER end a sentence,
-                // preventing is_high_frequency_sentence_starter from blindly splitting after them (e.g. Dr. He, Fig. A, e.g. The).
-                if is_absolute_abbreviation(token)
-                    || is_label_abbreviation(token)
-                    || is_honorific_abbreviation(token)
-                {
-                    return false;
-                }
-
-                let is_cond_end = profile.map_or_else(
-                    || matches_conditional_end(token),
-                    |prof| prof.is_conditional_end(token) || matches_conditional_end(token),
-                );
+                // If abbreviation is a conditional sentence-ending abbreviation, uppercase letter starts a new sentence
+                let is_cond_end = profile.is_some_and(|p| p.is_conditional_end(token) || p.is_conditional_end_at(text, pos));
                 if is_cond_end && next_c.is_uppercase() {
                     return true;
                 }
 
-                if is_cond_end && is_high_frequency_sentence_starter(remainder) {
-                    return true;
-                }
                 return false;
             } else {
                 // End of text: sentence boundary
@@ -946,8 +817,7 @@ fn find_best_semantic_split_candidate(
         else if c == '，' || c == '、' || c == '،' {
             let punct_end = consume_while(text, i + c_len, is_closing_bracket_or_quote);
             let sep_end = consume_while(text, punct_end, |nc| nc.is_whitespace() && nc != '\n' && nc != '\r');
-            let is_conj = is_conjunction_clause_marker(text.get(sep_end..).unwrap_or(""), profile)
-                || is_japanese_head_final_clause_marker(text.get(..i).unwrap_or(""));
+            let is_conj = is_conjunction_clause_marker(text.get(sep_end..).unwrap_or(""), profile);
             let tier = if is_conj {
                 SemanticSplitTier::ConjunctionClause
             } else if c == '、' {
@@ -1062,6 +932,15 @@ pub fn split_long_sentence_semantic_with_profile<'a>(
         return Vec::new();
     }
     let max_len = max_len.max(1);
+
+    let detected_profile;
+    let profile = match profile {
+        Some(p) => Some(p),
+        None => {
+            detected_profile = resolve_profile_for_text(text, None);
+            detected_profile.as_deref()
+        }
+    };
     let estimated_cap = (text.len() / max_len).clamp(1, 32);
     let mut sentences = Vec::with_capacity(estimated_cap);
     let mut cursor = 0;
@@ -1445,7 +1324,7 @@ where
             target_text.len(),
             syntax,
         );
-        snap_markup_spans_to_word_boundaries(&mut sentence.inline_spans, &target_text);
+        snap_markup_spans_to_word_boundaries_with_syntax(&mut sentence.inline_spans, &target_text, syntax);
         let rendered = render_projected_markup(&target_text, &sentence.inline_spans);
         out.push_str(&rendered);
     }
@@ -1552,7 +1431,7 @@ where
             target_text.len(),
             syntax,
         );
-        snap_markup_spans_to_word_boundaries(&mut sentence.inline_spans, &target_text);
+        snap_markup_spans_to_word_boundaries_with_syntax(&mut sentence.inline_spans, &target_text, syntax);
         let rendered = render_projected_markup(&target_text, &sentence.inline_spans);
         out.push_str(&rendered);
     }

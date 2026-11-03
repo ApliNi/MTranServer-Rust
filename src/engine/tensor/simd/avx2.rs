@@ -1428,6 +1428,38 @@ pub unsafe fn matmul_2rows_i8_avx2(
     }
 }
 
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn prebias_avx2_into(
+    x: &[i8],
+    m: usize,
+    k: usize,
+    lo_dest: *mut std::arch::x86_64::__m256i,
+    hi_dest: *mut std::arch::x86_64::__m256i,
+) {
+    use std::arch::x86_64::*;
+    const BLK: usize = 32;
+    let blocks = k / BLK;
+    let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
+    let nibble_mask = _mm256_set1_epi8(0x0F);
+
+    for row in 0..m {
+        let xr = &x[row * k..(row + 1) * k];
+        let lo_row = lo_dest.add(row * blocks);
+        let hi_row = hi_dest.add(row * blocks);
+        for b in 0..blocks {
+            let off = b * BLK;
+            let xv = _mm256_loadu_si256(xr.as_ptr().add(off) as *const __m256i);
+            let xb = _mm256_add_epi8(xv, x_bias_vec);
+            lo_row.add(b).write(_mm256_and_si256(xb, nibble_mask));
+            hi_row
+                .add(b)
+                .write(_mm256_and_si256(_mm256_srli_epi16::<4>(xb), nibble_mask));
+        }
+    }
+}
+
 thread_local! {
     static AVX2_LO_BUF: std::cell::RefCell<Vec<std::arch::x86_64::__m256i>> =
         const { std::cell::RefCell::new(Vec::new()) };
@@ -1450,35 +1482,51 @@ pub unsafe fn with_avx2_prebiased<
     use std::arch::x86_64::*;
     const BLK: usize = 32;
     let blocks = k / BLK;
-    let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
-    let nibble_mask = _mm256_set1_epi8(0x0F);
     let total_blocks = m * blocks;
     AVX2_LO_BUF.with(|cell_lo| {
-        AVX2_HI_BUF.with(|cell_hi| {
-            let mut lo_vec = cell_lo.borrow_mut();
-            let mut hi_vec = cell_hi.borrow_mut();
-            if lo_vec.len() < total_blocks {
-                lo_vec.resize(total_blocks, _mm256_setzero_si256());
-            }
-            if hi_vec.len() < total_blocks {
-                hi_vec.resize(total_blocks, _mm256_setzero_si256());
-            }
-
-            for row in 0..m {
-                let xr = &x[row * k..(row + 1) * k];
-                let lo_dest = &mut lo_vec[row * blocks..(row + 1) * blocks];
-                let hi_dest = &mut hi_vec[row * blocks..(row + 1) * blocks];
-                for b in 0..blocks {
-                    let off = b * BLK;
-                    let xv = _mm256_loadu_si256(xr.as_ptr().add(off) as *const __m256i);
-                    let xb = _mm256_add_epi8(xv, x_bias_vec);
-                    lo_dest[b] = _mm256_and_si256(xb, nibble_mask);
-                    hi_dest[b] = _mm256_and_si256(_mm256_srli_epi16::<4>(xb), nibble_mask);
+        AVX2_HI_BUF.with(
+            |cell_hi| match (cell_lo.try_borrow_mut(), cell_hi.try_borrow_mut()) {
+                (Ok(mut lo_vec), Ok(mut hi_vec)) => {
+                    if lo_vec.len() < total_blocks {
+                        lo_vec.resize(total_blocks, _mm256_setzero_si256());
+                    }
+                    if hi_vec.len() < total_blocks {
+                        hi_vec.resize(total_blocks, _mm256_setzero_si256());
+                    }
+                    prebias_avx2_into(x, m, k, lo_vec.as_mut_ptr(), hi_vec.as_mut_ptr());
+                    f(&lo_vec[..total_blocks], &hi_vec[..total_blocks])
                 }
-            }
-
-            f(&lo_vec[..total_blocks], &hi_vec[..total_blocks])
-        })
+                _ => {
+                    if total_blocks <= 128 {
+                        let mut lo_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 128];
+                        let mut hi_stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 128];
+                        prebias_avx2_into(
+                            x,
+                            m,
+                            k,
+                            lo_stack.as_mut_ptr() as *mut __m256i,
+                            hi_stack.as_mut_ptr() as *mut __m256i,
+                        );
+                        let lo_slice = std::slice::from_raw_parts(
+                            lo_stack.as_ptr() as *const __m256i,
+                            total_blocks,
+                        );
+                        let hi_slice = std::slice::from_raw_parts(
+                            hi_stack.as_ptr() as *const __m256i,
+                            total_blocks,
+                        );
+                        f(lo_slice, hi_slice)
+                    } else {
+                        let mut lo_local = Vec::with_capacity(total_blocks);
+                        let mut hi_local = Vec::with_capacity(total_blocks);
+                        prebias_avx2_into(x, m, k, lo_local.as_mut_ptr(), hi_local.as_mut_ptr());
+                        lo_local.set_len(total_blocks);
+                        hi_local.set_len(total_blocks);
+                        f(&lo_local, &hi_local)
+                    }
+                }
+            },
+        )
     })
 }
 
@@ -1576,7 +1624,18 @@ unsafe fn matmul_i8_avx2_prebiased_parallel_recursive(
         },
         || {
             matmul_i8_avx2_prebiased_parallel_recursive(
-                lo_bot, hi_bot, x_bot, w, m - m_mid, k, n, bias, row_sums, o_bot, denom, relu,
+                lo_bot,
+                hi_bot,
+                x_bot,
+                w,
+                m - m_mid,
+                k,
+                n,
+                bias,
+                row_sums,
+                o_bot,
+                denom,
+                relu,
             )
         },
     );

@@ -176,6 +176,12 @@ fn test_format_zh_punctuation_protections() {
         "执行 println!(\"ok\") 和 assert!(true) 测试完成！"
     );
 
+    let md_img = "示例文档: ![图片描述](https://example.com/test.png) 测试完成!";
+    assert_eq!(
+        format_zh_punctuation(md_img, "zh"),
+        "示例文档：![图片描述](https://example.com/test.png) 测试完成！"
+    );
+
     let shell_input = "配置模板:将 PORT=${HTTP_PORT:-8080} 导出,并使用 max_retries=%d 设置 SECRET=\"{{APP_SECRET_KEY}}\"。";
     let shell_res = format_zh_punctuation(shell_input, "zh");
     assert_eq!(

@@ -602,9 +602,9 @@ impl TranslationEngine {
             trg_spans_out.extend_from_slice(trg_spans);
 
             // Subword continuation alignment synchronization:
-            // When a Western word is split across multiple subwords (e.g. "neg" + "rito"),
-            // cross-attention on the continuation token frequently looks ahead to the subsequent
-            // source token, which would tear rich-text markup spans in half. Synchronize continuation
+            // When a word is split across multiple subwords (e.g. "neg" + "rito" or "don" + "'t"),
+            // cross-attention on continuation tokens frequently looks ahead to subsequent source
+            // tokens, which would tear rich-text markup spans in half. Synchronize continuation
             // alignments to the head subword's alignment to preserve morphological word integrity.
             let total_spans = trg_spans_out.len();
             for t in (start_idx + 1)..total_spans {
@@ -615,11 +615,17 @@ impl TranslationEngine {
                     let prev_last = result[trg_spans_out[t - 1].clone()].chars().next_back();
                     let next_first = result[trg_spans_out[t].clone()].chars().next();
                     if let (Some(c1), Some(c2)) = (prev_last, next_first) {
-                        let is_western_word_char = |c: char| {
+                        let is_word_char = |c: char| {
                             c.is_alphanumeric()
-                                && !matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}' | '\u{3040}'..='\u{30FF}' | '\u{AC00}'..='\u{D7AF}')
+                                && !crate::utils::lang::is_cjk_or_continuous_script(c)
                         };
-                        if is_western_word_char(c1) && is_western_word_char(c2) && t < alignments_out.len() {
+                        let is_connector = |c: char| {
+                            matches!(c, '\'' | '\u{2019}' | '\u{02BB}' | '-' | '\u{2010}')
+                        };
+                        let connects = (is_word_char(c1) && is_word_char(c2))
+                            || (is_word_char(c1) && is_connector(c2))
+                            || (is_connector(c1) && is_word_char(c2));
+                        if connects && t < alignments_out.len() {
                             alignments_out[t] = alignments_out[t - 1];
                         }
                     }
@@ -665,102 +671,56 @@ impl TranslationEngine {
     pub fn shortlist_policy(&self) -> ShortlistPolicy {
         self.shortlist_policy
     }
-    /// Split long text by best separator and translate each part.
+    /// Split long text into bounded sentences and translate each part.
     pub fn translate_long_text(&self, text: &str) -> String {
-        let separators = text::SEPARATORS;
+        let sentences = markup::split::split_sentences_bounded_with_lang(
+            text,
+            self.max_sentence_length,
+            Some(&self.source_lang),
+        );
 
-        let mut best_sep = "";
-        let mut min_max_len = usize::MAX;
+        if sentences.is_empty() {
+            return String::new();
+        }
 
-        for sep in separators {
-            // Skip separators that don't occur — avoids splitting for the
-            // many absent candidates.
-            if !text.contains(sep.sep) {
-                continue;
+        if sentences.len() == 1 {
+            let sent = &sentences[0];
+            if sent.is_blank() {
+                let mut out = sent.text.to_string();
+                out.push_str(&sent.separator);
+                return out;
             }
-            let mut count = 0usize;
-            let mut max_len = 0usize;
-            let mut all_fit = true;
+            let mut out = self.translate_internal(&sent.text);
+            crate::utils::lang::append_split_sentence_separator(&mut out, &sent.separator);
+            return out;
+        }
 
-            for part in text.split(sep.sep) {
-                count += 1;
-                if text::exceeds_char_limit(part, self.max_sentence_length) {
-                    all_fit = false;
-                    let plen = text::char_count(part);
-                    if plen > max_len {
-                        max_len = plen;
-                    }
-                    if max_len >= min_max_len {
-                        break;
-                    }
+        use rayon::prelude::*;
+        let translated: Vec<String> = sentences
+            .par_iter()
+            .map(|sent| {
+                if sent.is_blank() {
+                    sent.text.to_string()
                 } else {
-                    let plen = text::char_count(part);
-                    if plen > max_len {
-                        max_len = plen;
-                    }
+                    self.translate_internal(&sent.text)
                 }
+            })
+            .collect();
+
+        let total_len: usize = translated.iter().map(|s| s.len()).sum::<usize>()
+            + sentences.iter().map(|s| s.separator.len()).sum::<usize>()
+            + 32;
+        let mut out = String::with_capacity(total_len);
+
+        for (i, (piece, sent)) in translated.into_iter().zip(&sentences).enumerate() {
+            if i > 0 && crate::utils::lang::should_insert_adaptive_space(&out, &piece, Some(&self.target_lang)) {
+                out.push(' ');
             }
-
-            if count > 1 {
-                if all_fit {
-                    best_sep = sep.sep;
-                    break;
-                }
-                if max_len < min_max_len {
-                    min_max_len = max_len;
-                    best_sep = sep.sep;
-                }
-            }
+            out.push_str(&piece);
+            crate::utils::lang::append_split_sentence_separator(&mut out, &sent.separator);
         }
 
-        let owned_parts: Vec<String>;
-        let best_parts: Vec<&str> = if best_sep.is_empty() {
-            owned_parts = text::chunk_by_word_boundary(text, self.max_sentence_length);
-            owned_parts.iter().map(String::as_str).collect()
-        } else {
-            text.split(best_sep).collect()
-        };
-
-        let sep = text::mapped_separator(best_sep, &self.target_lang);
-
-        // Translate every part, then join. Parts are independent — each one
-        // runs the same encode → shortlist → forward → decode pipeline as the
-        // sequential path — so they are dispatched to the shared rayon pool
-        // once there is more than one. Every part's outputs depend only on its
-        // own input text (no cross-part state), and joining happens in part
-        // order, so results are byte-identical to the sequential loop; the
-        // only shared state is the model itself, which is read-only. Each
-        // task builds its own scratch buffers instead of touching this
-        // thread's `SCRATCH` thread-local.
-        let translated: Vec<String> = if best_parts.len() > 1 {
-            translate_parts_parallel(self, &best_parts)
-        } else {
-            best_parts
-                .iter()
-                .map(|part| self.translate_part(part))
-                .collect()
-        };
-
-        if translated.is_empty() {
-            String::new()
-        } else if translated.len() == 1 {
-            translated.into_iter().next().unwrap()
-        } else {
-            translated.join(sep)
-        }
-    }
-
-    /// Translate one already-split part: oversized chunks recurse into
-    /// [`Self::translate_long_text`], everything else goes through
-    /// [`Self::translate_internal`].
-    fn translate_part(&self, part: &str) -> String {
-        if part.trim().is_empty() {
-            part.to_string()
-        } else if text::exceeds_char_limit(part, self.max_sentence_length) {
-            self.translate_long_text(part)
-        } else {
-            self.translate_internal(part)
-        }
+        out
     }
 }
 /// Abstract translation engine trait allowing multiple inference backends
@@ -802,26 +762,6 @@ impl TranslationEngineTrait for TranslationEngine {
 /// Type alias for dynamic translation engine instance.
 pub type DynTranslationEngine = Arc<dyn TranslationEngineTrait>;
 
-/// Translate independent text parts on the rayon pool, preserving order.
-///
-/// Results land in a pre-sized `Vec<String>` indexed by part, so the join is
-/// trivially order-preserving. An oversized chunk recurses into
-/// [`Self::translate_long_text`] *inside* its task, which may open a nested
-/// rayon scope — supported by the shared global pool (workers keep
-/// work-stealing while a scope waits, and the pool size never grows), so
-/// nesting adds latency at worst, never oversubscription or deadlock. Each
-/// recursion level strictly shortens the longest remaining chunk, so the
-/// recursion depth is bounded.
-fn translate_parts_parallel(engine: &TranslationEngine, parts: &[&str]) -> Vec<String> {
-    if parts.len() <= 1 {
-        return parts.iter().map(|part| engine.translate_part(part)).collect();
-    }
-    use rayon::prelude::*;
-    parts
-        .par_iter()
-        .map(|part| engine.translate_part(part))
-        .collect()
-}
 /// Fast check for Markdown formatting features before invoking full document parsing.
 pub(crate) fn has_markdown_syntax(text: &str) -> bool {
     text.contains("```")

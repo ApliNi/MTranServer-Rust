@@ -242,22 +242,50 @@ pub fn project_markup_spans_with_syntax(
                 }
             }
 
-            // Find target token aligned to best_src_tok
-            let mut trg_pos = None;
+            // Relative positioning within best_src_tok
+            let (rel_is_end, rel_ratio) = if let Some(s_span) = source_token_spans.get(best_src_tok) {
+                if src_pos >= s_span.end {
+                    (true, 1.0f32)
+                } else if src_pos <= s_span.start {
+                    (false, 0.0f32)
+                } else {
+                    let len = (s_span.end - s_span.start).max(1);
+                    (false, (src_pos - s_span.start) as f32 / len as f32)
+                }
+            } else {
+                (false, 0.0f32)
+            };
+
+            // Collect all target tokens aligned to best_src_tok
+            let mut matched_targets: Vec<usize> = Vec::new();
             for (t, &align) in alignments[..num_target_tokens].iter().enumerate() {
                 if align == best_src_tok {
-                    trg_pos = Some(target_token_spans[t].start);
-                    break;
+                    matched_targets.push(t);
                 }
             }
-            let trg_pos = trg_pos
-                .map(|pos| snap_to_char_boundary(pos, target_token_spans, target_text_len))
-                .unwrap_or_else(|| {
-                    let src_len = source_token_spans.last().map(|s| s.end).unwrap_or(0).max(1);
-                    let ratio = (src_pos as f32 / src_len as f32).clamp(0.0, 1.0);
-                    let raw_pos = ((target_text_len as f32 * ratio).round() as usize).min(target_text_len);
-                    snap_to_char_boundary(raw_pos, target_token_spans, target_text_len)
-                });
+
+            let trg_pos = if !matched_targets.is_empty() {
+                let (min_t, max_t) = cluster_1d_major(&matched_targets, syntax);
+                let t_start = target_token_spans.get(min_t).map_or(0, |s| s.start).min(target_text_len);
+                let t_end = target_token_spans.get(max_t).map_or(target_text_len, |s| s.end).min(target_text_len);
+                let pos = if rel_is_end {
+                    t_end
+                } else if rel_ratio <= 0.0 {
+                    t_start
+                } else {
+                    t_start + ((t_end.saturating_sub(t_start)) as f32 * rel_ratio).round() as usize
+                };
+                Some(snap_to_char_boundary(pos, target_token_spans, target_text_len))
+            } else {
+                None
+            };
+
+            let trg_pos = trg_pos.unwrap_or_else(|| {
+                let src_len = source_token_spans.last().map(|s| s.end).unwrap_or(0).max(1);
+                let ratio = (src_pos as f32 / src_len as f32).clamp(0.0, 1.0);
+                let raw_pos = ((target_text_len as f32 * ratio).round() as usize).min(target_text_len);
+                snap_to_char_boundary(raw_pos, target_token_spans, target_text_len)
+            });
             span.target_range = Some(trg_pos..trg_pos);
             continue;
         }
@@ -312,8 +340,6 @@ pub fn project_markup_spans_with_syntax(
             span.target_range = Some(approx_start..approx_end);
         } else {
             // 1D continuous density clustering to filter isolated attention noise outliers.
-            // If matched tokens <= 2, use min..max directly.
-            // If matched tokens >= 3, apply 1D density clustering (gap <= 3) to extract the major dense cluster.
             let matched_slice: &[usize] = if count <= 64 {
                 &matched_stack[..count]
             } else {
@@ -330,10 +356,9 @@ pub fn project_markup_spans_with_syntax(
         }
     }
 
-    // Step 3: Heuristic boundary adjustment to ensure valid hierarchical nesting.
-    resolve_markup_nesting_conflicts(spans, target_text_len);
+    // Step 3: Enforce monotonic order guard and resolve nesting conflicts
+    enforce_monotonic_order_guard(spans, target_text_len, syntax);
 }
-
 
 /// 1D continuous density clustering to filter isolated attention noise outliers.
 /// Partitions target tokens into clusters where neighboring points have gap <= clustering_gap_threshold.
@@ -406,159 +431,468 @@ pub(crate) fn cluster_1d_major(
 
     (matched[best_start], matched[best_start + best_len - 1])
 }
-/// Enforce well-nested hierarchy on target spans to avoid crossing tag bugs (e.g. `<a><b></a></b>`).
-fn resolve_markup_nesting_conflicts(spans: &mut [MarkupSpan], target_text_len: usize) {
+
+/// Enforces monotonic order and structural tree invariants on projected markup spans.
+///
+/// 1. Hierarchical containment: Ancestor spans in the source document strictly enclose
+///    descendant spans in the target text.
+/// 2. Monotonic sibling ordering: In languages without head-final constituent movement,
+///    sibling spans maintain monotonic non-decreasing order ( \le T_{i+1}$) without
+///    spurious cross-attention inversions.
+/// 3. Sibling overlap partitioning: Disjoint sibling spans that overlap due to subword
+///    expansion or attention blur are cleanly partitioned at word/character boundaries
+///    rather than swallowing one another into false nesting.
+/// 4. Self-closing point bounding: Point tags (, ) are bounded between
+///    their neighboring source anchors and prevented from escaping their parent scopes.
+pub fn enforce_monotonic_order_guard(
+    spans: &mut [MarkupSpan],
+    target_text_len: usize,
+    syntax: Option<&SyntaxRules>,
+) {
     if spans.len() <= 1 {
+        if let Some(s) = spans.first_mut() {
+            if let Some(r) = &mut s.target_range {
+                r.start = r.start.min(target_text_len);
+                r.end = r.end.min(target_text_len).max(r.start);
+            }
+        }
         return;
     }
 
-    // Sort spans primarily by target_start, and secondarily by outer depth first
+    for s in spans.iter_mut() {
+        if let Some(r) = &mut s.target_range {
+            r.start = r.start.min(target_text_len);
+            r.end = r.end.min(target_text_len).max(r.start);
+        }
+    }
+
+    // Canonical source tree ordering:
+    // Sort by source_range.start asc, depth asc (outer first), source_range.end desc
+    spans.sort_by(|a, b| {
+        a.source_range.start.cmp(&b.source_range.start)
+            .then_with(|| a.depth.cmp(&b.depth))
+            .then_with(|| b.source_range.end.cmp(&a.source_range.end))
+    });
+
+    let n = spans.len();
+    let is_head_final = syntax.is_some_and(|s| s.head_direction == "head_final");
+
+    // Pass 1: Hierarchical containment (Parent must enclose Child in target).
+    for i in 0..n {
+        let src_i = &spans[i].source_range;
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let src_j = &spans[j].source_range;
+            let is_ancestor = src_i.start <= src_j.start
+                && src_i.end >= src_j.end
+                && (src_i.start < src_j.start || src_i.end > src_j.end || spans[i].depth < spans[j].depth);
+
+            if is_ancestor {
+                let range_j = spans[j].target_range.clone();
+                if let (Some(r_i), Some(r_j)) = (&mut spans[i].target_range, range_j) {
+                    if !spans[i].is_self_closing {
+                        r_i.start = r_i.start.min(r_j.start);
+                        r_i.end = r_i.end.max(r_j.end).min(target_text_len);
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 2: Bound self-closing tags between neighboring source anchors
+    for i in 0..n {
+        if !spans[i].is_self_closing {
+            continue;
+        }
+        let src_pos = spans[i].source_range.start;
+        let mut min_bound = 0;
+        for p in (0..i).rev() {
+            if spans[p].source_range.end <= src_pos {
+                if let Some(r) = &spans[p].target_range {
+                    min_bound = min_bound.max(r.end);
+                    break;
+                }
+            }
+        }
+        let mut max_bound = target_text_len;
+        for s in (i + 1)..n {
+            if spans[s].source_range.start >= src_pos {
+                if let Some(r) = &spans[s].target_range {
+                    max_bound = max_bound.min(r.start);
+                    break;
+                }
+            }
+        }
+
+        if let Some(r) = &mut spans[i].target_range {
+            if min_bound <= max_bound {
+                r.start = r.start.clamp(min_bound, max_bound);
+                r.end = r.start;
+            } else {
+                r.start = min_bound.min(target_text_len);
+                r.end = r.start;
+            }
+        }
+    }
+
+    // Pass 3: Sibling monotonicity & Non-overlapping partitioning.
+    enforce_monotonic_siblings(spans, target_text_len, !is_head_final);
+
+    // Pass 4: Final hierarchical containment re-check
+    for i in 0..n {
+        let src_i = &spans[i].source_range;
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let src_j = &spans[j].source_range;
+            let is_ancestor = src_i.start <= src_j.start
+                && src_i.end >= src_j.end
+                && (src_i.start < src_j.start || src_i.end > src_j.end || spans[i].depth < spans[j].depth);
+
+            if is_ancestor {
+                let range_j = spans[j].target_range.clone();
+                if let (Some(r_i), Some(r_j)) = (&mut spans[i].target_range, range_j) {
+                    if !spans[i].is_self_closing {
+                        r_i.start = r_i.start.min(r_j.start);
+                        r_i.end = r_i.end.max(r_j.end).min(target_text_len);
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 5: Re-bound self-closing tags after sibling adjustments
+    for i in 0..n {
+        if !spans[i].is_self_closing {
+            continue;
+        }
+        let src_pos = spans[i].source_range.start;
+        let mut min_bound = 0;
+        for p in (0..i).rev() {
+            if spans[p].source_range.end <= src_pos {
+                if let Some(r) = &spans[p].target_range {
+                    min_bound = min_bound.max(r.end);
+                    break;
+                }
+            }
+        }
+        let mut max_bound = target_text_len;
+        for s in (i + 1)..n {
+            if spans[s].source_range.start >= src_pos {
+                if let Some(r) = &spans[s].target_range {
+                    max_bound = max_bound.min(r.start);
+                    break;
+                }
+            }
+        }
+
+        if let Some(r) = &mut spans[i].target_range {
+            if min_bound <= max_bound {
+                r.start = r.start.clamp(min_bound, max_bound);
+                r.end = r.start;
+            } else {
+                r.start = min_bound.min(target_text_len);
+                r.end = r.start;
+            }
+        }
+    }
+
+    // Sort by target_range.start and outer depth for rendering consistency
     spans.sort_by(|a, b| {
         let a_start = a.target_range.as_ref().map(|r| r.start).unwrap_or(0);
         let b_start = b.target_range.as_ref().map(|r| r.start).unwrap_or(0);
         a_start.cmp(&b_start).then_with(|| a.depth.cmp(&b.depth))
     });
+}
 
+fn enforce_monotonic_siblings(
+    spans: &mut [MarkupSpan],
+    target_text_len: usize,
+    strictly_monotonic: bool,
+) {
     let n = spans.len();
-    for _ in 0..n {
-        let mut changed = false;
-        for i in 0..n {
-            if spans[i].is_self_closing {
-                continue;
-            }
-            for j in (i + 1)..n {
-                if spans[j].is_self_closing {
-                    continue;
-                }
-                let (range_i, range_j) = match (&spans[i].target_range, &spans[j].target_range) {
-                    (Some(r1), Some(r2)) => (r1.clone(), r2.clone()),
-                    _ => continue,
-                };
+    if n <= 1 {
+        return;
+    }
 
-                // Detect crossing or depth-inverted overlapping tags
-                if range_i.start <= range_j.start && range_i.end > range_j.start {
-                    if range_i.end < range_j.end {
-                        if spans[i].depth <= spans[j].depth {
-                            let new_range = range_i.start..range_j.end.min(target_text_len);
-                            if spans[i].target_range.as_ref() != Some(&new_range) {
-                                spans[i].target_range = Some(new_range);
-                                changed = true;
-                            }
-                        } else {
-                            let new_range = range_i.end..range_j.end.min(target_text_len);
-                            if spans[j].target_range.as_ref() != Some(&new_range) {
-                                spans[j].target_range = Some(new_range);
-                                changed = true;
-                            }
+    if strictly_monotonic {
+        let mut paired_indices: Vec<usize> = Vec::new();
+        for i in 0..n {
+            if !spans[i].is_self_closing && spans[i].target_range.is_some() {
+                paired_indices.push(i);
+            }
+        }
+
+        if paired_indices.len() > 1 {
+            let starts: Vec<usize> = paired_indices
+                .iter()
+                .map(|&idx| spans[idx].target_range.as_ref().unwrap().start)
+                .collect();
+
+            let lis_mask = compute_lis_mask(&starts);
+
+            for (pos, &is_lis) in lis_mask.iter().enumerate() {
+                if !is_lis {
+                    let idx = paired_indices[pos];
+                    let mut prev_bound = 0;
+                    for p in (0..pos).rev() {
+                        if lis_mask[p] {
+                            let p_idx = paired_indices[p];
+                            prev_bound = spans[p_idx].target_range.as_ref().unwrap().end;
+                            break;
                         }
-                    } else if range_i.end >= range_j.end && spans[i].depth > spans[j].depth {
-                        let new_start = range_j.start.min(range_i.start);
-                        let new_end = range_j.end.max(range_i.end).min(target_text_len);
-                        let new_range = new_start..new_end;
-                        if spans[j].target_range.as_ref() != Some(&new_range) {
-                            spans[j].target_range = Some(new_range);
-                            changed = true;
+                    }
+                    let mut next_bound = target_text_len;
+                    for s in (pos + 1)..lis_mask.len() {
+                        if lis_mask[s] {
+                            let s_idx = paired_indices[s];
+                            next_bound = spans[s_idx].target_range.as_ref().unwrap().start;
+                            break;
+                        }
+                    }
+
+                    if let Some(r) = &mut spans[idx].target_range {
+                        let len = r.end.saturating_sub(r.start);
+                        if prev_bound <= next_bound {
+                            r.start = r.start.clamp(prev_bound, next_bound);
+                            r.end = (r.start + len).min(next_bound).max(r.start);
+                        } else {
+                            r.start = prev_bound.min(target_text_len);
+                            r.end = r.start;
                         }
                     }
                 }
             }
         }
-        if !changed {
-            break;
-        }
-        spans.sort_by(|a, b| {
-            let a_start = a.target_range.as_ref().map(|r| r.start).unwrap_or(0);
-            let b_start = b.target_range.as_ref().map(|r| r.start).unwrap_or(0);
-            a_start.cmp(&b_start).then_with(|| a.depth.cmp(&b.depth))
-        });
     }
 
-    spans.sort_by(|a, b| {
-        let a_start = a.target_range.as_ref().map(|r| r.start).unwrap_or(0);
-        let b_start = b.target_range.as_ref().map(|r| r.start).unwrap_or(0);
-        a_start.cmp(&b_start).then_with(|| a.depth.cmp(&b.depth))
-    });
+    // Partition overlapping sibling spans
+    for i in 0..n {
+        if spans[i].is_self_closing {
+            continue;
+        }
+        for j in (i + 1)..n {
+            if spans[j].is_self_closing {
+                continue;
+            }
+            let src_i = &spans[i].source_range;
+            let src_j = &spans[j].source_range;
+            let are_disjoint_in_source = src_i.end <= src_j.start || src_j.end <= src_i.start;
+            if are_disjoint_in_source {
+                let (r_i, r_j) = match (&spans[i].target_range, &spans[j].target_range) {
+                    (Some(a), Some(b)) => (a.clone(), b.clone()),
+                    _ => continue,
+                };
+
+                let (first, second, idx_first, idx_second) = if r_i.start <= r_j.start {
+                    (r_i, r_j, i, j)
+                } else {
+                    (r_j, r_i, j, i)
+                };
+
+                if first.end > second.start {
+                    let split = (first.end + second.start) / 2;
+                    let split_clamped = split.clamp(first.start, second.end);
+
+                    if let Some(r) = &mut spans[idx_first].target_range {
+                        r.end = split_clamped.max(r.start);
+                    }
+                    if let Some(r) = &mut spans[idx_second].target_range {
+                        r.start = split_clamped.min(r.end);
+                    }
+                }
+            }
+        }
+    }
 }
+
+fn compute_lis_mask(arr: &[usize]) -> Vec<bool> {
+    let n = arr.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let mut dp = vec![1usize; n];
+    let mut prev = vec![None; n];
+
+    for i in 0..n {
+        for j in 0..i {
+            if arr[j] <= arr[i] && dp[j] + 1 > dp[i] {
+                dp[i] = dp[j] + 1;
+                prev[i] = Some(j);
+            }
+        }
+    }
+
+    let mut max_len = 0;
+    let mut best_idx = 0;
+    for (i, &len) in dp.iter().enumerate() {
+        if len > max_len {
+            max_len = len;
+            best_idx = i;
+        }
+    }
+
+    let mut mask = vec![false; n];
+    let mut curr = Some(best_idx);
+    while let Some(idx) = curr {
+        mask[idx] = true;
+        curr = prev[idx];
+    }
+    mask
+}
+
+/// Enforce well-nested hierarchy on target spans to avoid crossing tag bugs (e.g. ).
+pub fn resolve_markup_nesting_conflicts(spans: &mut [MarkupSpan], target_text_len: usize) {
+    enforce_monotonic_order_guard(spans, target_text_len, None);
+}
+
 pub(crate) use crate::utils::lang::is_cjk_or_continuous_script as is_cjk_character;
 
-/// Snaps `start` and `end` byte offsets so they do not bisect non-CJK words.
-///
-/// If a boundary falls between two non-CJK alphanumeric characters, it is expanded:
-/// - `start` is shifted backwards to the beginning of the word.
-/// - `end` is shifted forwards to the end of the word.
-///
-/// For CJK scripts, character/token boundaries are preserved without space-delimited word expansion.
+#[inline]
+pub(crate) fn is_intra_word_connector(c: char) -> bool {
+    matches!(c, '\'' | '\u{2019}' | '\u{02BB}' | '-' | '\u{2010}')
+}
+
+#[inline]
+pub(crate) fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() && !is_cjk_character(c)
+}
+
+/// Finds the non-CJK word boundary interval  enclosing byte offset .
+/// If  is outside any word (or at whitespace / punctuation / CJK character), returns .
+pub(crate) fn find_word_boundaries(text: &str, pos: usize) -> (usize, usize) {
+    if text.is_empty() || pos > text.len() {
+        return (pos, pos);
+    }
+    let pos = clamp_to_char_boundary(text, pos);
+    let len = text.len();
+    let prev = text[..pos].chars().next_back();
+    let next = text[pos..].chars().next();
+
+    let is_inside = match (prev, next) {
+        (Some(p), Some(n)) if is_word_char(p) && is_word_char(n) => true,
+        (Some(p), Some(n)) if is_word_char(p) && is_intra_word_connector(n) => {
+            let after = text[pos + n.len_utf8()..].chars().next();
+            after.is_some_and(is_word_char)
+        }
+        (Some(p), Some(n)) if is_intra_word_connector(p) && is_word_char(n) => {
+            let before = text[..pos.saturating_sub(p.len_utf8())].chars().next_back();
+            before.is_some_and(is_word_char)
+        }
+        _ => false,
+    };
+
+    if !is_inside {
+        return (pos, pos);
+    }
+
+    let mut word_start = pos;
+    while word_start > 0 {
+        let p = text[..word_start].chars().next_back().unwrap();
+        if is_word_char(p) {
+            word_start -= p.len_utf8();
+        } else if is_intra_word_connector(p) {
+            let before = text[..word_start.saturating_sub(p.len_utf8())].chars().next_back();
+            if before.is_some_and(is_word_char) {
+                word_start -= p.len_utf8();
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    let mut word_end = pos;
+    while word_end < len {
+        let n = text[word_end..].chars().next().unwrap();
+        if is_word_char(n) {
+            word_end += n.len_utf8();
+        } else if is_intra_word_connector(n) {
+            let after = text[word_end + n.len_utf8()..].chars().next();
+            if after.is_some_and(is_word_char) {
+                word_end += n.len_utf8();
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    (word_start, word_end)
+}
+
+#[inline]
+pub(crate) fn snap_point_to_word_boundary(text: &str, pos: usize) -> usize {
+    let (w_start, w_end) = find_word_boundaries(text, pos);
+    if w_start < w_end {
+        if pos - w_start <= w_end - pos {
+            w_start
+        } else {
+            w_end
+        }
+    } else {
+        pos
+    }
+}
+
+/// Snaps  and  byte offsets so they do not bisect non-CJK words or compound connectors.
 #[inline]
 pub(crate) fn snap_to_word_boundary(text: &str, mut start: usize, mut end: usize) -> (usize, usize) {
     if text.is_empty() || start >= end {
         return (start, end);
     }
-    let len = text.len();
-    let start_clamped = start.min(len);
-    let end_clamped = end.min(len);
-
-    let is_word_char = |c: char| -> bool {
-        c.is_alphanumeric() && !is_cjk_character(c)
-    };
-
-    if start_clamped > 0 && start_clamped < len && text.is_char_boundary(start_clamped) {
-        let prev_char = text[..start_clamped].chars().next_back().unwrap();
-        let next_char = text[start_clamped..].chars().next().unwrap();
-        if is_word_char(prev_char) && is_word_char(next_char) {
-            while start > 0 {
-                let prev = text[..start].chars().next_back().unwrap();
-                if is_word_char(prev) {
-                    start -= prev.len_utf8();
-                } else {
-                    break;
-                }
-            }
-        }
+    let (w_start, _) = find_word_boundaries(text, start);
+    if w_start < start {
+        start = w_start;
     }
-
-    if end_clamped > 0 && end_clamped < len && text.is_char_boundary(end_clamped) {
-        let prev_char = text[..end_clamped].chars().next_back().unwrap();
-        let next_char = text[end_clamped..].chars().next().unwrap();
-        if is_word_char(prev_char) && is_word_char(next_char) {
-            while end < len {
-                let next = text[end..].chars().next().unwrap();
-                if is_word_char(next) {
-                    end += next.len_utf8();
-                } else {
-                    break;
-                }
-            }
-        }
+    let (_, w_end) = find_word_boundaries(text, end);
+    if w_end > end {
+        end = w_end;
     }
-
     (start, end)
 }
 
 /// Snaps projected markup span boundaries outwards to complete words for non-CJK text.
-///
-/// Subword tokenizers (SentencePiece) frequently split target words across token boundaries.
-/// If an alignment maps to only a subword prefix (e.g. `neg` in `negrito`), raw projection
-/// places closing tags inside words (`<b>neg</b>rito`). This function snaps boundaries outward
-/// to wrap whole words, while preserving character-level boundaries in CJK scripts, and re-resolves
-/// hierarchical tag nesting.
 pub fn snap_markup_spans_to_word_boundaries(spans: &mut [MarkupSpan], target_text: &str) {
+    snap_markup_spans_to_word_boundaries_with_syntax(spans, target_text, None);
+}
+
+/// Snaps projected markup span boundaries outwards to complete words with language syntax rules.
+pub fn snap_markup_spans_to_word_boundaries_with_syntax(
+    spans: &mut [MarkupSpan],
+    target_text: &str,
+    syntax: Option<&SyntaxRules>,
+) {
     if spans.is_empty() || target_text.is_empty() {
         return;
     }
     for span in spans.iter_mut() {
-        if span.is_self_closing || span.is_intra_word {
+        if span.is_intra_word {
+            continue;
+        }
+        if span.is_self_closing {
+            if let Some(target_range) = &span.target_range {
+                let pos = clamp_to_char_boundary(target_text, target_range.start.min(target_text.len()));
+                let snapped = snap_point_to_word_boundary(target_text, pos);
+                span.target_range = Some(snapped..snapped);
+            }
             continue;
         }
         if let Some(target_range) = &span.target_range {
-            let start = target_range.start.min(target_text.len());
-            let end = target_range.end.min(target_text.len());
+            let start = clamp_to_char_boundary(target_text, target_range.start.min(target_text.len()));
+            let end = clamp_to_char_boundary(target_text, target_range.end.min(target_text.len())).max(start);
             if start < end {
                 let (snapped_start, snapped_end) = snap_to_word_boundary(target_text, start, end);
                 span.target_range = Some(snapped_start..snapped_end);
             }
         }
     }
-    resolve_markup_nesting_conflicts(spans, target_text.len());
+    enforce_monotonic_order_guard(spans, target_text.len(), syntax);
 }
 
 /// Render plain target text with projected markup spans inserted at their computed locations.
@@ -590,8 +924,8 @@ pub fn render_projected_markup(target_text: &str, spans: &[MarkupSpan]) -> Strin
 
             // Whitespace boundary absorption:
             // Target token spans from SentencePiece often have leading whitespace (due to \u{2581}),
-            // which would cause tags to swallow inter-word spaces (e.g. `word1<i> word2</i>` instead of
-            // `word1 <i>word2</i>`). Shrink whitespace inside paired tags to keep spaces outside.
+            // which would cause tags to swallow inter-word spaces (e.g.  instead of
+            // ). Shrink whitespace inside paired tags to keep spaces outside.
             if !span.is_self_closing {
                 if start < end {
                     while start < end && target_text.as_bytes()[start] == b' ' {
@@ -1289,4 +1623,192 @@ mod tests {
         let rendered = render_projected_markup("hello world", &[span]);
         assert_eq!(rendered, "hello world");
     }
+
+    #[test]
+    fn test_snap_markup_spans_intra_word_connector_hyphen_and_contraction() {
+        let text = "This is state-of-the-art and don\x27t stop.";
+        let state_start = text.find("state").unwrap();
+        // Span bisecting "state-of-the-art" to just "state"
+        let mut spans = vec![
+            MarkupSpan::new_paired(
+                0..5,
+                "<b>".to_string(),
+                "</b>".to_string(),
+                0,
+            ),
+            MarkupSpan::new_paired(
+                10..13,
+                "<i>".to_string(),
+                "</i>".to_string(),
+                0,
+            ),
+        ];
+        spans[0].target_range = Some(state_start..state_start + 5); // "state"
+        let dont_start = text.find("don\x27t").unwrap();
+        spans[1].target_range = Some(dont_start..dont_start + 3); // "don"
+
+        snap_markup_spans_to_word_boundaries(&mut spans, text);
+
+        let rendered = render_projected_markup(text, &spans);
+        assert_eq!(
+            rendered,
+            "This is <b>state-of-the-art</b> and <i>don\x27t</i> stop."
+        );
+    }
+
+    #[test]
+    fn test_snap_point_to_word_boundary_self_closing() {
+        let text = "hello world and don\x27t stop";
+        // Void tag placed inside "hello" at byte 2 ("he<br/>llo")
+        let mut spans = vec![
+            MarkupSpan::new_self_closing(0, "<br/>".to_string(), 0),
+            MarkupSpan::new_self_closing(10, "<img/>".to_string(), 0),
+        ];
+        spans[0].target_range = Some(2..2); // inside "hello"
+        let dont_start = text.find("don\x27t").unwrap();
+        spans[1].target_range = Some(dont_start + 3..dont_start + 3); // between "don" and "\x27t"
+
+        snap_markup_spans_to_word_boundaries(&mut spans, text);
+
+        // Byte 2 is closer to 0 than 5 -> snaps to 0
+        assert_eq!(spans[0].target_range, Some(0..0));
+        // Byte dont_start + 3 is closer to dont_start + 5 (end of "don\x27t") than dont_start
+        assert_eq!(spans[1].target_range, Some(dont_start + 5..dont_start + 5));
+
+        let rendered = render_projected_markup(text, &spans);
+        assert_eq!(rendered, "<br/>hello world and don\x27t<img/> stop");
+    }
+
+    #[test]
+    fn test_monotonic_order_guard_sequential_inversion_resolution() {
+        // Source: "First and Second"
+        // Target: "Erste und Zweite" (head-initial)
+        // Spans: span 0 ("First"), span 1 ("Second")
+        // Alignment noise inverted them: span 1 is at 0..5, span 0 is at 10..15
+        let syntax = SyntaxRules {
+            clustering_gap_threshold: 3,
+            head_direction: "head_initial".to_string(),
+            ..Default::default()
+        };
+        let mut spans = vec![
+            MarkupSpan {
+                source_range: 0..5,
+                target_range: Some(10..15),
+                open_markup: "<b>".to_string(),
+                close_markup: "</b>".to_string(),
+                is_self_closing: false,
+                depth: 0,
+                is_intra_word: false,
+            },
+            MarkupSpan {
+                source_range: 10..16,
+                target_range: Some(0..5),
+                open_markup: "<i>".to_string(),
+                close_markup: "</i>".to_string(),
+                is_self_closing: false,
+                depth: 0,
+                is_intra_word: false,
+            },
+        ];
+
+        enforce_monotonic_order_guard(&mut spans, 20, Some(&syntax));
+
+        // After monotonic order guard, span 0 must precede span 1 in target
+        assert_eq!(spans[0].open_markup, "<b>");
+        assert_eq!(spans[1].open_markup, "<i>");
+        let r0 = spans[0].target_range.as_ref().unwrap();
+        let r1 = spans[1].target_range.as_ref().unwrap();
+        assert!(r0.start <= r1.start, "r0.start ({}) must <= r1.start ({})", r0.start, r1.start);
+        assert!(r0.end <= r1.start || r0.end <= r1.end);
+    }
+
+    #[test]
+    fn test_monotonic_order_guard_sibling_overlap_partitioning() {
+        // Disjoint sibling spans at depth 0 that overlap in target:
+        // span 0 at 0..15, span 1 at 10..25.
+        // Sibling spans must be partitioned, NOT merged into false nesting!
+        let mut spans = vec![
+            MarkupSpan {
+                source_range: 0..5,
+                target_range: Some(0..15),
+                open_markup: "<b>".to_string(),
+                close_markup: "</b>".to_string(),
+                is_self_closing: false,
+                depth: 0,
+                is_intra_word: false,
+            },
+            MarkupSpan {
+                source_range: 10..15,
+                target_range: Some(10..25),
+                open_markup: "<i>".to_string(),
+                close_markup: "</i>".to_string(),
+                is_self_closing: false,
+                depth: 0,
+                is_intra_word: false,
+            },
+        ];
+
+        enforce_monotonic_order_guard(&mut spans, 30, None);
+
+        let r0 = spans[0].target_range.as_ref().unwrap();
+        let r1 = spans[1].target_range.as_ref().unwrap();
+        // Spans must not overlap: r0.end <= r1.start
+        assert!(r0.end <= r1.start, "Sibling spans must not overlap: r0.end={}, r1.start={}", r0.end, r1.start);
+        assert_eq!(spans[0].open_markup, "<b>");
+        assert_eq!(spans[1].open_markup, "<i>");
+    }
+
+    #[test]
+    fn test_monotonic_order_guard_self_closing_tag_bounding() {
+        // Source: "Span1 <br/> Span2"
+        // Target: "Text1 ... Text2"
+        // Span 0: 0..5 ("Span1") -> target 0..10
+        // Span 1: 6..6 ("<br/>") -> target 35 (drifted beyond Span 2)
+        // Span 2: 7..12 ("Span2") -> target 15..25
+        let mut spans = vec![
+            MarkupSpan::new_paired(0..5, "<b>".to_string(), "</b>".to_string(), 0),
+            MarkupSpan::new_self_closing(6, "<br/>".to_string(), 0),
+            MarkupSpan::new_paired(7..12, "<i>".to_string(), "</i>".to_string(), 0),
+        ];
+        spans[0].target_range = Some(0..10);
+        spans[1].target_range = Some(35..35); // Outlier drift!
+        spans[2].target_range = Some(15..25);
+
+        enforce_monotonic_order_guard(&mut spans, 40, None);
+
+        let br_span = spans.iter().find(|s| s.is_self_closing).unwrap();
+        let br_pos = br_span.target_range.as_ref().unwrap().start;
+        // <br/> must be bounded between Span 0 end (10) and Span 2 start (15)
+        assert!(
+            br_pos >= 10 && br_pos <= 15,
+            "br_pos {} must be between 10 and 15",
+            br_pos
+        );
+    }
+
+    #[test]
+    fn test_project_markup_spans_self_closing_after_word_placement() {
+        // Source: "hello<br/> world"
+        // Source tokens: 0..5 ("hello"), 6..11 ("world")
+        // Target tokens: 0..6 ("bonjour"), 7..12 ("monde")
+        let source_token_spans = vec![0..5, 6..11];
+        let target_token_spans = vec![0..7, 8..13];
+        let alignments = vec![0, 1]; // "bonjour" -> "hello", "monde" -> "world"
+        let mut spans = vec![MarkupSpan::new_self_closing(5, "<br/>".to_string(), 0)];
+
+        project_markup_spans_with_syntax(
+            &mut spans,
+            &source_token_spans,
+            &target_token_spans,
+            &alignments,
+            13,
+            None,
+        );
+
+        let r = spans[0].target_range.as_ref().unwrap();
+        // Since src_pos is 5 (at end of source token 0), it must be placed at end of target token 0 (7),
+        // NOT at the start of target token 0 (0)!
+        assert_eq!(r.start, 7, "Self-closing tag after word must be placed at token end");
+    }
 }
+

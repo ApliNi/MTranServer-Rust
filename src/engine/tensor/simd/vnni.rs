@@ -36,9 +36,13 @@ pub unsafe fn matmul_row_i8_avxvnni_prebiased(
     relu: bool,
 ) {
     if crate::utils::arch::vnni_uses_evex() {
-        matmul_row_i8_avxvnni_prebiased_impl::<true>(xb_buf, x, w, k, n, bias, row_sums, out, denom, relu);
+        matmul_row_i8_avxvnni_prebiased_impl::<true>(
+            xb_buf, x, w, k, n, bias, row_sums, out, denom, relu,
+        );
     } else {
-        matmul_row_i8_avxvnni_prebiased_impl::<false>(xb_buf, x, w, k, n, bias, row_sums, out, denom, relu);
+        matmul_row_i8_avxvnni_prebiased_impl::<false>(
+            xb_buf, x, w, k, n, bias, row_sums, out, denom, relu,
+        );
     }
 }
 
@@ -263,33 +267,7 @@ pub unsafe fn matmul_row_i8_avxvnni(
     denom: f32,
     relu: bool,
 ) {
-    use std::arch::x86_64::*;
-
-    const BLK: usize = 32;
-    let blocks = k / BLK;
-    let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
-    let b_pairs = blocks / 2;
-    let b_rem = blocks % 2;
-
-    VNNI_XB_BUF.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        if buf.len() < blocks {
-            buf.resize(blocks, _mm256_setzero_si256());
-        }
-        for bp in 0..b_pairs {
-            let b0 = bp * 2;
-            let b1 = b0 + 1;
-            let xv0 = _mm256_loadu_si256(x.as_ptr().add(b0 * BLK) as *const __m256i);
-            let xv1 = _mm256_loadu_si256(x.as_ptr().add(b1 * BLK) as *const __m256i);
-            buf[b0] = _mm256_add_epi8(xv0, x_bias_vec);
-            buf[b1] = _mm256_add_epi8(xv1, x_bias_vec);
-        }
-        if b_rem > 0 {
-            let b = b_pairs * 2;
-            let xv = _mm256_loadu_si256(x.as_ptr().add(b * BLK) as *const __m256i);
-            buf[b] = _mm256_add_epi8(xv, x_bias_vec);
-        }
-        let xb_buf = &buf[..blocks];
+    with_vnni_prebiased(x, 1, k, |xb_buf| {
         matmul_row_i8_avxvnni_prebiased(xb_buf, x, w, k, n, bias, row_sums, out, denom, relu);
     });
 }
@@ -529,6 +507,36 @@ unsafe fn matmul_2rows_i8_avxvnni_impl<const EVEX: bool>(
         };
     }
 }
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn prebias_vnni_into(x: &[i8], m: usize, k: usize, dest: *mut std::arch::x86_64::__m256i) {
+    use std::arch::x86_64::*;
+    const BLK: usize = 32;
+    let blocks = k / BLK;
+    let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
+    let b_pairs = blocks / 2;
+    let b_rem = blocks % 2;
+
+    for row in 0..m {
+        let xr = &x[row * k..(row + 1) * k];
+        let row_dest = dest.add(row * blocks);
+        for bp in 0..b_pairs {
+            let b0 = bp * 2;
+            let b1 = b0 + 1;
+            let xv0 = _mm256_loadu_si256(xr.as_ptr().add(b0 * BLK) as *const __m256i);
+            let xv1 = _mm256_loadu_si256(xr.as_ptr().add(b1 * BLK) as *const __m256i);
+            row_dest.add(b0).write(_mm256_add_epi8(xv0, x_bias_vec));
+            row_dest.add(b1).write(_mm256_add_epi8(xv1, x_bias_vec));
+        }
+        if b_rem > 0 {
+            let b = b_pairs * 2;
+            let xv = _mm256_loadu_si256(xr.as_ptr().add(b * BLK) as *const __m256i);
+            row_dest.add(b).write(_mm256_add_epi8(xv, x_bias_vec));
+        }
+    }
+}
+
 thread_local! {
     static VNNI_XB_BUF: std::cell::RefCell<Vec<std::arch::x86_64::__m256i>> =
         const { std::cell::RefCell::new(Vec::new()) };
@@ -546,23 +554,29 @@ pub unsafe fn with_vnni_prebiased<R, F: FnOnce(&[std::arch::x86_64::__m256i]) ->
     use std::arch::x86_64::*;
     const BLK: usize = 32;
     let blocks = k / BLK;
-    let x_bias_vec = _mm256_set1_epi8(0x80u8 as i8);
     let total_blocks = m * blocks;
-    VNNI_XB_BUF.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        if buf.len() < total_blocks {
-            buf.resize(total_blocks, _mm256_setzero_si256());
+    VNNI_XB_BUF.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut buf) => {
+            if buf.len() < total_blocks {
+                buf.resize(total_blocks, _mm256_setzero_si256());
+            }
+            prebias_vnni_into(x, m, k, buf.as_mut_ptr());
+            f(&buf[..total_blocks])
         }
-        for row in 0..m {
-            let xr = &x[row * k..(row + 1) * k];
-            let row_dest = &mut buf[row * blocks..(row + 1) * blocks];
-            for b in 0..blocks {
-                let off = b * BLK;
-                let xv = _mm256_loadu_si256(xr.as_ptr().add(off) as *const __m256i);
-                row_dest[b] = _mm256_add_epi8(xv, x_bias_vec);
+        Err(_) => {
+            if total_blocks <= 128 {
+                let mut stack = [std::mem::MaybeUninit::<__m256i>::uninit(); 128];
+                prebias_vnni_into(x, m, k, stack.as_mut_ptr() as *mut __m256i);
+                let slice =
+                    std::slice::from_raw_parts(stack.as_ptr() as *const __m256i, total_blocks);
+                f(slice)
+            } else {
+                let mut local = Vec::with_capacity(total_blocks);
+                prebias_vnni_into(x, m, k, local.as_mut_ptr());
+                local.set_len(total_blocks);
+                f(&local)
             }
         }
-        f(&buf[..total_blocks])
     })
 }
 
@@ -607,8 +621,8 @@ pub unsafe fn matmul_i8_avxvnni_prebiased(
             let out_r0 = &mut top[i * n + j_start..i * n + j_start + j_len];
             let out_r1 = &mut bottom[j_start..j_start + j_len];
             matmul_2rows_i8_avxvnni(
-                xb0, xb1, xr0, xr1, w_tile, k, j_len, bias_tile, rs_tile, out_r0, out_r1,
-                denom, relu,
+                xb0, xb1, xr0, xr1, w_tile, k, j_len, bias_tile, rs_tile, out_r0, out_r1, denom,
+                relu,
             );
             i += 2;
         }
@@ -654,7 +668,17 @@ unsafe fn matmul_i8_avxvnni_prebiased_parallel_recursive(
         },
         || {
             matmul_i8_avxvnni_prebiased_parallel_recursive(
-                xb_bot, x_bot, w, m - m_mid, k, n, bias, row_sums, o_bot, denom, relu,
+                xb_bot,
+                x_bot,
+                w,
+                m - m_mid,
+                k,
+                n,
+                bias,
+                row_sums,
+                o_bot,
+                denom,
+                relu,
             )
         },
     );
