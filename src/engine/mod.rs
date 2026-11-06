@@ -377,16 +377,15 @@ impl TranslationEngine {
             // Disabled: pass raw input directly to the model
             return self.translate_single_text(text);
         }
-
-        markup::document::translate_document_dual_parallel_with_languages(
+        markup::document::translate_document_dual_parallel_with_options(
             text,
             Some(&self.source_lang),
             Some(&self.target_lang),
+            Some(self.max_sentence_length),
             |segment| self.translate_single_text(segment),
             |segment| self.translate_single_text_with_alignment(segment),
         )
     }
-
     /// Downward-compatible alias for `translate_with_markup`.
     pub fn translate_with_formats(&self, text: &str, parse_markup: bool) -> String {
         self.translate_with_markup(text, parse_markup)

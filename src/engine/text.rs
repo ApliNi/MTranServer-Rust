@@ -126,6 +126,9 @@ pub fn mapped_separator<'a>(sep: &'a str, target_lang: &str) -> &'a str {
 /// Normalizes typographical variants, academic symbols, and zero-width markers
 /// that can trigger byte-fallback tokenization loops.
 pub fn normalize_academic_and_special_symbols(text: &str) -> Cow<'_, str> {
+    if text.is_ascii() {
+        return Cow::Borrowed(text);
+    }
     let has_special = text.chars().any(|c| {
         matches!(
             c,
@@ -168,8 +171,8 @@ fn match_template_or_var_placeholder(text: &str, start: usize) -> Option<usize> 
         return None;
     }
 
-    // 1. Shell variable: ${VAR} or ${HTTP_PORT:-8080}
-    if bytes[start] == b'$' && start + 1 < len && bytes[start + 1] == b'{' {
+    // 1. Shell variable: ${VAR} or ${HTTP_PORT:-8080}; Ruby / template variable: #{expr} or #{order_id}
+    if (bytes[start] == b'$' || bytes[start] == b'#') && start + 1 < len && bytes[start + 1] == b'{' {
         let rest = &text[start + 2..];
         if let Some(pos) = rest.find('}') {
             let inner = &rest[..pos];
@@ -318,7 +321,7 @@ pub(crate) fn match_printf_placeholder(text: &str, start: usize) -> Option<usize
 /// Hide emoji characters and template interpolation variables (`{{...}}`, `{var}`, `${VAR}`, `%s`/`%d`) behind `[EE<i>]` placeholders.
 pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
     let has_emoji_lead = text.as_bytes().iter().any(|&b| b >= 0xE2);
-    let has_template_or_var = text.contains('{') || text.contains('$') || text.contains('%');
+    let has_template_or_var = text.contains('{') || text.contains('$') || text.contains('%') || text.contains("#{");
     if !has_emoji_lead && !has_template_or_var {
         return (Cow::Borrowed(text), vec![]);
     }
@@ -332,7 +335,7 @@ pub fn hide_emojis(text: &str) -> (Cow<'_, str>, Vec<String>) {
 
     while i < len {
         if has_template_or_var {
-            if bytes[i] == b'{' || (bytes[i] == b'$' && i + 1 < len && bytes[i + 1] == b'{') {
+            if bytes[i] == b'{' || ((bytes[i] == b'$' || bytes[i] == b'#') && i + 1 < len && bytes[i + 1] == b'{') {
                 if let Some(end) = match_template_or_var_placeholder(text, i) {
                     if i > last {
                         clean.push_str(&text[last..i]);
@@ -443,6 +446,71 @@ pub fn restore_emojis_with_spans<'a>(
 ) -> Cow<'a, str> {
     restore_emojis_with_source_and_spans(text, replacements, "", spans)
 }
+#[inline]
+fn scan_next_placeholder(text: &str, start: usize) -> Option<(usize, usize, usize)> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = start;
+
+    while i < len {
+        let (open_len, is_open) = if bytes[i] == b'[' {
+            (1, true)
+        } else if bytes[i..].starts_with("［".as_bytes()) {
+            (3, true)
+        } else if bytes[i..].starts_with("【".as_bytes()) {
+            (3, true)
+        } else {
+            (1, false)
+        };
+
+        if !is_open {
+            i += 1;
+            continue;
+        }
+
+        let mut p = i + open_len;
+        while p < len && (bytes[p] == b' ' || bytes[p] == b'\t') {
+            p += 1;
+        }
+
+        if p + 2 <= len
+            && (bytes[p] == b'E' || bytes[p] == b'e')
+            && (bytes[p + 1] == b'E' || bytes[p + 1] == b'e')
+        {
+            p += 2;
+            while p < len && (bytes[p] == b' ' || bytes[p] == b'\t') {
+                p += 1;
+            }
+
+            let num_start = p;
+            while p < len && bytes[p].is_ascii_digit() {
+                p += 1;
+            }
+
+            if p > num_start {
+                if let Ok(idx) = text[num_start..p].parse::<usize>() {
+                    while p < len && (bytes[p] == b' ' || bytes[p] == b'\t') {
+                        p += 1;
+                    }
+                    let close_len = if p < len && bytes[p] == b']' {
+                        1
+                    } else if bytes[p..].starts_with("］".as_bytes()) {
+                        3
+                    } else if bytes[p..].starts_with("】".as_bytes()) {
+                        3
+                    } else {
+                        0
+                    };
+                    let match_len = (p + close_len) - i;
+                    return Some((i, match_len, idx));
+                }
+            }
+        }
+
+        i += open_len;
+    }
+    None
+}
 
 /// Restore emoji placeholders `[EE{i}]` with original emoji strings,
 /// taking into account the source text's preceding whitespace context.
@@ -483,32 +551,12 @@ pub fn restore_emojis_with_source_and_spans<'a>(
         ws
     };
 
-    while let Some(start) = text[scan_offset..].find("[EE") {
-        let match_start = scan_offset + start;
-        let after_prefix = &text[match_start + 3..];
-        let bytes = after_prefix.as_bytes();
-        let mut digit_end = 0;
-        while digit_end < bytes.len() && bytes[digit_end].is_ascii_digit() {
-            digit_end += 1;
-        }
+    let mut used = vec![false; replacements.len()];
 
-        let matched = if digit_end > 0 && digit_end < bytes.len() && bytes[digit_end] == b']' {
-            if let Ok(index) = after_prefix[..digit_end].parse::<usize>() {
-                if let Some(original) = replacements.get(index) {
-                    let match_len = 3 + digit_end + 1;
-                    let src_has_ws = repl_leading_ws.get(index).copied().unwrap_or(false);
-                    Some((match_len, original.as_str(), src_has_ws))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        if let Some((match_len, original, src_has_ws)) = matched {
+    while let Some((match_start, match_len, index)) = scan_next_placeholder(text, scan_offset) {
+        if let Some(original) = replacements.get(index) {
+            used[index] = true;
+            let src_has_ws = repl_leading_ws.get(index).copied().unwrap_or(false);
             let res = match &mut result {
                 Some(r) => {
                     r.push_str(&text[scan_offset..match_start]);
@@ -541,21 +589,82 @@ pub fn restore_emojis_with_source_and_spans<'a>(
             scan_offset = match_start + match_len;
         } else {
             if let Some(r) = &mut result {
-                r.push_str(&text[scan_offset..match_start + 3]);
+                r.push_str(&text[scan_offset..match_start + match_len]);
             }
-            scan_offset = match_start + 3;
+            scan_offset = match_start + match_len;
         }
     }
 
-    match result {
-        None => Cow::Borrowed(text),
+    let mut final_res = match result {
+        None => {
+            if used.iter().any(|&u| !u) {
+                Some(text.to_string())
+            } else {
+                None
+            }
+        }
         Some(mut res) => {
             res.push_str(&text[scan_offset..]);
             if track_spans && !deltas.is_empty() {
                 remap_spans(spans, &deltas);
             }
-            Cow::Owned(res)
+            Some(res)
         }
+    };
+
+    // Safety net: restore any dropped template variables that were swallowed by the NMT model
+    for (idx, &is_used) in used.iter().enumerate() {
+        if !is_used {
+            let original = &replacements[idx];
+            if original.starts_with('{') || original.starts_with('$') || original.starts_with('#') || original.starts_with('%') {
+                let res = final_res.get_or_insert_with(|| text.to_string());
+
+                // Locate nearest restored placeholder to maintain relative order
+                let insert_pos = if let Some(next_idx) = (idx + 1..replacements.len()).find(|&k| used[k]) {
+                    let next_str = &replacements[next_idx];
+                    res.find(next_str)
+                } else if let Some(prev_idx) = (0..idx).rev().find(|&k| used[k]) {
+                    let prev_str = &replacements[prev_idx];
+                    res.find(prev_str).map(|p| p + prev_str.len())
+                } else {
+                    None
+                };
+
+                match insert_pos {
+                    Some(pos) => {
+                        let mut insert_str = String::with_capacity(original.len() + 2);
+                        if pos > 0 && !res[..pos].ends_with(' ') {
+                            insert_str.push(' ');
+                        }
+                        insert_str.push_str(original);
+                        if pos < res.len() && !res[pos..].starts_with(' ') {
+                            insert_str.push(' ');
+                        }
+                        res.insert_str(pos, &insert_str);
+                    }
+                    None => {
+                        let term_pos = res.trim_end().rfind(|c: char| matches!(c, '.' | '。' | '!' | '！' | '?' | '？'));
+                        if let Some(p) = term_pos {
+                            let mut insert_str = String::with_capacity(original.len() + 2);
+                            if p > 0 && !res[..p].ends_with(' ') {
+                                insert_str.push(' ');
+                            }
+                            insert_str.push_str(original);
+                            res.insert_str(p, &insert_str);
+                        } else {
+                            if !res.is_empty() && !res.ends_with(' ') {
+                                res.push(' ');
+                            }
+                            res.push_str(original);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    match final_res {
+        None => Cow::Borrowed(text),
+        Some(res) => Cow::Owned(res),
     }
 }
 
@@ -1112,13 +1221,13 @@ mod tests {
         let (clean, repls) = hide_emojis(input);
         assert_eq!(
             clean,
-            "Welcome, [EE0]! Your order #[EE1] has shipped to [EE2]. Items: [EE3], [EE4], [EE5], and [EE6]."
+            "Welcome, [EE0]! Your order [EE1] has shipped to [EE2]. Items: [EE3], [EE4], [EE5], and [EE6]."
         );
         assert_eq!(
             repls,
             vec![
                 "{username}".to_string(),
-                "{order_id}".to_string(),
+                "#{order_id}".to_string(),
                 "{address}".to_string(),
                 "{0}".to_string(),
                 "{1}".to_string(),
@@ -1165,5 +1274,17 @@ mod tests {
         let (neg_clean, neg_repls) = hide_emojis(neg);
         assert_eq!(neg_clean, neg);
         assert!(neg_repls.is_empty());
+    }
+
+    #[test]
+    fn test_corrupted_placeholder_restoration_and_fallback() {
+        let repls = vec!["{username}".to_string(), "👋".to_string(), "${CONFIG}".to_string()];
+        // Model generated lowercase [ee0], extra space [EE 1], and dropped ${CONFIG}
+        let model_output = "Hello [ee0], see [EE 1]!";
+        let restored = restore_emojis_with_source_and_spans(model_output, &repls, "", &mut []);
+        // Must restore both username and emoji, AND append missing variable ${CONFIG}
+        assert!(restored.contains("Hello {username}"));
+        assert!(restored.contains("👋"));
+        assert!(restored.contains("${CONFIG}"));
     }
 }

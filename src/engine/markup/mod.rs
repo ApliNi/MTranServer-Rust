@@ -32,6 +32,7 @@ pub use document::{
     translate_document_dual_with_languages,
     translate_document_dual_dyn, translate_document_dual_parallel,
     translate_document_dual_parallel_with_languages,
+    translate_document_dual_parallel_with_options,
     translate_document_dual_parallel_dyn, translate_document_with_alignment,
     translate_document_with_alignment_dyn, translate_document_with_alignment_parallel,
     translate_document_with_alignment_parallel_dyn, translate_document_with_handler,

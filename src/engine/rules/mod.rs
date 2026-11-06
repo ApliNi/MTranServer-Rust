@@ -933,10 +933,12 @@ fn is_valid_abbreviation_context(
     };
     let remainder = after.trim_start();
 
-    if word_no_dot.eq_ignore_ascii_case("no") {
-        if remainder.is_empty() {
-            return false;
-        }
+    let before = text[..word_start].trim_end();
+    if before.ends_with(|c: char| c.is_ascii_digit()) {
+        return true;
+    }
+
+    if !remainder.is_empty() {
         let first = remainder.chars().next().unwrap();
         if first.is_ascii_digit() || first == '#' || first == '№' {
             return true;
@@ -962,16 +964,9 @@ fn is_valid_abbreviation_context(
                 return true;
             }
         }
-        false
-    } else if word_no_dot.eq_ignore_ascii_case("in") {
-        let before = text[..word_start].trim_end();
-        let preceded_by_digit = before.ends_with(|c: char| c.is_ascii_digit());
-        let followed_by_digit = remainder.starts_with(|c: char| c.is_ascii_digit());
-        preceded_by_digit || followed_by_digit
-    } else {
-        remainder.starts_with(|c: char| c.is_ascii_digit())
-            || text[..word_start].trim_end().ends_with(|c: char| c.is_ascii_digit())
     }
+
+    false
 }
 
 #[inline]

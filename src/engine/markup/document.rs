@@ -11,7 +11,7 @@ use std::ops::Range;
 
 use super::inline::{extract_inline_markup, find_tag_end, parse_tag_info};
 use super::split::{
-    remap_spans_to_sentences, split_sentences_with_lang,
+    remap_spans_to_sentences, split_sentences_bounded_with_lang,
     translate_prepared_split_sentences_dual_with_lang,
     translate_prepared_split_sentences_dual_parallel_with_lang,
     translate_prepared_split_sentences_with_alignment_and_lang,
@@ -21,9 +21,10 @@ use super::{
     is_cjk_character, project_markup_spans_with_syntax, render_projected_markup,
     snap_markup_spans_to_word_boundaries_with_syntax, MarkupSpan,
 };
-/// Character length threshold beyond which multi-sentence paragraph blocks
+/// Default character length threshold beyond which multi-sentence paragraph blocks
 /// are partitioned into individual sentences for neural machine translation.
-pub const DEFAULT_SENTENCE_SPLIT_THRESHOLD: usize = 50;
+/// Aligned with `config.max_sentence_length` (default 512).
+pub const DEFAULT_SENTENCE_SPLIT_THRESHOLD: usize = super::split::DEFAULT_MAX_SENTENCE_LEN;
 
 /// Maximum allowed nesting depth for recursive document translation (blockquotes and nested HTML blocks).
 pub const MAX_DOCUMENT_DEPTH: usize = 16;
@@ -147,22 +148,26 @@ pub enum TranslateHandler<'a> {
         alignment: &'a mut AlignmentTranslateFn<'a>,
         lang: Option<&'a str>,
         target_lang: Option<&'a str>,
+        max_sentence_length: Option<usize>,
     },
     ParallelDual {
         plain: &'a PlainTranslateSyncFn<'a>,
         alignment: &'a AlignmentTranslateSyncFn<'a>,
         lang: Option<&'a str>,
         target_lang: Option<&'a str>,
+        max_sentence_length: Option<usize>,
     },
     SequentialSingle {
         alignment: &'a mut AlignmentTranslateFn<'a>,
         lang: Option<&'a str>,
         target_lang: Option<&'a str>,
+        max_sentence_length: Option<usize>,
     },
     ParallelSingle {
         alignment: &'a AlignmentTranslateSyncFn<'a>,
         lang: Option<&'a str>,
         target_lang: Option<&'a str>,
+        max_sentence_length: Option<usize>,
     },
 }
 
@@ -177,6 +182,7 @@ impl<'a> TranslateHandler<'a> {
             alignment,
             lang: None,
             target_lang: None,
+            max_sentence_length: None,
         }
     }
 
@@ -190,6 +196,7 @@ impl<'a> TranslateHandler<'a> {
             alignment,
             lang: None,
             target_lang: None,
+            max_sentence_length: None,
         }
     }
 
@@ -199,6 +206,7 @@ impl<'a> TranslateHandler<'a> {
             alignment,
             lang: None,
             target_lang: None,
+            max_sentence_length: None,
         }
     }
 
@@ -208,6 +216,7 @@ impl<'a> TranslateHandler<'a> {
             alignment,
             lang: None,
             target_lang: None,
+            max_sentence_length: None,
         }
     }
 
@@ -255,6 +264,36 @@ impl<'a> TranslateHandler<'a> {
             | Self::SequentialSingle { target_lang, .. }
             | Self::ParallelSingle { target_lang, .. } => *target_lang,
         }
+    }
+
+    #[inline]
+    pub fn with_max_sentence_length(mut self, length: usize) -> Self {
+        match &mut self {
+            Self::SequentialDual { max_sentence_length, .. }
+            | Self::ParallelDual { max_sentence_length, .. }
+            | Self::SequentialSingle { max_sentence_length, .. }
+            | Self::ParallelSingle { max_sentence_length, .. } => {
+                *max_sentence_length = Some(length);
+            }
+        }
+        self
+    }
+
+    #[inline]
+    pub fn max_sentence_length(&self) -> usize {
+        let explicit = match self {
+            Self::SequentialDual { max_sentence_length, .. }
+            | Self::ParallelDual { max_sentence_length, .. }
+            | Self::SequentialSingle { max_sentence_length, .. }
+            | Self::ParallelSingle { max_sentence_length, .. } => *max_sentence_length,
+        };
+        explicit.unwrap_or_else(|| {
+            if crate::config::is_initialized() {
+                crate::config::get().max_sentence_length
+            } else {
+                DEFAULT_SENTENCE_SPLIT_THRESHOLD
+            }
+        })
     }
 
     #[inline]
@@ -312,40 +351,48 @@ impl<'a> TranslateHandler<'a> {
                 alignment,
                 lang,
                 target_lang,
+                max_sentence_length,
             } => TranslateHandler::SequentialDual {
                 plain: *plain,
                 alignment: *alignment,
                 lang: *lang,
                 target_lang: *target_lang,
+                max_sentence_length: *max_sentence_length,
             },
             TranslateHandler::ParallelDual {
                 plain,
                 alignment,
                 lang,
                 target_lang,
+                max_sentence_length,
             } => TranslateHandler::ParallelDual {
                 plain: *plain,
                 alignment: *alignment,
                 lang: *lang,
                 target_lang: *target_lang,
+                max_sentence_length: *max_sentence_length,
             },
             TranslateHandler::SequentialSingle {
                 alignment,
                 lang,
                 target_lang,
+                max_sentence_length,
             } => TranslateHandler::SequentialSingle {
                 alignment: *alignment,
                 lang: *lang,
                 target_lang: *target_lang,
+                max_sentence_length: *max_sentence_length,
             },
             TranslateHandler::ParallelSingle {
                 alignment,
                 lang,
                 target_lang,
+                max_sentence_length,
             } => TranslateHandler::ParallelSingle {
                 alignment: *alignment,
                 lang: *lang,
                 target_lang: *target_lang,
+                max_sentence_length: *max_sentence_length,
             },
         }
     }
@@ -478,12 +525,39 @@ where
     P: Fn(&str) -> String + Sync + Send,
     A: Fn(&str) -> AlignmentOutput + Sync + Send,
 {
+    translate_document_dual_parallel_with_options(
+        doc,
+        source_lang,
+        target_lang,
+        None,
+        plain_fn,
+        align_fn,
+    )
+}
+
+/// Translate a composite document concurrently across multiple threads via Rayon using dual-track translation
+/// with explicit language profiles and max sentence length limit.
+pub fn translate_document_dual_parallel_with_options<P, A>(
+    doc: &str,
+    source_lang: Option<&str>,
+    target_lang: Option<&str>,
+    max_sentence_length: Option<usize>,
+    plain_fn: P,
+    align_fn: A,
+) -> String
+where
+    P: Fn(&str) -> String + Sync + Send,
+    A: Fn(&str) -> AlignmentOutput + Sync + Send,
+{
     let mut handler = TranslateHandler::parallel_dual(&plain_fn, &align_fn);
     if let Some(l) = source_lang {
         handler = handler.with_lang(l);
     }
     if let Some(tl) = target_lang {
         handler = handler.with_target_lang(tl);
+    }
+    if let Some(msl) = max_sentence_length {
+        handler = handler.with_max_sentence_length(msl);
     }
     translate_document_internal(doc, &mut handler, 0)
 }
@@ -522,12 +596,13 @@ fn translate_document_internal(
 
     if blocks.len() > 1 {
         match handler {
-            TranslateHandler::ParallelDual { plain, alignment, lang, target_lang } => {
+            TranslateHandler::ParallelDual { plain, alignment, lang, target_lang, max_sentence_length } => {
                 use rayon::prelude::*;
                 let p = *plain;
                 let a = *alignment;
                 let l = *lang;
                 let tl = *target_lang;
+                let msl = *max_sentence_length;
                 let pieces: Vec<String> = blocks
                     .into_par_iter()
                     .map(|block| {
@@ -536,17 +611,19 @@ fn translate_document_internal(
                             alignment: a,
                             lang: l,
                             target_lang: tl,
+                            max_sentence_length: msl,
                         };
                         translate_block(block, &mut h, depth)
                     })
                     .collect();
                 return pieces.concat();
             }
-            TranslateHandler::ParallelSingle { alignment, lang, target_lang } => {
+            TranslateHandler::ParallelSingle { alignment, lang, target_lang, max_sentence_length } => {
                 use rayon::prelude::*;
                 let a = *alignment;
                 let l = *lang;
                 let tl = *target_lang;
+                let msl = *max_sentence_length;
                 let pieces: Vec<String> = blocks
                     .into_par_iter()
                     .map(|block| {
@@ -554,6 +631,7 @@ fn translate_document_internal(
                             alignment: a,
                             lang: l,
                             target_lang: tl,
+                            max_sentence_length: msl,
                         };
                         translate_block(block, &mut h, depth)
                     })
@@ -653,10 +731,11 @@ fn translate_translatable_content(
         return raw_text.to_string();
     }
 
+    let split_threshold = handler.max_sentence_length();
     let should_split =
-        plain_text.contains('\n') || plain_text.len() >= DEFAULT_SENTENCE_SPLIT_THRESHOLD;
+        plain_text.contains('\n') || plain_text.len() >= split_threshold;
     let translated_content = if should_split {
-        let mut sentences = split_sentences_with_lang(&plain_text, handler.lang());
+        let mut sentences = split_sentences_bounded_with_lang(&plain_text, split_threshold, handler.lang());
         if sentences.len() > 1 {
             if !spans.is_empty() {
                 remap_spans_to_sentences(&mut sentences, &spans);
@@ -1729,16 +1808,14 @@ mod tests {
     #[test]
     fn test_paragraph_sentence_splitting() {
         let long_para = "First sentence of the long paragraph here. Scientists conducted several experiments yesterday. Researchers analyzed the results carefully.";
-        assert!(long_para.len() >= DEFAULT_SENTENCE_SPLIT_THRESHOLD);
 
         let mut sentences_translated = Vec::new();
-        let res = translate_document_with_alignment(
-            long_para,
-            |sent| {
-                sentences_translated.push(sent.to_string());
-                mock_translate(sent)
-            },
-        );
+        let mut translate_fn = |sent: &str| -> AlignmentOutput {
+            sentences_translated.push(sent.to_string());
+            mock_translate(sent)
+        };
+        let mut handler = TranslateHandler::sequential_single(&mut translate_fn).with_max_sentence_length(100);
+        let res = translate_document_with_handler(long_para, &mut handler);
 
         assert_eq!(sentences_translated.len(), 3);
         assert_eq!(
@@ -1759,23 +1836,20 @@ mod tests {
     #[test]
     fn test_paragraph_sentence_splitting_discourse_fusion() {
         let long_para_multi = "This is a detailed paragraph explaining our novel architecture. It works remarkably well. And all tests pass.";
-        assert!(long_para_multi.len() >= DEFAULT_SENTENCE_SPLIT_THRESHOLD);
 
         let mut sentences_translated = Vec::new();
-        let _ = translate_document_with_alignment(
-            long_para_multi,
-            |sent| {
-                sentences_translated.push(sent.to_string());
-                mock_translate(sent)
-            },
-        );
+        let mut translate_fn = |sent: &str| -> AlignmentOutput {
+            sentences_translated.push(sent.to_string());
+            mock_translate(sent)
+        };
+        let mut handler = TranslateHandler::sequential_single(&mut translate_fn).with_max_sentence_length(200);
+        let _ = translate_document_with_handler(long_para_multi, &mut handler);
         assert_eq!(sentences_translated.len(), 1);
         assert_eq!(
             sentences_translated[0],
             "This is a detailed paragraph explaining our novel architecture. It works remarkably well. And all tests pass."
         );
     }
-
     #[test]
     fn test_soft_and_hard_line_breaks() {
         let soft_break_doc = "This is line one\nthat continues seamlessly on line two.\n";

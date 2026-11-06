@@ -1260,8 +1260,9 @@ async fn translate_segment_with_engines(
 
             let (intermediate, d1) =
                 translate_single_language_text_with_engine(first, from_lang, "en", text, effective_markup).await?;
+            let canonical = canonicalize_intermediate_en(std::borrow::Cow::Borrowed(&intermediate));
             let (final_text, d2) =
-                translate_single_language_text_with_engine(second, "en", to_lang, &intermediate, effective_markup).await?;
+                translate_single_language_text_with_engine(second, "en", to_lang, canonical.as_ref(), effective_markup).await?;
             if let Some(key) = cache_key {
                 match &final_text {
                     TranslatedText::Cached(arc) => crate::utils::cache::set(key, arc.clone()),
@@ -1794,8 +1795,11 @@ fn is_digit_unit_boundary(bytes: &[u8], i: usize) -> bool {
         return false;
     }
     let rest = &bytes[i + 1..];
-    let units: [&[u8]; 9] = [b"MB", b"GB", b"KB", b"TB", b"PB", b"EB", b"Gbps", b"Mbps", b"Kbps"];
-    for unit in units {
+    const UNITS: &[&[u8]] = &[
+        b"Tbps", b"Gbps", b"Mbps", b"Kbps", b"bps",
+        b"TB", b"GB", b"MB", b"KB", b"PB", b"EB", b"ZB",
+    ];
+    for unit in UNITS {
         if rest.starts_with(unit) {
             let after_unit = i + 1 + unit.len();
             if after_unit == bytes.len() || !bytes[after_unit].is_ascii_alphanumeric() {
@@ -2244,6 +2248,15 @@ pub(crate) fn apply_zh_punct_and_pangu<'a>(
             std::borrow::Cow::Owned(buf)
         }
     }
+}
+/// Canonicalize intermediate English text produced during pivot translation (e.g. src -> en -> tgt).
+/// Normalizes sentence-starting capitalization to prevent semantic drift in the second hop.
+#[inline]
+pub fn canonicalize_intermediate_en<'a>(text: std::borrow::Cow<'a, str>) -> std::borrow::Cow<'a, str> {
+    if text.is_empty() {
+        return text;
+    }
+    apply_truecase_western(text, "en")
 }
 
 /// Western Truecasing: For non-Chinese target languages, automatically capitalizes lowercase
@@ -2743,12 +2756,9 @@ fn is_technical_or_code_punctuation(s: &str, i: usize, b: u8) -> bool {
             if is_lowercase_ident && next_is_lowercase {
                 return true;
             }
-            if matches!(
-                word,
-                "save" | "create" | "update" | "destroy" | "reload" | "validate" | "find" | "delete"
-                    | "reset" | "build" | "touch" | "toggle"
-            ) && (i + 1 == len
-                || matches!(bytes[i + 1], b',' | b';' | b':' | b'=' | b'&' | b'|' | b')' | b']' | b' ' | b'\t'))
+            if is_lowercase_ident
+                && i + 1 < len
+                && matches!(bytes[i + 1], b',' | b';' | b':' | b'=' | b'&' | b'|' | b')' | b']' | b'}' | b'>')
             {
                 return true;
             }
@@ -3064,7 +3074,6 @@ pub fn format_spanish_inverted<'a>(text: std::borrow::Cow<'a, str>) -> std::borr
                         .last()
                         .map(|&(_, start)| start)
                         .filter(|&start| start < i);
-
                     let target_pos = insert_pos.unwrap_or_else(|| {
                         find_sentence_content_start(s, current_sentence_start, i)
                     });

@@ -1055,6 +1055,10 @@ impl SentencePiece {
         sp_text.push('\u{2581}');
         let bytes = text.as_bytes();
         let len = bytes.len();
+        if !bytes.contains(&b' ') {
+            sp_text.push_str(text);
+            return;
+        }
         let mut i = 0;
         let mut last_chunk_start = 0;
         while i < len {
@@ -1086,6 +1090,11 @@ impl SentencePiece {
         let b_len = bytes.len();
         if char_offsets.capacity() < b_len + 1 {
             char_offsets.reserve(b_len + 1);
+        }
+        if b_len >= 3 && bytes[3..].is_ascii() {
+            char_offsets.push(0);
+            char_offsets.extend(3..=b_len);
+            return char_offsets.len() - 1;
         }
         let mut b_idx = 0;
         while b_idx < b_len {

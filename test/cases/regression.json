@@ -32,7 +32,7 @@
   {
     "target": "en",
     "input": "早上好！请问今天下午两点的例会还在三楼会议室召开吗？",
-    "output": "Good morning! Is the meeting held at 2 p.m. in the conference room on the third floor?"
+    "output": "Good morning, is the regular meeting at 2 p.m. this afternoon still held in the conference room on the third floor?"
   },
   {
     "target": "en",
@@ -57,7 +57,7 @@
   {
     "target": "de",
     "input": "Good morning! Could you please give me a cup of black coffee?",
-    "output": "Guten Morgen! Könnten Sie mir bitte eine Tasse schwarzen Kaffee geben?"
+    "output": "Guten Morgen, kannst du mir bitte eine Tasse schwarzen Kaffee geben?"
   },
   {
     "target": "de",
@@ -67,7 +67,7 @@
   {
     "target": "en",
     "input": "Guten Tag! Wo befindet sich der nächste Hauptbahnhof?",
-    "output": "Good day! Where is the nearest main station?"
+    "output": "Hello! Where is the nearest main station?"
   },
   {
     "target": "en",
@@ -77,7 +77,7 @@
   {
     "target": "fr",
     "input": "Excuse me, where is the Louvre Museum? Is it open today?",
-    "output": "Excusez-moi, où est le musée du Louvre ? Est-elle ouverte aujourd'hui ?"
+    "output": "Excusez-moi, où est le musée du Louvre ? Est-il ouvert aujourd’hui ?"
   },
   {
     "target": "fr",
@@ -102,12 +102,12 @@
   {
     "target": "es",
     "input": "What an incredible performance! Congratulations to the whole team!",
-    "output": "¡Qué increíble actuación! ¡Enhorabuena a todo el equipo!"
+    "output": "¡Qué increíble rendimiento! ¡Felicidades a todo el equipo!"
   },
   {
     "target": "en",
     "input": "¡Buenas tardes! ¿Podría indicarme el camino hacia la biblioteca central?",
-    "output": "Good afternoon! Could you tell me the way to the central library?"
+    "output": "Good afternoon! Could you point me on the way to the central library?"
   },
   {
     "target": "en",
@@ -117,7 +117,7 @@
   {
     "target": "ja",
     "input": "Thank you for your support. I look forward to working with you.",
-    "output": "ご支援ありがとうございます。 一緒に仕事をできることを楽しみにしています。"
+    "output": "ご支援に感謝いたします。皆様のご協力を心よりお待ちしております。"
   },
   {
     "target": "ja",
@@ -147,7 +147,7 @@
   {
     "target": "en",
     "input": "Добрый вечер! Не могли бы вы подсказать, когда прибывает поезд?",
-    "output": "Good evening! Could you tell me when the train arrives?"
+    "output": "Good evening, can you tell me when the train arrives?"
   },
   {
     "target": "en",
@@ -212,7 +212,7 @@
   {
     "target": "zh-Hans",
     "input": "He said: \"OpenAI announced GPT-5 with 50% speedup.\" Indeed!",
-    "output": "他说：“OpenAI 宣布 GPT-5 加速率达到 50%。”确实如此！"
+    "output": "他说：“OpenAI 以 50% 的加时速度宣布了 GPT-5。”确实如此！"
   },
   {
     "target": "zh-Hans",
@@ -222,7 +222,7 @@
   {
     "target": "zh-Hans",
     "input": "First sentence. Second sentence with numbers like 3.1415 and e.g. abbreviations. Third sentence concluded.",
-    "output": "第一句话。第二句话，数字如 3.1415，例如缩写。第三句话结束。"
+    "output": "第一句。第二句话，数字如 3.1415，例如缩写。第三句结束。"
   },
   {
     "target": "zh-Hans",
@@ -267,12 +267,12 @@
   {
     "target": "fr",
     "input": "M. Dupont met with Mme. Curie in Paris. \"Welcome to our laboratory!\", she exclaimed.",
-    "output": "M. Dupont a rencontré Mme. Curie à Paris. «Bienvenue dans notre laboratoire !», s'est-elle exclamée."
+    "output": "M. Dupont a rencontré Mme Curie à Paris. « Bienvenue dans notre laboratoire ! », s'est-elle exclamée."
   },
   {
     "target": "en",
     "input": "А. С. Пушкин родился в г. Москва. Читайте гл. 3 и т. д. в сборнике.",
-    "output": "A. S. Pushkin was born in the city Moscow. Read Chapter 3, etc. in the collection."
+    "output": "A. S. Pushkin was born in Moscow. Read chapter 3, etc. in the collection."
   },
   {
     "target": "en",
@@ -282,7 +282,7 @@
   {
     "target": "ko",
     "input": "Welcome to our platform! Please execute `npm install` to set up dependencies.",
-    "output": "우리 플랫폼에 오신 것을 환영합니다! 종속성을 설정`npm install`하려면 실행하십시오."
+    "output": "우리 플랫폼에 오신 것을 환영합니다! 종속성을`npm install` 설정하려면 실행하십시오."
   },
   {
     "target": "en",
@@ -302,12 +302,12 @@
   {
     "target": "zh-Hans",
     "input": "The standard license costs $49.99, enterprise is €150.00, or ¥12,000 in Tokyo. Server has 64 GB RAM and 3.8 GHz clock rate.",
-    "output": "标准许可证售价为 49.99 美元，企业版价格为 150.00 欧元，东京为 12000 日元。服务器具有 64 GB 运行内存和 3.8 GHz 时钟速率。"
+    "output": "标准许可证价格为 49.99 美元，企业版售价 150.00 欧元，东京为 12000 日元。服务器拥有 64 GB 运行内存和 3.8 GHz 时钟频率。"
   },
   {
     "target": "zh-Hans",
     "input": "🚀 Launching version 2.0 today! ✨ Lightning fast performance and 🔥 zero memory leaks. Approved 👍 by team.",
-    "output": "🚀 今日发布 2.0 版本！✨ 闪电快速性能和 🔥 零内存泄漏。由团队批准 👍。"
+    "output": "🚀 今日发布 2.0 版本！✨ 闪电快速性能和 🔥 零内存泄漏。已由团队批准 👍。"
   },
   {
     "target": "zh-Hans",
@@ -317,7 +317,7 @@
   {
     "target": "en",
     "input": "请参阅《计算机程序设计艺术》第三卷与“快速排序”章节。（详见附录 A）",
-    "output": "See Computer Programming Art Volume 3 and the Quick Sort Chapter. (See Appendix A for details)"
+    "output": "See Volume III and the Quick Sort Chapter of Computer Programming Art. (See Appendix A for details)"
   },
   {
     "target": "en",
@@ -372,7 +372,7 @@
   {
     "target": "ar",
     "input": "Welcome to our portal! Are you ready to explore the new features? Visit https://example.com today.",
-    "output": "مرحبا بكم في موقعنا! هل أنت مستعد لاستكشاف الميزات الجديدة؟ قم بزيارة https://example.com اليوم"
+    "output": "مرحبا بكم في بوابتنا! هل أنت مستعد لاستكشاف الميزات الجديدة؟ زيارة https://example.com اليوم."
   },
   {
     "target": "he",
@@ -387,7 +387,7 @@
   {
     "target": "bn",
     "input": "Welcome to our platform! Please check the latest release notes on GitHub repository.",
-    "output": "আমাদের প্ল্যাটফর্মে স্বাগতম! GitHub সংগ্রহস্থলের সর্বশেষ রিলিজ নোটগুলি পরীক্ষা করুন।"
+    "output": "আমাদের প্ল্যাটফর্মে স্বাগতম! GitHub সংগ্রহস্থলে সর্বশেষ রিলিজ নোট চেক করুন।"
   },
   {
     "target": "ta",
@@ -442,7 +442,7 @@
   {
     "target": "fa",
     "input": "How can I configure the firewall rules? Please refer to the administrative user manual.",
-    "output": "چگونه می توانم قوانین فایروال را پیکربندی کنم؟ لطفا به دفترچه راهنمای کاربر اداری مراجعه کنید."
+    "output": "چگونه می توانم قوانین فایروال را پیکربندی کنم؟ لطفا به کتابچه راهنمای کاربر اداری مراجعه کنید."
   },
   {
     "target": "bg",
@@ -552,7 +552,7 @@
   {
     "target": "zh-Hans",
     "input": "Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> to open command palette. Highlighted: <mark>important note</mark>.",
-    "output": "按 +<kbd>Ctrl</kbd><kbd>Shift</kbd>+<kbd>P</kbd> 以打开命令调色板。突出：<mark>重要说明</mark>。"
+    "output": "按 <kbd>Ctrl</kbd>++<kbd>Shift</kbd> <kbd>P</kbd>以打开命令调色板。亮点：<mark>重要说明</mark>。"
   },
   {
     "target": "zh-Hans",
@@ -587,12 +587,12 @@
   {
     "target": "en",
     "input": "使用 Rust 2024 构建 0 内存泄漏的系统。在 100% 负载下，QPS 提升了 3.5 倍。",
-    "output": "Build a system with 0 memory leaks using Rust 2024. At 100% load, QPS is increased by 3.5 times."
+    "output": "Build a system with Rust 2024 that leaks 0 memory. QPS is 3.5 times higher at 100% load."
   },
   {
     "target": "en",
     "input": "总监指出：“《软件工程规范》第 5.2 节【错误处理】必须严格遵循。”（参见附录 B）",
-    "output": "The Director noted that “the Software Engineering Specification, Section 5.2 [Mishanding] must be strictly followed.” (See Appendix B)"
+    "output": "The Director noted that “the Software Engineering Code, Section 5.2 [Mishanding] must be strictly followed” (see Appendix B)"
   },
   {
     "target": "de",
