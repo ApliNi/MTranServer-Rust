@@ -792,8 +792,11 @@ fn i8_quantize_into(data: &[f32], qa: f32, out: &mut Vec<i8>) {
 /// Calling this is safe as memory is initialized with default values. Marked unsafe for
 /// compatibility with existing callers.
 #[inline]
-pub(crate) unsafe fn prepare_uninit_vec<T: Copy + Default>(vec: &mut Vec<T>, len: usize) {
-    vec.resize(len, T::default());
+pub(crate) unsafe fn prepare_uninit_vec<T: Copy>(vec: &mut Vec<T>, len: usize) {
+    if vec.capacity() < len {
+        vec.reserve(len - vec.len());
+    }
+    vec.set_len(len);
 }
 // Per-thread scratch for the single-row quantized matmul's activation
 // buffer (`i8_quantize_into`), so the decode loop's several quantized

@@ -22,3 +22,7 @@ pub async fn get_health() -> Json<HealthResponse> {
         status: "ok",
     })
 }
+
+pub async fn get_heartbeat() -> axum::http::StatusCode {
+    axum::http::StatusCode::OK
+}

@@ -746,15 +746,15 @@ mod fused_add_layer_norm_tests {
             prepare_uninit_vec(&mut v, 10);
         }
         assert_eq!(v.len(), 10);
-        assert!(v.iter().all(|&x| x == 0.0));
+        assert!(v.capacity() >= 10);
 
         v[0] = 42.0;
         unsafe {
             prepare_uninit_vec(&mut v, 20);
         }
         assert_eq!(v.len(), 20);
+        assert!(v.capacity() >= 20);
         assert_eq!(v[0], 42.0);
-        assert!(v[10..].iter().all(|&x| x == 0.0));
 
         unsafe {
             prepare_uninit_vec(&mut v, 5);
@@ -767,7 +767,7 @@ mod fused_add_layer_norm_tests {
             t.prepare_uninit(16);
         }
         assert_eq!(t.data.len(), 16);
-        assert!(t.data.iter().all(|&x| x == 0.0));
+        assert!(t.data.capacity() >= 16);
     }
 
     #[test]

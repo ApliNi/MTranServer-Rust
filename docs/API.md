@@ -167,7 +167,7 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `text` | string \| string[] | 是 | 待翻译文本, 支持单个字符串或字符串数组 |
-| `source_lang` | string | 否 | 源语言, 缺省时自动检测 |
+| `source_lang` | string | 否 | 保留字段以兼容协议, 服务端始终忽略该字段并强制使用自动语言检测 |
 | `target_lang` | string | 是 | 目标语言 |
 | `tag_handling` | string | 否 | 保留字段以兼容 DeepL 客户端 (HTML/XML 标签现已全自动保留) |
 
@@ -196,6 +196,12 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
   "target_lang": "ZH"
 }
 ```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `text` | string | 是 | 待翻译文本 |
+| `source_lang` | string | 否 | 保留字段以兼容协议, 服务端始终忽略该字段并强制使用自动语言检测 |
+| `target_lang` | string | 是 | 目标语言 |
 
 鉴权遵循全局规则 (见顶部「鉴权」章节), 兼容 `Authorization: Bearer <token>`、裸 `Authorization` 头或查询参数 `?token=<token>`。
 
@@ -228,7 +234,12 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
 }
 ```
 
-`q` 支持字符串或字符串数组。
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `q` | string \| string[] | 是 | 待翻译文本, 支持单个字符串或字符串数组 |
+| `source` | string | 否 | 保留字段以兼容协议, 服务端始终忽略该字段并强制使用自动语言检测 |
+| `target` | string | 是 | 目标语言 |
+| `format` | string | 否 | 格式类型: `"html"` 或 `"text"` (标记格式均自动保留) |
 
 响应:
 
@@ -250,7 +261,7 @@ MTranServer-Rust 提供的 HTTP API 端点说明。服务默认监听 `0.0.0.0:8
 |---|---|---|---|
 | `q` | string | 是 | 待翻译文本 |
 | `tl` | string | 是 | 目标语言 |
-| `sl` | string | 否 | 源语言, 缺省时自动检测 |
+| `sl` | string | 否 | 保留参数以兼容协议, 服务端始终忽略该参数并强制使用自动语言检测 |
 
 响应:
 

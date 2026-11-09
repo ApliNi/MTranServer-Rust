@@ -3181,7 +3181,7 @@ pub(crate) fn apply_penalties_with_exemptions_fast(
         let p_len = n - 1;
 
         // Zero heap allocation: fixed stack buffer for matching candidate tokens & counts.
-        const MAX_CANDIDATES: usize = 256;
+        const MAX_CANDIDATES: usize = 512;
         let mut cands = [0u32; MAX_CANDIDATES];
         let mut counts = [0u8; MAX_CANDIDATES];
         let mut n_cand = 0;
@@ -3197,6 +3197,9 @@ pub(crate) fn apply_penalties_with_exemptions_fast(
                 cands[n_cand] = cand;
                 counts[n_cand] = 1;
                 n_cand += 1;
+            } else if let Some(pos) = counts.iter().position(|&c| c == 1) {
+                cands[pos] = cand;
+                counts[pos] = 1;
             }
         };
 
@@ -3915,9 +3918,10 @@ impl Transformer {
                 });
                 out_tokens.push(next_token);
                 if let Some(align_vec) = &mut alignments {
+                    let valid_len = source_ids.len().max(1).min(attn_accum.len());
                     let mut best_src = 0;
                     let mut max_val = f32::NEG_INFINITY;
-                    for (j, &val) in attn_accum.iter().enumerate() {
+                    for (j, &val) in attn_accum[..valid_len].iter().enumerate() {
                         if val > max_val {
                             max_val = val;
                             best_src = j;
@@ -4154,9 +4158,10 @@ impl Transformer {
                     }
 
                     let safe_src = if need_align {
+                        let valid_len = source_ids.len().max(1).min(attn_accum.len());
                         let mut best_src = 0;
                         let mut max_val = f32::NEG_INFINITY;
-                        for (j, &val) in attn_accum.iter().enumerate() {
+                        for (j, &val) in attn_accum[..valid_len].iter().enumerate() {
                             if val > max_val {
                                 max_val = val;
                                 best_src = j;

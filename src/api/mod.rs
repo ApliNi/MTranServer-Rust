@@ -66,8 +66,9 @@ pub fn create_router(cfg: &crate::config::Config) -> Router {
     let public_routes = Router::new()
         .route("/version", get(self::system::get_version))
         .route("/health", get(self::system::get_health))
-        .route("/_heartbeat__", get(self::system::get_health));
-    let protected_routes = Router::new()
+        .route("/__heartbeat__", get(self::system::get_heartbeat))
+        .route("/_heartbeat__", get(self::system::get_heartbeat));
+    let mut protected_routes = Router::new()
         .route("/languages", get(self::languages::get_languages))
         .route("/detect", post(self::languages::detect_language))
         .route("/translate", post(self::translate::translate))
@@ -84,6 +85,24 @@ pub fn create_router(cfg: &crate::config::Config) -> Router {
         )
         .route_layer(middleware::from_fn(crate::middleware::auth_middleware));
 
+    if cfg.max_concurrency > 0 {
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrency));
+        protected_routes = protected_routes.layer(middleware::from_fn_with_state(
+            semaphore,
+            crate::middleware::concurrency_limit_middleware,
+        ));
+    }
+
+    if cfg.max_concurrency_per_ip > 0 {
+        let limiter = std::sync::Arc::new(crate::middleware::IpConcurrencyLimiter::new(
+            cfg.max_concurrency_per_ip,
+        ));
+        protected_routes = protected_routes.layer(middleware::from_fn_with_state(
+            limiter,
+            crate::middleware::ip_concurrency_limit_middleware,
+        ));
+    }
+
     let app = public_routes.merge(protected_routes);
 
     let app = if cfg.enable_web_ui {
@@ -94,29 +113,6 @@ pub fn create_router(cfg: &crate::config::Config) -> Router {
     } else {
         app
     };
-
-    let app = if cfg.max_concurrency > 0 {
-        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrency));
-        app.layer(middleware::from_fn_with_state(
-            semaphore,
-            crate::middleware::concurrency_limit_middleware,
-        ))
-    } else {
-        app
-    };
-
-    let app = if cfg.max_concurrency_per_ip > 0 {
-        let limiter = std::sync::Arc::new(crate::middleware::IpConcurrencyLimiter::new(
-            cfg.max_concurrency_per_ip,
-        ));
-        app.layer(middleware::from_fn_with_state(
-            limiter,
-            crate::middleware::ip_concurrency_limit_middleware,
-        ))
-    } else {
-        app
-    };
-
     app.layer(DefaultBodyLimit::max(cfg.max_request_body_size))
         .layer(middleware::from_fn(crate::middleware::log_requests))
         .layer(middleware::from_fn(
@@ -293,9 +289,18 @@ mod tests {
         // Allow req1 and req2 to enter the middleware and acquire both permits
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
+        // Probes remain accessible even under saturated concurrency
+        let app_probe = app.clone();
+        let req_probe = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp_probe = app_probe.oneshot(req_probe).await.unwrap();
+        assert_eq!(resp_probe.status(), StatusCode::OK);
+
         let app3 = app.clone();
         let req3 = Request::builder()
-            .uri("/health")
+            .uri("/languages")
             .body(Body::empty())
             .unwrap();
         let resp3 = app3.oneshot(req3).await.unwrap();
@@ -326,7 +331,7 @@ mod tests {
         // Now that permit 1 is released, another request can succeed
         let app4 = app.clone();
         let req4 = Request::builder()
-            .uri("/health")
+            .uri("/languages")
             .body(Body::empty())
             .unwrap();
         let resp4 = app4.oneshot(req4).await.unwrap();
@@ -338,7 +343,6 @@ mod tests {
             .await
             .unwrap();
         tx2.close().await.unwrap();
-
         let resp2 = h2.await.unwrap();
         assert_eq!(resp2.status(), StatusCode::OK);
     }
@@ -442,9 +446,19 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
+        // Probes remain accessible even when IP quota is saturated
+        let app_probe = app.clone();
+        let req_probe = Request::builder()
+            .uri("/health")
+            .header("x-real-ip", "192.0.2.1")
+            .body(Body::empty())
+            .unwrap();
+        let resp_probe = app_probe.oneshot(req_probe).await.unwrap();
+        assert_eq!(resp_probe.status(), StatusCode::OK);
+
         let app3 = app.clone();
         let req3 = Request::builder()
-            .uri("/health")
+            .uri("/languages")
             .header("x-real-ip", "192.0.2.1")
             .body(Body::empty())
             .unwrap();
@@ -464,7 +478,7 @@ mod tests {
 
         let app_diff = app.clone();
         let req_diff = Request::builder()
-            .uri("/health")
+            .uri("/languages")
             .header("x-real-ip", "198.51.100.1")
             .body(Body::empty())
             .unwrap();
@@ -483,7 +497,7 @@ mod tests {
 
         let app4 = app.clone();
         let req4 = Request::builder()
-            .uri("/health")
+            .uri("/languages")
             .header("x-real-ip", "192.0.2.1")
             .body(Body::empty())
             .unwrap();

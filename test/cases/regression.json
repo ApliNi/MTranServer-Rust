@@ -252,7 +252,7 @@
   {
     "target": "zh-Hans",
     "input": "Visit [The Rust Book](https://doc.rust-lang.org/book/) for tutorials and inspect ![Flowchart](https://example.org/flow.png).",
-    "output": "请访问[《The RusT](https://doc.rust-lang.org/book/).Book》以获取教程并进行检查。![Flowchart](https://example.org/flow.png)"
+    "output": "请访问[《The RusT.Book](https://doc.rust-lang.org/book/)》以获取教程并进行检查。![Flowchart](https://example.org/flow.png)"
   },
   {
     "target": "zh-Hans",
@@ -557,7 +557,7 @@
   {
     "target": "zh-Hans",
     "input": "<form action=\"/submit\"><label for=\"email\">Email:</label><input type=\"email\" id=\"email\" placeholder=\"user@example.com\" /><button type=\"submit\">Subscribe</button></form>",
-    "output": "<form action=\"/submit\"><label for=\"email\">电子邮箱</label><input type=\"email\" id=\"email\" placeholder=\"user@example.com\" /><button type=\"submit\">：订阅</button></form>"
+    "output": "<form action=\"/submit\"><label for=\"email\">电子邮箱：</label><input type=\"email\" id=\"email\" placeholder=\"user@example.com\" /><button type=\"submit\">订阅</button></form>"
   },
   {
     "target": "zh-Hans",

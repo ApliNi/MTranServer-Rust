@@ -371,8 +371,9 @@ pub struct BpeSymbol {
     pub prev: i32,
     pub next: i32,
     pub piece_id: u32,
+    pub char_start: u32,
+    pub char_end: u32,
 }
-
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct BpeCandidate {
@@ -909,11 +910,7 @@ impl SentencePiece {
             };
             match self.model_type {
                 ModelType::Unigram => self.encode_unigram_with_spans_into(norm_text, None, scratch),
-                ModelType::BPE => {
-                    self.encode_bpe_into(norm_text, scratch);
-                    let text_len = text.len();
-                    scratch.token_spans.resize(scratch.ids.len(), 0..text_len);
-                }
+                ModelType::BPE => self.encode_bpe_with_spans_into(norm_text, None, scratch),
                 _ => self.encode_unigram_with_spans_into(norm_text, None, scratch),
             }
             scratch.norm_to_orig.clear();
@@ -931,11 +928,7 @@ impl SentencePiece {
             };
             match self.model_type {
                 ModelType::Unigram => self.encode_unigram_with_spans_into(norm_text, orig_text, scratch),
-                ModelType::BPE => {
-                    self.encode_bpe_into(norm_text, scratch);
-                    let text_len = text.len();
-                    scratch.token_spans.resize(scratch.ids.len(), 0..text_len);
-                }
+                ModelType::BPE => self.encode_bpe_with_spans_into(norm_text, orig_text, scratch),
                 _ => self.encode_unigram_with_spans_into(norm_text, orig_text, scratch),
             }
         }
@@ -1405,12 +1398,53 @@ impl SentencePiece {
 
     /// BPE model encoding reusing caller-owned scratch buffers.
     pub fn encode_bpe_into(&self, text: &str, scratch: &mut EncodeScratch) {
+        self.encode_bpe_with_spans_into(text, None, scratch);
+    }
+
+    /// Scratch-buffered BPE encoding that accurately tracks token byte ranges `token_spans`.
+    pub fn encode_bpe_with_spans_into(
+        &self,
+        text: &str,
+        orig_text: Option<&str>,
+        scratch: &mut EncodeScratch,
+    ) {
         scratch.ids.clear();
+        scratch.token_spans.clear();
         if text.is_empty() {
             return;
         }
 
         Self::prepare_sp_text(text, &mut scratch.sp_text);
+
+        let sp_to_orig = &mut scratch.sp_to_orig;
+        sp_to_orig.clear();
+        let max_chars = text.len() + 1;
+        if sp_to_orig.capacity() < max_chars {
+            sp_to_orig.reserve(max_chars);
+        }
+        sp_to_orig.push(0..0);
+
+        if !scratch.norm_to_orig.is_empty() {
+            for i in 0..scratch.norm_to_orig.len() {
+                sp_to_orig.push(scratch.norm_to_orig[i].clone());
+            }
+        } else {
+            match orig_text {
+                Some(orig) => {
+                    for (byte_idx, c) in orig.char_indices() {
+                        if map_nmt_nfkc_char(c).is_some() {
+                            sp_to_orig.push(byte_idx..byte_idx + c.len_utf8());
+                        }
+                    }
+                }
+                None => {
+                    for (byte_idx, c) in text.char_indices() {
+                        sp_to_orig.push(byte_idx..byte_idx + c.len_utf8());
+                    }
+                }
+            }
+        }
+
         let n = Self::prepare_char_offsets(&scratch.sp_text, &mut scratch.char_offsets);
         if n == 0 {
             return;
@@ -1435,9 +1469,10 @@ impl SentencePiece {
                 prev: i as i32 - 1,
                 next: if i + 1 < n { (i + 1) as i32 } else { -1 },
                 piece_id,
+                char_start: i as u32,
+                char_end: (i + 1) as u32,
             });
         }
-
         let queue = &mut scratch.bpe_queue;
         queue.clear();
         if queue.capacity() < n {
@@ -1480,7 +1515,7 @@ impl SentencePiece {
             symbols[left].len += symbols[right].len;
             symbols[left].next = symbols[right].next;
             symbols[left].piece_id = cand.piece_id;
-
+            symbols[left].char_end = symbols[right].char_end;
             symbols[right].len = 0;
             symbols[right].prev = -1;
             symbols[right].next = -1;
@@ -1530,18 +1565,35 @@ impl SentencePiece {
         while curr >= 0 {
             let sym = &symbols[curr as usize];
             let id = sym.piece_id;
+            let c_start = sym.char_start as usize;
+            let c_end = sym.char_end as usize;
+            let orig_start = scratch.sp_to_orig.get(c_start).map(|r| r.start).unwrap_or(0);
+            let orig_end = if c_end > 0 {
+                scratch.sp_to_orig.get(c_end - 1).map(|r| r.end).unwrap_or(orig_start)
+            } else {
+                orig_start
+            };
+            let span = orig_start..orig_end;
+
             if id == self.unk_id {
                 let piece_str = &sp_text[sym.start as usize..(sym.start + sym.len) as usize];
                 let mut chars = piece_str.chars();
                 if let (Some(c), None) = (chars.next(), chars.next()) {
+                    let prev_len = scratch.ids.len();
                     if self.byte_fallback_encode_into(c, &mut scratch.ids) {
+                        let added = scratch.ids.len() - prev_len;
+                        for _ in 0..added {
+                            scratch.token_spans.push(span.clone());
+                        }
                         curr = sym.next;
                         continue;
                     }
                 }
                 scratch.ids.push(self.unk_id);
+                scratch.token_spans.push(span);
             } else {
                 scratch.ids.push(id);
+                scratch.token_spans.push(span);
             }
             curr = sym.next;
         }

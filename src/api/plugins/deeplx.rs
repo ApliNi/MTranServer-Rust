@@ -3,7 +3,7 @@ use axum::Json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
-use crate::api::plugins::{deserialize_null_default, parse_source_lang, parse_target_lang};
+use crate::api::plugins::{deserialize_null_default, parse_target_lang};
 use crate::api::translate::validate_batch;
 use crate::api::ApiError;
 use crate::service;
@@ -31,23 +31,20 @@ pub async fn translate(
     Json(body): Json<DeeplxRequest>,
 ) -> Result<Json<DeeplxResponse<'static>>, ApiError> {
     validate_batch(std::slice::from_ref(&body.text))?;
-    let source_lang = parse_source_lang(Some(&body.source_lang));
     let target_lang = parse_target_lang(&body.target_lang, "target_lang")?;
 
-    match service::translate_with_pivot_detected(&source_lang, &target_lang, &body.text).await {
+    match service::translate_with_pivot_detected("auto", &target_lang, &body.text).await {
         Ok((data, detected)) => {
             let id = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| (d.as_nanos() % 10_000_000_000) as i64)
                 .unwrap_or(0);
             let effective_source = if !detected.is_empty() {
-                Cow::Owned(detected)
-            } else if source_lang != "auto" {
-                source_lang
+                detected.as_str()
             } else {
-                Cow::Borrowed("auto")
+                "auto"
             };
-            let source_lang_deepl = super::deepl::convert_bcp47_to_deepl(&effective_source);
+            let source_lang_deepl = super::deepl::convert_bcp47_to_deepl(effective_source);
             let target_lang_deepl = super::deepl::convert_bcp47_to_deepl(&target_lang);
             Ok(Json(DeeplxResponse {
                 alternatives: &[],
@@ -79,11 +76,10 @@ mod tests {
     #[test]
     fn test_deeplx_response_echoes_detected_language() {
         let detected = "zh-Hans";
-        let source_lang = "auto";
-        let effective_source = if (source_lang == "auto" || source_lang.is_empty()) && !detected.is_empty() {
+        let effective_source = if !detected.is_empty() {
             detected
         } else {
-            source_lang
+            "auto"
         };
         let source_lang_deepl = crate::api::plugins::deepl::convert_bcp47_to_deepl(effective_source);
         let resp = DeeplxResponse {
@@ -98,5 +94,17 @@ mod tests {
         let serialized = serde_json::to_string(&resp).unwrap();
         assert!(serialized.contains(r#""source_lang":"ZH""#));
         assert!(!serialized.contains(r#""source_lang":"ZH-HANS""#));
+    }
+
+    #[tokio::test]
+    async fn test_translate_ignores_source_lang_and_detects() {
+        let req = DeeplxRequest {
+            text: "测试".to_string(),
+            source_lang: "EN".to_string(),
+            target_lang: "ZH".to_string(),
+        };
+        let res = translate(Json(req)).await.unwrap();
+        assert_eq!(res.source_lang, "ZH");
+        assert_eq!(res.data, "测试");
     }
 }

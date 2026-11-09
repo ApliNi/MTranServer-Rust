@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::api::plugins::{parse_source_lang, parse_target_lang, OneOrMany};
+use crate::api::plugins::{parse_target_lang, OneOrMany};
 use crate::api::translate::validate_batch;
 use crate::api::ApiError;
 use crate::service;
@@ -28,19 +28,16 @@ pub struct DeeplResponse {
 
 pub async fn translate(Json(body): Json<DeeplRequest>) -> Result<Json<DeeplResponse>, ApiError> {
     validate_batch(body.text.as_slice())?;
-    let source_lang = parse_source_lang(body.source_lang.as_deref());
     let target_lang = parse_target_lang(&body.target_lang, "target_lang")?;
-
     let parse_markup = resolve_deepl_tag_handling(body.tag_handling.as_deref());
 
     let results = service::translate_batch_with_pivot_markup(
-        &source_lang,
+        "auto",
         &target_lang,
         body.text.as_slice(),
         parse_markup,
     )
     .await?;
-
     let mut translations = Vec::with_capacity(results.len());
     for (translated, effective_from) in results {
         let detected_source_language = convert_bcp47_to_deepl(&effective_from);
@@ -170,5 +167,18 @@ mod tests {
         assert_eq!(resolve_deepl_tag_handling(Some("OFF")), Some(false));
         assert_eq!(resolve_deepl_tag_handling(Some("other")), None);
         assert_eq!(resolve_deepl_tag_handling(None), None);
+    }
+
+    #[tokio::test]
+    async fn test_translate_ignores_source_lang_and_detects() {
+        let req = DeeplRequest {
+            text: OneOrMany::One("测试".to_string()),
+            source_lang: Some("EN".to_string()),
+            target_lang: "ZH".to_string(),
+            tag_handling: None,
+        };
+        let res = translate(Json(req)).await.unwrap();
+        assert_eq!(res.translations[0].detected_source_language, "ZH");
+        assert_eq!(res.translations[0].text, "测试");
     }
 }

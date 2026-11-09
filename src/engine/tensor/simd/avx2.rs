@@ -966,16 +966,19 @@ pub unsafe fn matmul_avx2_fma(
     let n_8 = n_rem / 8;
     let tail = n_rem % 8;
 
-    for mi in 0..m_pairs {
-        let i0 = mi * 2;
-        let i1 = i0 + 1;
-        let a0_ptr = a.as_ptr().add(i0 * k);
-        let a1_ptr = a.as_ptr().add(i1 * k);
-        let o0_ptr = out.as_mut_ptr().add(i0 * n);
-        let o1_ptr = out.as_mut_ptr().add(i1 * n);
+    for blk in 0..n_blocks {
+        let col = blk * 16;
+        let b0_bias = bias_ptr.map(|bp| _mm256_loadu_ps(bp.add(col)));
+        let b1_bias = bias_ptr.map(|bp| _mm256_loadu_ps(bp.add(col + 8)));
 
-        for blk in 0..n_blocks {
-            let col = blk * 16;
+        for mi in 0..m_pairs {
+            let i0 = mi * 2;
+            let i1 = i0 + 1;
+            let a0_ptr = a.as_ptr().add(i0 * k);
+            let a1_ptr = a.as_ptr().add(i1 * k);
+            let o0_ptr = out.as_mut_ptr().add(i0 * n);
+            let o1_ptr = out.as_mut_ptr().add(i1 * n);
+
             let mut c00 = zero;
             let mut c01 = zero;
             let mut c10 = zero;
@@ -995,9 +998,8 @@ pub unsafe fn matmul_avx2_fma(
                 c11 = _mm256_fmadd_ps(av1, bv1, c11);
             }
 
-            if let Some(bp) = bias_ptr {
-                let b0 = _mm256_loadu_ps(bp.add(col));
-                let b1 = _mm256_loadu_ps(bp.add(col + 8));
+            if let Some(b0) = b0_bias {
+                let b1 = b1_bias.unwrap();
                 c00 = _mm256_add_ps(c00, b0);
                 c01 = _mm256_add_ps(c01, b1);
                 c10 = _mm256_add_ps(c10, b0);
@@ -1016,9 +1018,19 @@ pub unsafe fn matmul_avx2_fma(
             _mm256_storeu_ps(o1_ptr.add(col), c10);
             _mm256_storeu_ps(o1_ptr.add(col + 8), c11);
         }
+    }
 
-        if n_8 > 0 {
-            let col = n_blocks * 16;
+    if n_8 > 0 {
+        let col = n_blocks * 16;
+        let b_bias = bias_ptr.map(|bp| _mm256_loadu_ps(bp.add(col)));
+        for mi in 0..m_pairs {
+            let i0 = mi * 2;
+            let i1 = i0 + 1;
+            let a0_ptr = a.as_ptr().add(i0 * k);
+            let a1_ptr = a.as_ptr().add(i1 * k);
+            let o0_ptr = out.as_mut_ptr().add(i0 * n);
+            let o1_ptr = out.as_mut_ptr().add(i1 * n);
+
             let mut c0 = zero;
             let mut c1 = zero;
             for t in 0..k {
@@ -1028,8 +1040,7 @@ pub unsafe fn matmul_avx2_fma(
                 c0 = _mm256_fmadd_ps(av0, bv, c0);
                 c1 = _mm256_fmadd_ps(av1, bv, c1);
             }
-            if let Some(bp) = bias_ptr {
-                let b = _mm256_loadu_ps(bp.add(col));
+            if let Some(b) = b_bias {
                 c0 = _mm256_add_ps(c0, b);
                 c1 = _mm256_add_ps(c1, b);
             }
@@ -1040,9 +1051,18 @@ pub unsafe fn matmul_avx2_fma(
             _mm256_storeu_ps(o0_ptr.add(col), c0);
             _mm256_storeu_ps(o1_ptr.add(col), c1);
         }
+    }
 
-        if tail > 0 {
-            let col = n_blocks * 16 + n_8 * 8;
+    if tail > 0 {
+        let col = n_blocks * 16 + n_8 * 8;
+        for mi in 0..m_pairs {
+            let i0 = mi * 2;
+            let i1 = i0 + 1;
+            let a0_ptr = a.as_ptr().add(i0 * k);
+            let a1_ptr = a.as_ptr().add(i1 * k);
+            let o0_ptr = out.as_mut_ptr().add(i0 * n);
+            let o1_ptr = out.as_mut_ptr().add(i1 * n);
+
             for j in 0..tail {
                 let mut s0 = 0.0f32;
                 let mut s1 = 0.0f32;
@@ -1055,92 +1075,23 @@ pub unsafe fn matmul_avx2_fma(
                     s0 += *bp.add(col + j);
                     s1 += *bp.add(col + j);
                 }
-                *o0_ptr.add(col + j) = if relu && s0 > 0.0 {
-                    s0
-                } else if relu {
-                    0.0
-                } else {
-                    s0
-                };
-                *o1_ptr.add(col + j) = if relu && s1 > 0.0 {
-                    s1
-                } else if relu {
-                    0.0
-                } else {
-                    s1
-                };
+                *o0_ptr.add(col + j) = if relu && s0 > 0.0 { s0 } else if relu { 0.0 } else { s0 };
+                *o1_ptr.add(col + j) = if relu && s1 > 0.0 { s1 } else if relu { 0.0 } else { s1 };
             }
         }
     }
 
     if m_rem > 0 {
-        let i = m - 1;
-        let a_ptr = a.as_ptr().add(i * k);
-        let o_ptr = out.as_mut_ptr().add(i * n);
-
-        for blk in 0..n_blocks {
-            let col = blk * 16;
-            let mut c0 = zero;
-            let mut c1 = zero;
-
-            for t in 0..k {
-                let av = _mm256_set1_ps(*a_ptr.add(t));
-                let bp = b_ptr.add(t * n + col);
-                c0 = _mm256_fmadd_ps(av, _mm256_loadu_ps(bp), c0);
-                c1 = _mm256_fmadd_ps(av, _mm256_loadu_ps(bp.add(8)), c1);
-            }
-
-            if let Some(bp) = bias_ptr {
-                c0 = _mm256_add_ps(c0, _mm256_loadu_ps(bp.add(col)));
-                c1 = _mm256_add_ps(c1, _mm256_loadu_ps(bp.add(col + 8)));
-            }
-
-            if relu {
-                c0 = _mm256_max_ps(c0, zero);
-                c1 = _mm256_max_ps(c1, zero);
-            }
-
-            _mm256_storeu_ps(o_ptr.add(col), c0);
-            _mm256_storeu_ps(o_ptr.add(col + 8), c1);
-        }
-
-        if n_8 > 0 {
-            let col = n_blocks * 16;
-            let mut c = zero;
-            for t in 0..k {
-                let av = _mm256_set1_ps(*a_ptr.add(t));
-                c = _mm256_fmadd_ps(av, _mm256_loadu_ps(b_ptr.add(t * n + col)), c);
-            }
-            if let Some(bp) = bias_ptr {
-                c = _mm256_add_ps(c, _mm256_loadu_ps(bp.add(col)));
-            }
-            if relu {
-                c = _mm256_max_ps(c, zero);
-            }
-            _mm256_storeu_ps(o_ptr.add(col), c);
-        }
-
-        if tail > 0 {
-            let col = n_blocks * 16 + n_8 * 8;
-            for j in 0..tail {
-                let mut s = 0.0f32;
-                for t in 0..k {
-                    s += *a_ptr.add(t) * *b_ptr.add(t * n + col + j);
-                }
-                let s = if let Some(bp) = bias_ptr {
-                    s + *bp.add(col + j)
-                } else {
-                    s
-                };
-                *o_ptr.add(col + j) = if relu && s > 0.0 {
-                    s
-                } else if relu {
-                    0.0
-                } else {
-                    s
-                };
-            }
-        }
+        let last_row = m - 1;
+        matmul_row_avx2(
+            &a[last_row * k..(last_row + 1) * k],
+            b,
+            k,
+            n,
+            bias,
+            &mut out[last_row * n..(last_row + 1) * n],
+            relu,
+        );
     }
 }
 /// Quantise activations to i8 with per-value scaling and clamp to `[-127, 127]`.
