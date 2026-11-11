@@ -261,7 +261,6 @@ fn part_path_for(final_path: &Path) -> Result<PathBuf, String> {
     Ok(final_path.with_file_name(format!("{name}.part")))
 }
 
-#[allow(dead_code)]
 pub(crate) fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     let mut last_err = None;
     for _ in 0..5 {

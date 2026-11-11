@@ -10,35 +10,20 @@ pub mod inline;
 pub mod split;
 pub mod document;
 
-pub use inline::{extract_inline_markup, extract_unified_inline, unescape_html_entities};
+pub use inline::{extract_inline_markup, unescape_html_entities};
 pub use split::{
-    detect_dominant_lang, fuse_discourse_chunks_inplace, is_discourse_chunk_starter,
-    process_split_sentences, reassemble_sentences, remap_spans_to_sentences,
-    split_long_sentence_semantic, split_long_text_semantic, split_sentences,
-    split_sentences_bounded, split_sentences_hierarchical_with_lang,
-    split_sentences_with_lang, split_sentences_with_spans,
-    split_sentences_with_spans_bounded, translate_prepared_split_sentences_dual,
-    translate_prepared_split_sentences_dual_parallel,
-    translate_prepared_split_sentences_with_alignment,
-    translate_prepared_split_sentences_with_alignment_parallel,
-    translate_single_split_sentence, translate_single_split_sentence_dual,
-    translate_split_sentences_dual, translate_split_sentences_dual_parallel,
-    translate_split_sentences_with_alignment,
-    translate_split_sentences_with_alignment_parallel, DEFAULT_MAX_SENTENCE_LEN,
-    MAX_SENTENCE_LEN, SemanticSplitTier, SplitSentence,
+    fuse_discourse_chunks_inplace, is_discourse_chunk_starter, process_split_sentences,
+    reassemble_sentences, remap_spans_to_sentences, split_long_sentence_semantic,
+    split_long_text_semantic, split_sentences, split_sentences_bounded,
+    split_sentences_hierarchical_with_lang, split_sentences_with_lang, split_sentences_with_spans,
+    split_sentences_with_spans_bounded, DEFAULT_MAX_SENTENCE_LEN, MAX_SENTENCE_LEN,
+    SemanticSplitTier, SplitSentence,
 };
 pub use document::{
-    is_html_block_tag, parse_document_blocks, translate_document_dual,
-    translate_document_dual_with_languages,
-    translate_document_dual_dyn, translate_document_dual_parallel,
-    translate_document_dual_parallel_with_languages,
-    translate_document_dual_parallel_with_options,
-    translate_document_dual_parallel_dyn, translate_document_with_alignment,
-    translate_document_with_alignment_dyn, translate_document_with_alignment_parallel,
-    translate_document_with_alignment_parallel_dyn, translate_document_with_handler,
-    AlignmentOutput, AlignmentTranslateFn, AlignmentTranslateSyncFn, DocumentBlock,
-    PlainTranslateFn, PlainTranslateSyncFn, TableCell, TranslateHandler,
-    DEFAULT_SENTENCE_SPLIT_THRESHOLD,
+    is_html_block_tag, parse_document_blocks, translate_document_dual_parallel_with_options,
+    translate_document_with_alignment, AlignmentOutput, AlignmentTranslateFn,
+    AlignmentTranslateSyncFn, DocumentBlock, PlainTranslateFn, PlainTranslateSyncFn, TableCell,
+    TranslateHandler, DEFAULT_SENTENCE_SPLIT_THRESHOLD,
 };
 
 use std::ops::Range;

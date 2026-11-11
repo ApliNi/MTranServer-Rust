@@ -407,132 +407,8 @@ pub fn translate_document_with_alignment<F>(
 where
     F: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>),
 {
-    translate_document_with_alignment_dyn(doc, &mut translate_fn)
-}
-
-/// Dynamic dispatch implementation of composite document translation to prevent monomorphization recursion.
-pub fn translate_document_with_alignment_dyn(
-    doc: &str,
-    translate_fn: &mut AlignmentTranslateFn<'_>,
-) -> String {
-    let mut handler = TranslateHandler::sequential_single(translate_fn);
+    let mut handler = TranslateHandler::sequential_single(&mut translate_fn);
     translate_document_internal(doc, &mut handler, 0)
-}
-
-/// Translate a composite document (Markdown + HTML + Frontmatter + Tables + Code Fences)
-/// concurrently across multiple threads via Rayon.
-pub fn translate_document_with_alignment_parallel<F>(
-    doc: &str,
-    translate_fn: F,
-) -> String
-where
-    F: Fn(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + Sync + Send,
-{
-    translate_document_with_alignment_parallel_dyn(doc, &translate_fn)
-}
-
-/// Dynamic dispatch implementation of parallel composite document translation.
-pub fn translate_document_with_alignment_parallel_dyn(
-    doc: &str,
-    translate_fn: &AlignmentTranslateSyncFn<'_>,
-) -> String {
-    let mut handler = TranslateHandler::parallel_single(translate_fn);
-    translate_document_internal(doc, &mut handler, 0)
-}
-
-/// Translate a composite document (Markdown + HTML + Frontmatter + Tables + Code Fences)
-/// using dual-track translation: plain text uses `plain_fn` directly,
-/// while text with inline markup uses `align_fn` with token alignment markup projection.
-pub fn translate_document_dual<P, A>(
-    doc: &str,
-    mut plain_fn: P,
-    mut align_fn: A,
-) -> String
-where
-    P: FnMut(&str) -> String,
-    A: FnMut(&str) -> AlignmentOutput,
-{
-    translate_document_dual_dyn(doc, &mut plain_fn, &mut align_fn)
-}
-
-pub fn translate_document_dual_dyn(
-    doc: &str,
-    plain_fn: &mut PlainTranslateFn<'_>,
-    align_fn: &mut AlignmentTranslateFn<'_>,
-) -> String {
-    let mut handler = TranslateHandler::sequential_dual(plain_fn, align_fn);
-    translate_document_internal(doc, &mut handler, 0)
-}
-/// Translate a composite document sequentially using dual-track translation with explicit languages.
-pub fn translate_document_dual_with_languages<P, A>(
-    doc: &str,
-    source_lang: Option<&str>,
-    target_lang: Option<&str>,
-    mut plain_fn: P,
-    mut align_fn: A,
-) -> String
-where
-    P: FnMut(&str) -> String,
-    A: FnMut(&str) -> AlignmentOutput,
-{
-    let mut handler = TranslateHandler::sequential_dual(&mut plain_fn, &mut align_fn);
-    if let Some(l) = source_lang {
-        handler = handler.with_lang(l);
-    }
-    if let Some(tl) = target_lang {
-        handler = handler.with_target_lang(tl);
-    }
-    translate_document_internal(doc, &mut handler, 0)
-}
-
-
-/// Translate a composite document concurrently across multiple threads via Rayon using dual-track translation.
-pub fn translate_document_dual_parallel<P, A>(
-    doc: &str,
-    plain_fn: P,
-    align_fn: A,
-) -> String
-where
-    P: Fn(&str) -> String + Sync + Send,
-    A: Fn(&str) -> AlignmentOutput + Sync + Send,
-{
-    translate_document_dual_parallel_with_lang(doc, None, plain_fn, align_fn)
-}
-
-pub fn translate_document_dual_parallel_with_lang<P, A>(
-    doc: &str,
-    lang: Option<&str>,
-    plain_fn: P,
-    align_fn: A,
-) -> String
-where
-    P: Fn(&str) -> String + Sync + Send,
-    A: Fn(&str) -> AlignmentOutput + Sync + Send,
-{
-    translate_document_dual_parallel_with_languages(doc, lang, None, plain_fn, align_fn)
-}
-
-/// Translate a composite document concurrently across multiple threads via Rayon using dual-track translation
-/// with explicit source and target language rule profiles.
-pub fn translate_document_dual_parallel_with_languages<P, A>(
-    doc: &str,
-    source_lang: Option<&str>,
-    target_lang: Option<&str>,
-    plain_fn: P,
-    align_fn: A,
-) -> String
-where
-    P: Fn(&str) -> String + Sync + Send,
-    A: Fn(&str) -> AlignmentOutput + Sync + Send,
-{
-    translate_document_dual_parallel_with_options(
-        doc,
-        source_lang,
-        target_lang,
-        None,
-        plain_fn,
-        align_fn,
-    )
 }
 
 /// Translate a composite document concurrently across multiple threads via Rayon using dual-track translation
@@ -560,23 +436,6 @@ where
         handler = handler.with_max_sentence_length(msl);
     }
     translate_document_internal(doc, &mut handler, 0)
-}
-
-pub fn translate_document_dual_parallel_dyn(
-    doc: &str,
-    plain_fn: &PlainTranslateSyncFn<'_>,
-    align_fn: &AlignmentTranslateSyncFn<'_>,
-) -> String {
-    let mut handler = TranslateHandler::parallel_dual(plain_fn, align_fn);
-    translate_document_internal(doc, &mut handler, 0)
-}
-
-/// Translate a document with a pre-configured [`TranslateHandler`].
-pub fn translate_document_with_handler(
-    doc: &str,
-    handler: &mut TranslateHandler<'_>,
-) -> String {
-    translate_document_internal(doc, handler, 0)
 }
 
 fn translate_document_internal(
@@ -1815,7 +1674,7 @@ mod tests {
             mock_translate(sent)
         };
         let mut handler = TranslateHandler::sequential_single(&mut translate_fn).with_max_sentence_length(100);
-        let res = translate_document_with_handler(long_para, &mut handler);
+        let res = translate_document_internal(long_para, &mut handler, 0);
 
         assert_eq!(sentences_translated.len(), 3);
         assert_eq!(
@@ -1843,7 +1702,7 @@ mod tests {
             mock_translate(sent)
         };
         let mut handler = TranslateHandler::sequential_single(&mut translate_fn).with_max_sentence_length(200);
-        let _ = translate_document_with_handler(long_para_multi, &mut handler);
+        let _ = translate_document_internal(long_para_multi, &mut handler, 0);
         assert_eq!(sentences_translated.len(), 1);
         assert_eq!(
             sentences_translated[0],
@@ -1955,14 +1814,20 @@ fn main() { println!("Hello"); }
     }
 
     #[test]
-    fn test_translate_document_with_alignment_parallel() {
+    fn test_translate_document_dual_parallel() {
         let doc = "# Hello World\n\nThis is paragraph one with **bold** text.\n\nThis is paragraph two. It has multiple sentences. And another sentence.\n";
-        let res = translate_document_with_alignment_parallel(doc, mock_translate);
+        let res = translate_document_dual_parallel_with_options(
+            doc,
+            None,
+            None,
+            None,
+            |s| mock_translate(s).0,
+            mock_translate,
+        );
         assert!(res.contains("# TR(Hello) TR(World)"));
         assert!(res.contains("**TR(bold)**"));
         assert!(res.contains("TR(This) TR(is) TR(paragraph) TR(two.)"));
     }
-
     #[test]
     fn test_find_and_contains_ignore_ascii_case() {
         assert_eq!(find_ignore_ascii_case("Hello <SCRIPT>alert(1)</script>", "</script>"), Some(22));
@@ -1982,19 +1847,17 @@ fn main() { println!("Hello"); }
         let mut plain_called = 0;
         let mut align_called = 0;
 
-        let res_seq = translate_document_dual(
-            doc,
-            |plain| {
-                plain_called += 1;
-                assert!(!plain.contains("**"));
-                format!("PLAIN({})", plain)
-            },
-            |markup| {
-                align_called += 1;
-                mock_translate(markup)
-            },
-        );
-
+        let mut plain_fn = |plain: &str| {
+            plain_called += 1;
+            assert!(!plain.contains("**"));
+            format!("PLAIN({})", plain)
+        };
+        let mut align_fn = |markup: &str| {
+            align_called += 1;
+            mock_translate(markup)
+        };
+        let mut handler = TranslateHandler::sequential_dual(&mut plain_fn, &mut align_fn);
+        let res_seq = translate_document_internal(doc, &mut handler, 0);
         // Header is plain (1), first para is plain (1), second para has bold (1)
         assert_eq!(plain_called, 2);
         assert_eq!(align_called, 1);
@@ -2002,8 +1865,11 @@ fn main() { println!("Hello"); }
         assert!(res_seq.contains("PLAIN(Plain paragraph without any tags.)"));
         assert!(res_seq.contains("**TR(bold)**"));
 
-        let res_par = translate_document_dual_parallel(
+        let res_par = translate_document_dual_parallel_with_options(
             doc,
+            None,
+            None,
+            None,
             |plain| format!("PLAIN({})", plain),
             mock_translate,
         );

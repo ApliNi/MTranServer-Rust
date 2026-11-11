@@ -66,8 +66,7 @@ pub fn create_router(cfg: &crate::config::Config) -> Router {
     let public_routes = Router::new()
         .route("/version", get(self::system::get_version))
         .route("/health", get(self::system::get_health))
-        .route("/__heartbeat__", get(self::system::get_heartbeat))
-        .route("/_heartbeat__", get(self::system::get_heartbeat));
+        .route("/__heartbeat__", get(self::system::get_heartbeat));
     let mut protected_routes = Router::new()
         .route("/languages", get(self::languages::get_languages))
         .route("/detect", post(self::languages::detect_language))

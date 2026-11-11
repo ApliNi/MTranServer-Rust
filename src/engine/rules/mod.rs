@@ -1563,20 +1563,17 @@ pub fn normalize_lang_code_cow<'a>(lang: &'a str) -> Cow<'a, str> {
 
 pub use crate::utils::compare_versions;
 
-/// Reload language rules from config for the global registry.
-pub fn reload_from_config() -> usize {
-    RuleRegistry::global().reload_from_config()
-}
-
 /// Access the current global language rules version.
+#[inline]
 pub fn rules_version() -> u64 {
     RuleRegistry::global().version()
 }
 
 /// Initialize and load language rules from configured directories.
 /// Attempts data_dir/lang_rules first, then current working directory's lang_rules.
+#[inline]
 pub fn init_rules_from_config() -> usize {
-    reload_from_config()
+    RuleRegistry::global().reload_from_config()
 }
 #[cfg(test)]
 mod tests {

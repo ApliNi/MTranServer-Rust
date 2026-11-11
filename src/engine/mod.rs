@@ -386,10 +386,6 @@ impl TranslationEngine {
             |segment| self.translate_single_text_with_alignment(segment),
         )
     }
-    /// Downward-compatible alias for `translate_with_markup`.
-    pub fn translate_with_formats(&self, text: &str, parse_markup: bool) -> String {
-        self.translate_with_markup(text, parse_markup)
-    }
     /// Translate a single plain text or protected text segment. Handles placeholder tagging,
     /// symbol preprocessing, long-text splitting, and emoji preservation.
     fn translate_single_text(&self, text: &str) -> String {
@@ -731,10 +727,6 @@ pub trait TranslationEngineTrait: Send + Sync {
     /// Translate input text with caller-specified markup parsing.
     fn translate_with_markup(&self, text: &str, parse_markup: bool) -> String;
 
-    /// Downward-compatible alias for `translate_with_markup`.
-    fn translate_with_formats(&self, text: &str, parse_markup: bool) -> String {
-        self.translate_with_markup(text, parse_markup)
-    }
 
     /// Returns target language code.
     fn target_lang(&self) -> &str;
@@ -747,10 +739,6 @@ impl TranslationEngineTrait for TranslationEngine {
 
     fn translate_with_markup(&self, text: &str, parse_markup: bool) -> String {
         self.translate_with_markup(text, parse_markup)
-    }
-
-    fn translate_with_formats(&self, text: &str, parse_markup: bool) -> String {
-        self.translate_with_formats(text, parse_markup)
     }
 
     fn target_lang(&self) -> &str {

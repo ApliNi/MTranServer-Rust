@@ -78,10 +78,6 @@ pub fn is_recognized_inline_tag(tag_name: &str) -> bool {
     )
 }
 
-#[inline]
-pub fn extract_unified_inline(text: &str) -> (String, Vec<MarkupSpan>) {
-    extract_inline_markup(text)
-}
 
 /// Maximum allowed nesting depth for recursive inline markup extraction.
 pub const MAX_INLINE_DEPTH: usize = 32;
@@ -833,7 +829,7 @@ mod tests {
     use super::*;
 
     fn assert_round_trip(original: &str) {
-        let (plain, mut spans) = extract_unified_inline(original);
+        let (plain, mut spans) = extract_inline_markup(original);
         for span in spans.iter_mut() {
             span.target_range = Some(span.source_range.clone());
         }
@@ -844,7 +840,7 @@ mod tests {
     #[test]
     fn test_html_inline_paired_tags() {
         let text = "Text with <a>link</a>, <b>bold</b>, <strong>strong</strong>, <i>italic</i>, <em>emphasis</em>, <sup>sup</sup>, <sub>sub</sub>, <mark>mark</mark>, <del>del</del>, <span>span</span>, <abbr title=\"API\">abbr</abbr>, <cite>cite</cite>, <q>quote</q>.";
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         assert_eq!(
             plain,
             "Text with link, bold, strong, italic, emphasis, sup, sub, mark, del, span, abbr, cite, quote."
@@ -856,7 +852,7 @@ mod tests {
     #[test]
     fn test_html_attributes_complete_retention() {
         let text = r#"Check out <a href="https://example.com?query=1&amp;filter=true" class="btn btn-primary" target="_blank" data-id="123">Our Portal</a> now."#;
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         assert_eq!(plain, "Check out Our Portal now.");
         assert_eq!(spans.len(), 1);
         assert_eq!(
@@ -870,7 +866,7 @@ mod tests {
     #[test]
     fn test_html_void_tags() {
         let text = r#"Image: <img src="pic.jpg" alt="Photo >_<" class="rounded" /> and break <br> and rule <hr/> done."#;
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         assert_eq!(plain, "Image:  and break  and rule  done.");
         assert_eq!(spans.len(), 3);
         assert!(spans.iter().all(|s| s.is_self_closing));
@@ -880,7 +876,7 @@ mod tests {
     #[test]
     fn test_markdown_links_and_images() {
         let text = "Read [documentation](https://docs.rs) or view ![logo](https://example.com/logo.png).";
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         assert_eq!(plain, "Read documentation or view .");
         assert_eq!(spans.len(), 2);
 
@@ -899,7 +895,7 @@ mod tests {
     #[test]
     fn test_markdown_formatting() {
         let text = "This is **bold1** and __bold2__ with *italic1* and _italic2_ and ~~deleted~~.";
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         assert_eq!(plain, "This is bold1 and bold2 with italic1 and italic2 and deleted.");
         assert_eq!(spans.len(), 5);
         assert_round_trip(text);
@@ -908,7 +904,7 @@ mod tests {
     #[test]
     fn test_html_entities_atomic_protection() {
         let text = "Entities: &amp;, &lt;, &gt;, &quot;, &#39;, &copy;, &reg;, &trade;, &le;, &ge;, &ne;, &infin;, &alpha;, &beta;, &gamma;, &sum;, &times;, &divide;, &nbsp;, &mdash;, &ndash;, &#123;, &#x1f600;.";
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         // None of the entity contents are sent in plain text!
         assert_eq!(plain, "Entities: , , , , , , , , , , , , , , , , , , , , , , .");
         assert_eq!(spans.len(), 23);
@@ -919,7 +915,7 @@ mod tests {
     #[test]
     fn test_consecutive_entities_no_collapse() {
         let text = "Bitwise &amp;&amp; and copyright &copy;&copy; test";
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         assert_eq!(plain, "Bitwise  and copyright  test");
         assert_eq!(spans.len(), 4);
         assert_round_trip(text);
@@ -928,7 +924,7 @@ mod tests {
     #[test]
     fn test_atomic_code_tags_and_backticks() {
         let text = "Compare `std::vector<int>` and <code>a < b && c > d</code> and <kbd>Ctrl+C</kbd> and <math><mi>x</mi></math> and <pre>formatted\ncode</pre>.";
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         // Code content is omitted from plain text to prevent NMT translation distortion
         assert_eq!(plain, "Compare  and  and  and  and .");
         assert_eq!(spans.len(), 5);
@@ -944,14 +940,14 @@ mod tests {
     #[test]
     fn test_nested_dual_syntax() {
         let text = "Here is **[a bold link with `code` &amp; &copy;](https://example.com)** and <i>[italic link](https://example.net)</i>.";
-        let (_plain, _spans) = extract_unified_inline(text);
+        let (_plain, _spans) = extract_inline_markup(text);
         assert_round_trip(text);
     }
 
     #[test]
     fn test_nested_html_tags() {
         let text = r#"<div class="card"><p>Welcome <b><a href="/help">user <i>profile</i></a></b> &copy; 2026</p></div>"#;
-        let (plain, _spans) = extract_unified_inline(text);
+        let (plain, _spans) = extract_inline_markup(text);
         assert_eq!(plain, "Welcome user profile  2026");
         assert_round_trip(text);
     }
@@ -959,7 +955,7 @@ mod tests {
     #[test]
     fn test_false_positives_resistance() {
         let text = "Formula: x < 10 && y > 20, generic List<String>, var foo_bar_baz, math 2 * 3 * 4 = 24, and AT&T.";
-        let (plain, spans) = extract_unified_inline(text);
+        let (plain, spans) = extract_inline_markup(text);
         // None of these mathematical, generic-type, or variable constructs should trigger markup extraction
         assert_eq!(plain, text);
         assert!(spans.is_empty());
@@ -1019,7 +1015,7 @@ mod tests {
             text.push_str("</b>");
         }
 
-        let (plain, spans) = extract_unified_inline(&text);
+        let (plain, spans) = extract_inline_markup(&text);
         assert_eq!(spans.len(), MAX_INLINE_DEPTH);
         assert!(plain.contains("<b>"));
         assert!(plain.contains("nested"));
@@ -1036,7 +1032,7 @@ mod tests {
         for _ in 0..depth {
             text.push_str("</i>");
         }
-        let (plain, spans) = extract_unified_inline(&text);
+        let (plain, spans) = extract_inline_markup(&text);
         assert_eq!(spans.len(), MAX_INLINE_DEPTH);
         assert!(plain.contains("deep"));
     }

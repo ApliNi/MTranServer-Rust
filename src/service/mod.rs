@@ -312,7 +312,6 @@ fn with_key<R>(from: &str, to: &str, f: impl FnOnce(&str) -> R) -> R {
 static USAGE: std::sync::LazyLock<RwLock<HashMap<String, Arc<EngineUsage>>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
 
-#[allow(dead_code)]
 pub(crate) fn get_or_create_usage(k: &str) -> Arc<EngineUsage> {
     {
         let guard = USAGE.read();
@@ -325,18 +324,6 @@ pub(crate) fn get_or_create_usage(k: &str) -> Arc<EngineUsage> {
         .entry(k.to_string())
         .or_insert_with(|| Arc::new(EngineUsage::new()))
         .clone()
-}
-
-/// Record one use of an engine key.
-///
-/// The counters only feed top-N residency scoring; when `keep_top_n == 0` no
-/// score is ever consulted, so skip the lock and the key allocation entirely.
-#[allow(dead_code)]
-pub(crate) fn record_usage(k: &str) {
-    if config::get().keep_top_n == 0 {
-        return;
-    }
-    get_or_create_usage(k).record_call();
 }
 
 /// True if `--keep-models` was given (pinning everything when the special
@@ -808,16 +795,6 @@ pub async fn translate_with_pivot_markup(
         .map(|out| out.text.into_string())
 }
 
-/// Downward-compatible alias for `translate_with_pivot_markup`.
-#[inline]
-pub async fn translate_with_pivot_formats(
-    from_lang: &str,
-    to_lang: &str,
-    text: &str,
-    parse_markup: Option<bool>,
-) -> Result<String, ServiceError> {
-    translate_with_pivot_markup(from_lang, to_lang, text, parse_markup).await
-}
 
 /// Translate a single text with pivot routing, returning both the translated text
 /// and the effective source language code.
@@ -840,17 +817,6 @@ pub async fn translate_with_pivot_detected_markup(
     translate_with_pivot_timed_markup(from_lang, to_lang, text, parse_markup)
         .await
         .map(|out| (out.text.into_string(), out.detected_language))
-}
-
-/// Downward-compatible alias for `translate_with_pivot_detected_markup`.
-#[inline]
-pub async fn translate_with_pivot_detected_formats(
-    from_lang: &str,
-    to_lang: &str,
-    text: &str,
-    parse_markup: Option<bool>,
-) -> Result<(String, String), ServiceError> {
-    translate_with_pivot_detected_markup(from_lang, to_lang, text, parse_markup).await
 }
 
 /// Translate a single text with pivot routing, measuring translation duration and model load duration.
@@ -1038,17 +1004,6 @@ pub async fn translate_with_pivot_timed_markup(
     }
 }
 
-/// Downward-compatible alias for `translate_with_pivot_timed_markup`.
-#[inline]
-pub async fn translate_with_pivot_timed_formats(
-    from_lang: &str,
-    to_lang: &str,
-    text: &str,
-    parse_markup: Option<bool>,
-) -> Result<TranslationOutput, ServiceError> {
-    translate_with_pivot_timed_markup(from_lang, to_lang, text, parse_markup).await
-}
-
 /// Translate a batch of texts with pivot routing and caller-specified parse markup flag.
 /// Returns a vector of tuples containing `(translated_text, detected_language)` aligned with the input `texts`.
 pub async fn translate_batch_with_pivot_markup(
@@ -1143,17 +1098,6 @@ pub async fn translate_batch_with_pivot_markup(
     }
 }
 
-/// Downward-compatible alias for `translate_batch_with_pivot_markup`.
-#[inline]
-pub async fn translate_batch_with_pivot_formats(
-    from_lang: &str,
-    to_lang: &str,
-    texts: &[String],
-    parse_markup: Option<bool>,
-) -> Result<Vec<(String, String)>, ServiceError> {
-    translate_batch_with_pivot_markup(from_lang, to_lang, texts, parse_markup).await
-}
-
 async fn translate_batch_item_with_engines(
     engines: &PreparedEngines,
     from_lang: &str,
@@ -1244,7 +1188,7 @@ async fn translate_segment_with_engines(
             translate_single_language_text_with_engine(engine, from_lang, to_lang, text, effective_markup).await
         }
         PreparedEngines::Pivot(first, second) => {
-            let rules_version = crate::engine::rules::RuleRegistry::global().version();
+            let rules_version = crate::engine::rules::rules_version();
             let cache_key = crate::utils::cache::enabled().then(|| {
                 crate::utils::cache::sync_rules_version(rules_version);
                 crate::utils::cache::compute_key_with_version(
@@ -1305,7 +1249,7 @@ async fn translate_single_language_text_with_engine(
 
     // Cache key incorporates parse markup flag and language rules version to prevent cache collisions
     // between different parse modes or stale cache when rules are updated/reloaded.
-    let rules_version = crate::engine::rules::RuleRegistry::global().version();
+    let rules_version = crate::engine::rules::rules_version();
     let cache_key = crate::utils::cache::enabled().then(|| {
         crate::utils::cache::sync_rules_version(rules_version);
         crate::utils::cache::compute_key_with_version(
@@ -1387,7 +1331,7 @@ pub async fn translate_long_text_with_engines(
     let mut results: Vec<Option<TranslatedText>> = (0..num_sentences).map(|_| None).collect();
     let mut uncached_indices: Vec<usize> = Vec::new();
 
-    let rules_version = crate::engine::rules::RuleRegistry::global().version();
+    let rules_version = crate::engine::rules::rules_version();
     let cache_enabled = crate::utils::cache::enabled();
     if cache_enabled {
         crate::utils::cache::sync_rules_version(rules_version);
@@ -1527,14 +1471,6 @@ pub fn format_zh_punctuation<'a>(
     apply_zh_punct_and_pangu(std::borrow::Cow::Borrowed(text))
 }
 
-/// Apply fullwidth Chinese punctuation normalization with context-sensitive guards
-/// for numeric formatting (thousands separators, European decimals), colons in timestamps,
-/// URLs, host:port, and Rust double colons, as well as HTML tags and Markdown code fences.
-#[inline]
-#[allow(dead_code)]
-pub(crate) fn format_zh_punct_marks<'a>(text: &'a str) -> std::borrow::Cow<'a, str> {
-    apply_zh_punct_marks(std::borrow::Cow::Borrowed(text))
-}
 
 /// Core punctuation normalization operating on `Cow<'a, str>` to preserve zero allocations.
 pub(crate) fn apply_zh_punct_marks<'a>(text: std::borrow::Cow<'a, str>) -> std::borrow::Cow<'a, str> {

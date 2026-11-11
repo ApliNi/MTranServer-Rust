@@ -2,7 +2,7 @@ use std::sync::Arc;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-pub use crate::models::records::{LanguageListResponse, LanguagePair};
+use crate::models::records::LanguageListResponse;
 use crate::service::detector;
 
 #[derive(Deserialize)]

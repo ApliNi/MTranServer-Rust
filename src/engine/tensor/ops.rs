@@ -1642,29 +1642,6 @@ pub unsafe fn gelu_into_avx2(src: &[f32], dst: &mut [f32]) {
         *o = gelu_f32(v);
     }
 }
-#[inline]
-pub fn sigmoid_f32(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
-}
-
-#[inline]
-pub fn sigmoid_into(x: &Tensor2, out: &mut Tensor2) {
-    unsafe {
-        out.prepare_uninit(x.data.len());
-    }
-    for (o, &v) in out.data.iter_mut().zip(x.data.iter()) {
-        *o = sigmoid_f32(v);
-    }
-    out.shape = x.shape;
-}
-
-#[inline]
-pub fn sigmoid_inplace(x: &mut Tensor2) {
-    for v in x.data.iter_mut() {
-        *v = sigmoid_f32(*v);
-    }
-}
-
 // ===========================================================================
 // Attention auxiliary functions
 // ===========================================================================

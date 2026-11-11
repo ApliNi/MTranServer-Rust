@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use mtranserver_lib::config::{self, Cli};
 use mtranserver_lib::service::{
-    ensure_engine_loaded, ensure_required_engines, translate_batch_with_pivot_formats,
-    translate_batch_with_pivot_markup, translate_long_text, translate_long_text_with_engines,
-    translate_segment, translate_with_pivot, translate_with_pivot_detected,
-    translate_with_pivot_markup, translate_with_pivot_timed, PreparedEngines, ServiceError,
+    ensure_engine_loaded, ensure_required_engines, translate_batch_with_pivot_markup,
+    translate_long_text, translate_long_text_with_engines, translate_segment,
+    translate_with_pivot, translate_with_pivot_detected, translate_with_pivot_markup,
+    translate_with_pivot_timed, PreparedEngines, ServiceError,
 };
 
 static INIT: std::sync::Once = std::sync::Once::new();
@@ -78,7 +78,7 @@ async fn test_translate_long_text_same_language() {
 async fn test_translate_batch_same_language() {
     ensure_config_init();
     let texts = vec!["Hello".to_string(), "World".to_string()];
-    let results = translate_batch_with_pivot_formats("en", "en", &texts, None)
+    let results = translate_batch_with_pivot_markup("en", "en", &texts, None)
         .await
         .unwrap();
     assert_eq!(results.len(), 2);
@@ -89,7 +89,7 @@ async fn test_translate_batch_same_language() {
 #[tokio::test]
 async fn test_translate_batch_empty() {
     ensure_config_init();
-    let results = translate_batch_with_pivot_formats("en", "zh", &[], None)
+    let results = translate_batch_with_pivot_markup("en", "zh", &[], None)
         .await
         .unwrap();
     assert!(results.is_empty());

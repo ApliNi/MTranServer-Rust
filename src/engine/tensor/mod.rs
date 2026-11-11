@@ -731,15 +731,6 @@ impl Tensor2 {
         ops::gelu_inplace(self)
     }
 
-    #[inline]
-    pub fn sigmoid_into(&self, out: &mut Tensor2) {
-        ops::sigmoid_into(self, out)
-    }
-
-    #[inline]
-    pub fn sigmoid_inplace(&mut self) {
-        ops::sigmoid_inplace(self)
-    }
 }
 
 /// Buffer-reusing i8 quantizer: sets len and overwrites `out`.

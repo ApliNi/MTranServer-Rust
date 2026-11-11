@@ -181,4 +181,4 @@ latency p99     : 26.96 ms
 ## 相关项目
 
 - 原项目: [xxnuo/MTranServer](https://github.com/xxnuo/MTranServer), [Firefox Translations](https://github.com/mozilla/translations)
-- 语言检测: [whichlang](https://github.com/quickwit-oss/whichlang), [whatlang](https://github.com/greyblake/whatlang-rs)
+- 语言检测: [whatlang](https://github.com/greyblake/whatlang-rs)

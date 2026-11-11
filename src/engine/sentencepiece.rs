@@ -88,7 +88,7 @@ struct PieceTrie {
 }
 
 impl PieceTrie {
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn new() -> Self {
         Self {
             nodes: vec![CompactTrieNode {
@@ -103,13 +103,7 @@ impl PieceTrie {
         }
     }
 
-    #[allow(dead_code)]
-    #[inline]
-    fn builder() -> PieceTrieBuilder {
-        PieceTrieBuilder::new()
-    }
 
-    #[allow(dead_code)]
     #[inline]
     fn find_child(&self, node_idx: usize, c: char) -> Option<u32> {
         if node_idx == 0 {
@@ -251,7 +245,7 @@ impl PieceTrie {
 
     /// Walk the tree from the start of `text`, invoking `on_piece(char_len, vocab_id)`
     /// for every piece matching a prefix of `text`.
-    #[allow(dead_code)]
+    #[cfg(test)]
     #[inline]
     fn walk_prefixes(&self, text: &str, on_piece: impl FnMut(usize, u32)) {
         self.walk_matches(text, 0, usize::MAX, on_piece);
@@ -267,8 +261,8 @@ struct BuilderNode {
 struct PieceTrieBuilder {
     nodes: Vec<BuilderNode>,
 }
-
 impl PieceTrieBuilder {
+    #[cfg(test)]
     fn new() -> Self {
         Self::with_capacity(64)
     }
@@ -526,20 +520,14 @@ impl DoubleArrayUnit {
 pub struct Normalizer {
     units: Vec<DoubleArrayUnit>,
     normalized_bytes: Vec<u8>,
-    #[allow(dead_code)]
-    add_dummy_prefix: bool,
-    #[allow(dead_code)]
-    remove_extra_whitespaces: bool,
-    #[allow(dead_code)]
-    escape_whitespaces: bool,
 }
 
 impl Normalizer {
     pub fn from_precompiled_charsmap(
         data: &[u8],
-        add_dummy_prefix: bool,
-        remove_extra_whitespaces: bool,
-        escape_whitespaces: bool,
+        _add_dummy_prefix: bool,
+        _remove_extra_whitespaces: bool,
+        _escape_whitespaces: bool,
     ) -> Result<Self, EngineError> {
         if data.len() < 4 {
             return Err(EngineError::Format(
@@ -565,9 +553,6 @@ impl Normalizer {
         Ok(Self {
             units,
             normalized_bytes,
-            add_dummy_prefix,
-            remove_extra_whitespaces,
-            escape_whitespaces,
         })
     }
 

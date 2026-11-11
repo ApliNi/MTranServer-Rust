@@ -86,15 +86,6 @@ where
     offset
 }
 
-#[inline]
-pub fn detect_dominant_lang(text: &str) -> &'static str {
-    detect_dominant_language(text)
-}
-/// Unified dominant language detection delegating to rules::detect.
-#[inline]
-pub fn detect_dominant_language(text: &str) -> &'static str {
-    crate::engine::rules::detect::detect_dominant_language(text)
-}
 
 /// Resolve a language rule profile for text or explicit language code.
 ///
@@ -110,7 +101,7 @@ pub(crate) fn resolve_profile_for_text(
     if let Some(l) = lang {
         return registry.get(l);
     }
-    let detected = detect_dominant_lang(text);
+    let detected = crate::engine::rules::detect::detect_dominant_language(text);
     registry.get(detected)
 }
 
@@ -1233,16 +1224,6 @@ pub fn split_long_text_semantic(text: &str, max_len: usize) -> Vec<String> {
     split_long_text_semantic_with_lang(text, max_len, None)
 }
 
-#[inline]
-pub fn translate_single_split_sentence<F>(
-    sentence: SplitSentence<'_>,
-    translate_fn: &mut F,
-) -> String
-where
-    F: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + ?Sized,
-{
-    translate_single_split_sentence_with_syntax(sentence, translate_fn, None)
-}
 
 #[inline]
 pub fn translate_single_split_sentence_with_lang<F>(
@@ -1333,18 +1314,6 @@ where
     out
 }
 
-#[inline]
-pub fn translate_single_split_sentence_dual<P, A>(
-    sentence: SplitSentence<'_>,
-    plain_fn: &mut P,
-    align_fn: &mut A,
-) -> String
-where
-    P: FnMut(&str) -> String + ?Sized,
-    A: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + ?Sized,
-{
-    translate_single_split_sentence_dual_with_syntax(sentence, plain_fn, align_fn, None)
-}
 
 #[inline]
 pub fn translate_single_split_sentence_dual_with_lang<P, A>(
@@ -1442,15 +1411,6 @@ where
 
 /// Translate already split sentences sequentially with token alignment markup projection,
 /// reassembling the projected results with original sentence separators.
-pub fn translate_prepared_split_sentences_with_alignment<F>(
-    sentences: Vec<SplitSentence<'_>>,
-    translate_fn: F,
-) -> String
-where
-    F: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>),
-{
-    translate_prepared_split_sentences_with_alignment_and_lang(sentences, None, translate_fn)
-}
 
 /// Translate already split sentences sequentially with token alignment markup projection and target language syntax rules.
 pub fn translate_prepared_split_sentences_with_alignment_and_lang<F>(
@@ -1484,17 +1444,6 @@ where
 /// Translate already split sentences sequentially using dual-track translation:
 /// sentences without inline spans are translated using `plain_fn`, while sentences
 /// with inline spans are translated using `align_fn` with token alignment markup projection.
-pub fn translate_prepared_split_sentences_dual<P, A>(
-    sentences: Vec<SplitSentence<'_>>,
-    plain_fn: P,
-    align_fn: A,
-) -> String
-where
-    P: FnMut(&str) -> String,
-    A: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>),
-{
-    translate_prepared_split_sentences_dual_with_lang(sentences, None, plain_fn, align_fn)
-}
 
 /// Translate already split sentences sequentially using dual-track translation and target language syntax rules.
 pub fn translate_prepared_split_sentences_dual_with_lang<P, A>(
@@ -1529,15 +1478,6 @@ where
 
 /// Translate already split sentences concurrently across multiple threads via Rayon,
 /// reassembling the projected results in the original sentence order.
-pub fn translate_prepared_split_sentences_with_alignment_parallel<F>(
-    sentences: Vec<SplitSentence<'_>>,
-    translate_fn: F,
-) -> String
-where
-    F: Fn(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + Sync + Send,
-{
-    translate_prepared_split_sentences_with_alignment_parallel_and_lang(sentences, None, translate_fn)
-}
 
 /// Translate already split sentences concurrently across multiple threads via Rayon with target language syntax rules.
 pub fn translate_prepared_split_sentences_with_alignment_parallel_and_lang<F>(
@@ -1582,17 +1522,6 @@ where
 
 /// Translate already split sentences concurrently across multiple threads via Rayon using dual-track translation:
 /// sentences without inline spans use `plain_fn`, while sentences with inline spans use `align_fn`.
-pub fn translate_prepared_split_sentences_dual_parallel<P, A>(
-    sentences: Vec<SplitSentence<'_>>,
-    plain_fn: P,
-    align_fn: A,
-) -> String
-where
-    P: Fn(&str) -> String + Sync + Send,
-    A: Fn(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + Sync + Send,
-{
-    translate_prepared_split_sentences_dual_parallel_with_lang(sentences, None, plain_fn, align_fn)
-}
 
 /// Translate already split sentences concurrently across multiple threads via Rayon with target language syntax rules.
 pub fn translate_prepared_split_sentences_dual_parallel_with_lang<P, A>(
@@ -1642,90 +1571,6 @@ where
 /// Translate a block of text by splitting it into sentences, translating each sentence
 /// independently with cross-attention token alignment markup projection, and reassembling
 /// the projected results with original sentence separators.
-pub fn translate_split_sentences_with_alignment<F>(
-    text: &str,
-    spans: &[MarkupSpan],
-    translate_fn: F,
-) -> String
-where
-    F: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>),
-{
-    if text.is_empty() {
-        return String::new();
-    }
-
-    let sentences = split_sentences_with_spans(text, spans);
-    translate_prepared_split_sentences_with_alignment(sentences, translate_fn)
-}
-
-/// Translate a block of text by splitting it into sentences using dual-track translation:
-/// sentences without inline spans use `plain_fn`, while sentences with inline spans use `align_fn`.
-pub fn translate_split_sentences_dual<P, A>(
-    text: &str,
-    spans: &[MarkupSpan],
-    plain_fn: P,
-    align_fn: A,
-) -> String
-where
-    P: FnMut(&str) -> String,
-    A: FnMut(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>),
-{
-    if text.is_empty() {
-        return String::new();
-    }
-
-    let sentences = split_sentences_with_spans(text, spans);
-    translate_prepared_split_sentences_dual(sentences, plain_fn, align_fn)
-}
-
-/// Translate a block of text by splitting it into sentences and executing their translation
-/// concurrently across multiple threads via Rayon, reassembling the projected results in the original
-/// sentence order.
-pub fn translate_split_sentences_with_alignment_parallel<F>(
-    text: &str,
-    spans: &[MarkupSpan],
-    translate_fn: F,
-) -> String
-where
-    F: Fn(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + Sync + Send,
-{
-    if text.is_empty() {
-        return String::new();
-    }
-
-    let sentences = split_sentences_with_spans(text, spans);
-    if sentences.len() <= 1 {
-        let mut f = translate_fn;
-        return translate_prepared_split_sentences_with_alignment(sentences, &mut f);
-    }
-    translate_prepared_split_sentences_with_alignment_parallel(sentences, translate_fn)
-}
-
-/// Translate a block of text by splitting it into sentences and executing their translation
-/// concurrently across multiple threads via Rayon using dual-track translation.
-pub fn translate_split_sentences_dual_parallel<P, A>(
-    text: &str,
-    spans: &[MarkupSpan],
-    plain_fn: P,
-    align_fn: A,
-) -> String
-where
-    P: Fn(&str) -> String + Sync + Send,
-    A: Fn(&str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>, Vec<usize>) + Sync + Send,
-{
-    if text.is_empty() {
-        return String::new();
-    }
-
-    let sentences = split_sentences_with_spans(text, spans);
-    if sentences.len() <= 1 {
-        let mut p = plain_fn;
-        let mut a = align_fn;
-        return translate_prepared_split_sentences_dual(sentences, &mut p, &mut a);
-    }
-    translate_prepared_split_sentences_dual_parallel(sentences, plain_fn, align_fn)
-}
-
 /// Translate or transform segmented sentences using a custom per-sentence closure,
 /// preserving original separators.
 pub fn process_split_sentences<F>(
@@ -1861,21 +1706,13 @@ mod tests {
             assert!(res.contains(' '));
         };
 
-        let res_seq = translate_split_sentences_with_alignment(text, &spans, mock_align);
-        assert_valid(&res_seq);
-
-        let res_par = translate_split_sentences_with_alignment_parallel(text, &spans, mock_align);
-        assert_valid(&res_par);
-        assert_eq!(res_seq, res_par);
-
         let prepared = split_sentences_with_spans(text, &spans);
-        let res_prep_seq = translate_prepared_split_sentences_with_alignment(prepared.clone(), mock_align);
+        let res_prep_seq = translate_prepared_split_sentences_with_alignment_and_lang(prepared.clone(), None, mock_align);
         assert_valid(&res_prep_seq);
-        assert_eq!(res_seq, res_prep_seq);
 
-        let res_prep_par = translate_prepared_split_sentences_with_alignment_parallel(prepared, mock_align);
+        let res_prep_par = translate_prepared_split_sentences_with_alignment_parallel_and_lang(prepared, None, mock_align);
         assert_valid(&res_prep_par);
-        assert_eq!(res_seq, res_prep_par);
+        assert_eq!(res_prep_seq, res_prep_par);
     }
     #[test]
     fn test_split_empty_and_blank() {
@@ -2008,8 +1845,9 @@ mod tests {
         let mut plain_called = 0;
         let mut align_called = 0;
 
-        let res_seq = translate_prepared_split_sentences_dual(
+        let res_seq = translate_prepared_split_sentences_dual_with_lang(
             sentences,
+            None,
             |sent| {
                 plain_called += 1;
                 assert_eq!(sent, "Sentence one is plain.");
@@ -2032,9 +1870,9 @@ mod tests {
         assert!(res_seq.contains("TR(Plain sentence) "));
         assert!(res_seq.contains("<b>"));
 
-        let res_par = translate_split_sentences_dual_parallel(
-            text,
-            &[span],
+        let res_par = translate_prepared_split_sentences_dual_parallel_with_lang(
+            split_sentences_with_spans(text, std::slice::from_ref(&span)),
+            None,
             |sent| format!("PLAIN({})", sent),
             |sent| {
                 (
@@ -2510,7 +2348,7 @@ mod tests {
             ("Das ist ein großes Haus.", "de"),
             ("¡Hola! ¿Cómo estás?", "es"),
         ] {
-            assert_eq!(detect_dominant_lang(input), expected);
+            assert_eq!(crate::engine::rules::detect::detect_dominant_language(input), expected);
         }
     }
     #[test]

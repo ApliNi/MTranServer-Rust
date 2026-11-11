@@ -21,10 +21,9 @@
    - [3.3 单一词表与拆分词表双模支持](#33-单一词表与拆分词表双模支持)
    - [3.4 遗留模型版本推断机制 (infer_installed_version)](#34-遗留模型版本推断机制-infer_installed_version)
 4. [低收益与评估期遗留项目归档](#4-低收益与评估期遗留项目归档)
-   - [4.1 探针别名 /_heartbeat__](#41-探针别名-_heartbeat__)
-   - [4.2 错误体系收敛说明](#42-错误体系收敛说明)
+   - [4.1 探针别名规范化](#41-探针别名规范化)
+   - [4.2 接口与内部 API 收敛说明](#42-接口与内部-api-收敛说明)
    - [4.3 基础通用库的人类友好 API (SentencePiece / Cache)](#43-基础通用库的人类友好-api-sentencepiece--cache)
-
 ---
 
 ## 1. 第三方翻译协议兼容规范（强制保留）
@@ -137,15 +136,20 @@ let has_unified = installed.contains_key("vocab");
 
 ## 4. 低收益与评估期遗留项目归档
 
-### 4.1 探针别名 /_heartbeat__
+### 4.1 探针别名规范化
 
-- **现状**：`src/api/mod.rs` 中同时注册了 `/__heartbeat__`（标准）与 `/_heartbeat__`（少一个下划线）。
-- **说明**：单下划线版本系历史拼写手误遗留，由于 HTTP 路由注册成本极低，暂保留作为向下兼容探针。若外部基础设施均已切换为 `/health` 或 `/__heartbeat__`，可在主版本迭代时废弃。
+- **现状**：已移除历史拼写手误遗留路由 `/_heartbeat__`，统一收敛为标准 `/__heartbeat__` 与 `/health`。
+- **说明**：健康检查和保活探针规范化为标准路由，消除了冗余的单下划线历史手误路由。
 
-### 4.2 错误体系收敛说明
+### 4.2 接口与内部 API 收敛说明
 
-- `ApiError::Unauthorized`：由于接口鉴权已在全局中间件层拦截完毕，路由处理函数内部不再主动构建该枚举，仅在 `IntoResponse` 映射中作为兜底保留。
-- `ServiceError::Timeout`：服务超时当前均由外层 Tokio/Axum 机制接管并直接返回对应 HTTP 状态码，服务层不再显式包裹此枚举。
+- `*_formats` 函数族废弃：历史 `translate_with_pivot_formats`、`translate_batch_with_pivot_formats` 等均已彻底收敛至统一的 `*_markup` 体系。
+- `extract_unified_inline`：已完全收敛至单一标准实现 `extract_inline_markup`。
+- `LanguagePair`：移除 `src/api/languages.rs` 中未使用的重复导出，统一通过 `crate::models::records` 获取。
+- `format_zh_punct_marks`：移除服务层冗余包装，直接使用 `format_zh_punctuation` 与 `apply_zh_punct_marks`。
+- `rules` 模块接口收敛：移除顶层多余的单行包装 `reload_from_config()`，统一由 `init_rules_from_config()` 驱动；服务层与缓存版本同步统一通过 `rules_version()` 访问。
+- `tensor` 模块废弃算子清理：彻底移除 Marian 架构中未被使用的 `sigmoid_f32`, `sigmoid_into`, `sigmoid_inplace` 算子。
+- 依赖与文档对齐：移除 `README.md` 中历史遗留的 `whichlang` 描述，保持与 `Cargo.toml` 纯净依赖一致。
 
 ### 4.3 基础通用库的人类友好 API (SentencePiece / Cache)
 
