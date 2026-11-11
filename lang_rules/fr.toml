@@ -66,7 +66,6 @@ conditional_end_prefixes = [
 
 [detection]
 unique_chars = ['œ', 'Œ']
-distinctive_chars = ['ù', 'Ù']
 substring_terms = [
     "s'il vous plaît", "s'il vous plait", "s'il te plaît", "s'il te plait",
     "merci beaucoup", "c'est-à-dire", "au revoir", "à bientôt",

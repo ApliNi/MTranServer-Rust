@@ -3,7 +3,7 @@
 //! Follows HTTP_PROXY / HTTPS_PROXY environment variables,
 //! and respects SOCKS5 proxies via the `socks` feature of reqwest.
 
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -45,7 +45,6 @@ fn build_client() -> Result<Client, String> {
 
 /// Buffer capacity for stream download and decompression (128 KB).
 const STREAM_BUFFER_CAPACITY: usize = 128 * 1024;
-const DECOMPRESS_BUFFER_CAPACITY: usize = STREAM_BUFFER_CAPACITY;
 
 /// Downloader with configurable timeout and proxy support.
 pub struct Downloader {
@@ -67,28 +66,6 @@ impl Downloader {
     #[inline]
     pub fn client(&self) -> &Client {
         &self.client
-    }
-
-    /// Download a file from URL to a local path.
-    pub async fn download(&self, url: &str, output_path: &Path) -> Result<(), String> {
-        self.download_verified(url, output_path, None, None).await
-    }
-
-    /// Download a file from URL to a local path with optional size and SHA-256 verification.
-    ///
-    /// The payload is written to `<path>.part` first and atomically renamed into place.
-    /// If the destination file already exists, it is verified against `expected_size` and
-    /// `expected_sha256`; if valid, download is skipped. If corrupted or truncated, it is
-    /// re-downloaded.
-    pub async fn download_verified(
-        &self,
-        url: &str,
-        output_path: &Path,
-        expected_size: Option<u64>,
-        expected_sha256: Option<&str>,
-    ) -> Result<(), String> {
-        self.download_stream_decompressed(url, output_path, false, expected_size, expected_sha256)
-            .await
     }
 
     /// Download a file (optionally zstd-compressed) streaming directly into `output_path`.
@@ -261,21 +238,6 @@ impl Downloader {
         }
 
         rename_atomic(&part_path, output_path).await
-    }
-
-    /// Decompress a zstd file to the output path using streaming decompression.
-    ///
-    /// Streams chunks from the input file through [`zstd::stream::copy_decode`]
-    /// into a sibling `.part` file inside [`tokio::task::spawn_blocking`], avoiding
-    /// loading the whole uncompressed model into memory. The file is flushed and
-    /// atomically renamed into place.
-    pub async fn decompress(&self, input_path: &Path, output_path: &Path) -> Result<(), String> {
-        let input_path = input_path.to_path_buf();
-        let output_path = output_path.to_path_buf();
-
-        tokio::task::spawn_blocking(move || decompress_blocking(&input_path, &output_path))
-            .await
-            .map_err(|e| format!("Decompression task failed: {e}"))?
     }
 }
 
@@ -545,57 +507,6 @@ impl<W: Write> Write for HashingWriter<W> {
     }
 }
 
-fn decompress_blocking(input_path: &Path, output_path: &Path) -> Result<(), String> {
-    let part_path = part_path_for(output_path)?;
-
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
-    }
-
-    let input_file = std::fs::File::open(input_path).map_err(|e| {
-        format!(
-            "Failed to open compressed file {}: {e}",
-            input_path.display()
-        )
-    })?;
-    let reader = BufReader::with_capacity(DECOMPRESS_BUFFER_CAPACITY, input_file);
-
-    let part_file = std::fs::File::create(&part_path).map_err(|e| {
-        format!(
-            "Failed to create temporary file {}: {e}",
-            part_path.display()
-        )
-    })?;
-    let mut writer = BufWriter::with_capacity(DECOMPRESS_BUFFER_CAPACITY, part_file);
-
-    let decode_result = zstd::stream::copy_decode(reader, &mut writer)
-        .map_err(|e| format!("Zstd decompression failed: {e}"));
-
-    let flush_result = if decode_result.is_ok() {
-        writer
-            .flush()
-            .map_err(|e| format!("Failed to flush {}: {e}", part_path.display()))
-    } else {
-        Ok(())
-    };
-
-    // Ensure writer is dropped before renaming, closing the open handle on Windows.
-    drop(writer);
-
-    if let Err(err) = decode_result {
-        let _ = std::fs::remove_file(&part_path);
-        return Err(err);
-    }
-
-    if let Err(err) = flush_result {
-        let _ = std::fs::remove_file(&part_path);
-        return Err(err);
-    }
-
-    rename_atomic_sync(&part_path, output_path)
-}
-
 pub(crate) async fn write_atomic(final_path: &Path, bytes: &[u8]) -> Result<(), String> {
     let part_path = part_path_for(final_path)?;
 
@@ -635,109 +546,6 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
-    }
-
-    #[tokio::test]
-    async fn test_decompress_stream_basic() {
-        let temp = TempDirGuard::new("basic");
-        let input_path = temp.path().join("model.bin.zst");
-        let output_path = temp.path().join("model.bin");
-
-        let original_data = b"Hello streaming zstd decompression! Repeated pattern: ".repeat(1000);
-        let compressed = zstd::encode_all(&original_data[..], 3).unwrap();
-        std::fs::write(&input_path, &compressed).unwrap();
-
-        let downloader = Downloader::new();
-        downloader
-            .decompress(&input_path, &output_path)
-            .await
-            .unwrap();
-
-        assert!(output_path.exists());
-        let decompressed = std::fs::read(&output_path).unwrap();
-        assert_eq!(decompressed, original_data);
-
-        let part_path = temp.path().join("model.bin.part");
-        assert!(!part_path.exists());
-    }
-
-    #[tokio::test]
-    async fn test_decompress_stream_multi_chunk() {
-        let temp = TempDirGuard::new("multi_chunk");
-        let input_path = temp.path().join("large.bin.zst");
-        let output_path = temp.path().join("large.bin");
-
-        let mut original_data = Vec::with_capacity(512 * 1024);
-        for i in 0..(512 * 1024) {
-            original_data.push((i % 251) as u8);
-        }
-        let compressed = zstd::encode_all(&original_data[..], 3).unwrap();
-        std::fs::write(&input_path, &compressed).unwrap();
-
-        let downloader = Downloader::new();
-        downloader
-            .decompress(&input_path, &output_path)
-            .await
-            .unwrap();
-
-        assert!(output_path.exists());
-        let decompressed = std::fs::read(&output_path).unwrap();
-        assert_eq!(decompressed, original_data);
-    }
-
-    #[tokio::test]
-    async fn test_decompress_overwrite_existing() {
-        let temp = TempDirGuard::new("overwrite");
-        let input_path = temp.path().join("model.bin.zst");
-        let output_path = temp.path().join("model.bin");
-
-        std::fs::write(&output_path, b"old obsolete data").unwrap();
-
-        let new_data = b"new decompressed content".to_vec();
-        let compressed = zstd::encode_all(&new_data[..], 3).unwrap();
-        std::fs::write(&input_path, &compressed).unwrap();
-
-        let downloader = Downloader::new();
-        downloader
-            .decompress(&input_path, &output_path)
-            .await
-            .unwrap();
-
-        let decompressed = std::fs::read(&output_path).unwrap();
-        assert_eq!(decompressed, new_data);
-    }
-
-    #[tokio::test]
-    async fn test_decompress_invalid_input_cleans_up_part() {
-        let temp = TempDirGuard::new("invalid_input");
-        let input_path = temp.path().join("corrupted.bin.zst");
-        let output_path = temp.path().join("target.bin");
-        let part_path = temp.path().join("target.bin.part");
-
-        std::fs::write(&input_path, b"this is definitely not a valid zstd stream").unwrap();
-
-        let downloader = Downloader::new();
-        let result = downloader.decompress(&input_path, &output_path).await;
-        assert!(result.is_err());
-        assert!(!output_path.exists());
-        assert!(!part_path.exists());
-    }
-
-    #[tokio::test]
-    async fn test_decompress_preserves_existing_on_error() {
-        let temp = TempDirGuard::new("preserve_existing");
-        let input_path = temp.path().join("corrupted.bin.zst");
-        let output_path = temp.path().join("target.bin");
-
-        let existing_data = b"do not overwrite me if decompression fails";
-        std::fs::write(&output_path, existing_data).unwrap();
-        std::fs::write(&input_path, b"invalid zstd data").unwrap();
-
-        let downloader = Downloader::new();
-        let result = downloader.decompress(&input_path, &output_path).await;
-        assert!(result.is_err());
-
-        assert_eq!(std::fs::read(&output_path).unwrap(), existing_data);
     }
 
     #[tokio::test]

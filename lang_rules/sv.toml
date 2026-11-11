@@ -73,6 +73,6 @@ conditional_end_prefixes = [
 ]
 
 [detection]
-distinctive_chars = ['ä', 'ö', 'Ä', 'Ö', 'å', 'Å']
+distinctive_chars = ['ä', 'ö', 'Ä', 'Ö']
 substring_terms = ["Sverige", "Stockholm", "varifrån"]
-whole_words = ["och", "är", "i", "jag", "det", "på"]
+whole_words = ["och", "är"]

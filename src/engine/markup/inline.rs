@@ -78,7 +78,7 @@ pub fn is_recognized_inline_tag(tag_name: &str) -> bool {
     )
 }
 
-/// Extract unified inline markup spans from text (both HTML and Markdown enabled).
+#[inline]
 pub fn extract_unified_inline(text: &str) -> (String, Vec<MarkupSpan>) {
     extract_inline_markup(text)
 }

@@ -302,10 +302,13 @@ pub fn parse_size(value: &str) -> Result<usize, String> {
 /// Parse a boolean value accepted in environment variables: `true`/`false`
 /// (case-insensitive) or `1`/`0`. Returns `None` on anything else.
 pub fn parse_boolish(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
+    let trimmed = value.trim();
+    if trimmed.eq_ignore_ascii_case("true") || trimmed == "1" {
+        Some(true)
+    } else if trimmed.eq_ignore_ascii_case("false") || trimmed == "0" {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -739,4 +742,28 @@ mod tests {
         assert!(!cli_false.preprocess_symbols);
     }
 
+    #[test]
+    fn test_parse_boolish() {
+        assert_eq!(parse_boolish("true"), Some(true));
+        assert_eq!(parse_boolish("True"), Some(true));
+        assert_eq!(parse_boolish("TRUE"), Some(true));
+        assert_eq!(parse_boolish("1"), Some(true));
+        assert_eq!(parse_boolish("  true  "), Some(true));
+        assert_eq!(parse_boolish("  1  "), Some(true));
+
+        assert_eq!(parse_boolish("false"), Some(false));
+        assert_eq!(parse_boolish("False"), Some(false));
+        assert_eq!(parse_boolish("FALSE"), Some(false));
+        assert_eq!(parse_boolish("0"), Some(false));
+        assert_eq!(parse_boolish("  false  "), Some(false));
+        assert_eq!(parse_boolish("  0  "), Some(false));
+
+        assert_eq!(parse_boolish(""), None);
+        assert_eq!(parse_boolish("   "), None);
+        assert_eq!(parse_boolish("2"), None);
+        assert_eq!(parse_boolish("-1"), None);
+        assert_eq!(parse_boolish("yes"), None);
+        assert_eq!(parse_boolish("no"), None);
+        assert_eq!(parse_boolish("unknown"), None);
+    }
 }

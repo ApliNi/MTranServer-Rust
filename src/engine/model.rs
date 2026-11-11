@@ -396,7 +396,7 @@ impl Model {
                     // Their f32 form is only consumed row-by-row (embedding lookup
                     // / decoder step input), so like every other intgemm8 tensor
                     // the dequantized copy is deferred until first use; consumers
-                    // on the int8 path read rows through `dequant_row` instead of
+                    // on the int8 path read rows through `dequant_row_into` instead of
                     // materializing the full table.
                     let is_wemb = h.name.contains("Wemb");
                     if !is_wemb {
@@ -449,7 +449,7 @@ impl Model {
                         // Wemb keeps its raw int8 rows in `quant8` ([vocab, d_model],
                         // untransposed): the shortlist output projection gathers rows
                         // straight from these bytes, and embedding lookups dequantize
-                        // single rows via `dequant_row`. No eager f32 table is built.
+                        // single rows via `dequant_row_into`. No eager f32 table is built.
                         let row_sums = if h.shape.len() == 2 && h.shape[0] > 0 && h.shape[1] > 0 {
                             Some(crate::engine::tensor::simd::compute_row_sums_vec(int8_slice, h.shape[0], h.shape[1]))
                         } else {
@@ -621,25 +621,12 @@ impl Model {
 
     /// Dequantize one embedding row from an intgemm8 weight matrix.
     ///
+    /// Dequantize one intgemm8 embedding row directly into a caller-owned
+    /// buffer.
+    ///
     /// Embedding tables are consumed row-by-row (encoder lookup by token id,
     /// decoder step input), so the int8 path reads single rows straight from
-    /// the quantized bytes instead of materializing the full f32 table. The
-    /// per-element expression is identical to the load-time dequantization,
-    /// so the values are bit-identical to a row of the equivalent f32 tensor.
-    ///
-    /// Returns `None` when `name` is not an intgemm8 tensor or `row` is out
-    /// of range.
-    pub fn dequant_row(&self, name: &str, row: usize) -> Option<Vec<f32>> {
-        let q = self.quant8.get(name)?;
-        let d_model = *q.shape.get(1)?;
-        let start = row.checked_mul(d_model)?;
-        let src = q.data.get(start..start + d_model)?;
-        Some(src.iter().map(|&v| v as f32 / q.quant_mult).collect())
-    }
-    /// Dequantize one intgemm8 embedding row directly into a caller-owned
-    /// buffer. Same per-element expression as [`Self::dequant_row`] (so the
-    /// values are bit-identical), but avoids the per-row `Vec` allocation —
-    /// the decoder step loop reuses one scratch buffer across all steps.
+    /// the quantized bytes instead of materializing the full f32 table.
     ///
     /// Returns `false` when `name` is not an intgemm8 tensor or `row` is out
     /// of range, leaving `out` untouched.

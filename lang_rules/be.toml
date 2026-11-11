@@ -79,6 +79,4 @@ conditional_end_prefixes = [
 
 [detection]
 unique_chars = ['ў', 'Ў']
-distinctive_chars = ['і', 'І']
-exclude_chars = ['ї', 'є', 'ґ', 'Ї', 'Є', 'Ґ']
 substring_terms = ["Белару", "сёння", "дзень", "гэты", "дзякуй"]

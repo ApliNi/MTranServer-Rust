@@ -116,9 +116,7 @@ fn not_found() -> Response {
 }
 
 fn mime_for(path: &str) -> &'static str {
-    if path.ends_with(".html") {
-        "text/html; charset=utf-8"
-    } else if path.ends_with(".css") {
+    if path.ends_with(".css") {
         "text/css; charset=utf-8"
     } else if path.ends_with(".js") {
         "application/javascript; charset=utf-8"

@@ -12,12 +12,6 @@ pub enum EngineError {
     /// Dimension mismatch or invalid tensor dimensions.
     DimensionMismatch(String),
 
-    /// Vocabulary file missing, corrupt, or missing expected pieces.
-    VocabularyMissing(String),
-
-    /// Model file not loaded, missing, or failed to initialize.
-    ModelNotLoaded(String),
-
     /// I/O error during file read or access.
     Io(String),
 
@@ -26,32 +20,6 @@ pub enum EngineError {
 
     /// Other engine failure.
     Other(String),
-}
-
-impl EngineError {
-    pub fn format(msg: impl Into<String>) -> Self {
-        EngineError::Format(msg.into())
-    }
-
-    pub fn dimension_mismatch(msg: impl Into<String>) -> Self {
-        EngineError::DimensionMismatch(msg.into())
-    }
-
-    pub fn vocabulary_missing(msg: impl Into<String>) -> Self {
-        EngineError::VocabularyMissing(msg.into())
-    }
-
-    pub fn model_not_loaded(msg: impl Into<String>) -> Self {
-        EngineError::ModelNotLoaded(msg.into())
-    }
-
-    pub fn io(msg: impl Into<String>) -> Self {
-        EngineError::Io(msg.into())
-    }
-
-    pub fn worker_panicked(msg: impl Into<String>) -> Self {
-        EngineError::WorkerPanicked(msg.into())
-    }
 }
 
 impl fmt::Display for EngineError {
@@ -69,20 +37,6 @@ impl fmt::Display for EngineError {
                     write!(f, "{msg}")
                 } else {
                     write!(f, "Dimension mismatch: {msg}")
-                }
-            }
-            EngineError::VocabularyMissing(msg) => {
-                if msg.starts_with("Vocabulary missing") {
-                    write!(f, "{msg}")
-                } else {
-                    write!(f, "Vocabulary missing: {msg}")
-                }
-            }
-            EngineError::ModelNotLoaded(msg) => {
-                if msg.starts_with("Model not loaded") {
-                    write!(f, "{msg}")
-                } else {
-                    write!(f, "Model not loaded: {msg}")
                 }
             }
             EngineError::Io(msg) => {

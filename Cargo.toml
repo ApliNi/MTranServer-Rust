@@ -17,7 +17,6 @@ path = "src/lib.rs"
 # HTTP server
 axum = { version = "0.8", features = ["macros"] }
 tower = { version = "0.5", features = ["util"] }
-hyper = "1"
 tokio = { version = "1", features = [
 	"rt-multi-thread",
 	"net",
@@ -39,7 +38,7 @@ clap = { version = "4", features = ["derive", "env"] }
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # HTTP client
 reqwest = { version = "0.12", default-features = false, features = ["socks", "rustls-tls"] }
@@ -49,7 +48,6 @@ zstd = "0.13"
 
 # Language detection
 whatlang = "0.16"
-whichlang = "0.1"
 
 # Cache
 lru = "0.16"

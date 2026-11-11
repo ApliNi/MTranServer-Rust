@@ -1009,7 +1009,7 @@ impl DecoderLayerNames {
     }
 }
 
-/// Everything [`forward`] needs, resolved once when the engine is created.
+/// Everything decoding needs, resolved once when the engine is created.
 ///
 /// Reading the model YAML (`get_config_value`) takes the model's internal
 /// mutex on every call, so the per-request path must not touch it: the
@@ -1221,7 +1221,7 @@ impl ForwardConfig {
         PreparedEngineWeights::new(model, self)
     }
 }
-/// Transformer encoder-decoder namespace: [`Transformer::forward`] runs a
+/// Transformer encoder-decoder namespace: [`Transformer::forward_with_weights_into`] runs a
 /// complete autoregressive translation over the loaded model.
 pub struct Transformer;
 
@@ -3442,7 +3442,8 @@ pub(crate) fn try_push_candidate(
 }
 impl Transformer {
     /// Run the full transformer encoder-decoder forward pass with
-    /// **autoregressive decoding** inside.
+    /// **autoregressive decoding** inside, writing output tokens into the
+    /// caller-owned buffer `out_tokens` to eliminate per-request allocations.
     ///
     /// 1. Encoder: append `[EOS]` to `source_ids` (no BOS), embed with
     ///    `sqrt(d_model)` scaling, add sinusoidal positions, run the encoder
@@ -3456,52 +3457,6 @@ impl Transformer {
     ///    with the tied output layer, gather shortlist entries, and
     ///    greedy-argmax the shortlist to pick the next token. Stop when
     ///    `[EOS]` is predicted or `max_length_break` is reached.
-    ///
-    /// Returns the generated token id sequence (one id per decoding step,
-    /// including a trailing EOS or the extra post-truncation token).
-    pub fn forward(
-        model: &Model,
-        spm_src: &SentencePiece,
-        spm_trg: &SentencePiece,
-        source_ids: &[u32],
-        shortlist_indices: &[u32],
-        config: &ForwardConfig,
-    ) -> Vec<u32> {
-        let weights = config.weights(model);
-        Self::forward_with_weights(
-            &weights,
-            spm_src,
-            spm_trg,
-            source_ids,
-            shortlist_indices,
-            config,
-        )
-    }
-
-    /// Forward pass with pre-resolved layer weights, avoiding hash map lookups.
-    pub fn forward_with_weights(
-        weights: &LayerWeightsView,
-        spm_src: &SentencePiece,
-        spm_trg: &SentencePiece,
-        source_ids: &[u32],
-        shortlist_indices: &[u32],
-        config: &ForwardConfig,
-    ) -> Vec<u32> {
-        let mut out = Vec::new();
-        Self::forward_with_weights_into(
-            weights,
-            spm_src,
-            spm_trg,
-            source_ids,
-            shortlist_indices,
-            config,
-            &mut out,
-        );
-        out
-    }
-
-    /// Forward pass writing output tokens into the caller-owned buffer,
-    /// eliminating per-request allocations on the decode hot path.
     pub fn forward_with_weights_into(
         weights: &LayerWeightsView,
         spm_src: &SentencePiece,

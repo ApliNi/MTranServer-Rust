@@ -103,7 +103,7 @@ pub const SEPARATORS: &[Separator] = &[
 
 /// Rejoin separator for `sep`, mapped by target language (CJK vs non-CJK).
 pub fn mapped_separator<'a>(sep: &'a str, target_lang: &str) -> &'a str {
-    if let Some(prof) = crate::engine::rules::RuleRegistry::global().profile(target_lang) {
+    if let Some(prof) = crate::engine::rules::RuleRegistry::global().get(target_lang) {
         if let Some(custom) = prof.typography.separators.get(sep) {
             for s in SEPARATORS {
                 if s.cjk == custom.as_str() {
@@ -687,10 +687,6 @@ pub fn is_emoji_grapheme(g: &str) -> bool {
     g.chars().any(is_emoji_char)
 }
 
-#[inline(always)]
-pub fn is_emoji(c: char) -> bool {
-    is_emoji_char(c)
-}
 
 /// Fast check whether `text.chars().count() > limit`, avoiding walking characters
 /// when byte length already guarantees `< limit` or `> limit * 4`.
@@ -851,10 +847,6 @@ fn get_next_alpha(run: &str, pos: usize) -> &str {
         len += 1;
     }
     &run[pos..pos + len]
-}
-
-fn is_hyphen_protected(prev: &str, next: &str) -> bool {
-    crate::engine::rules::RuleRegistry::global().is_hyphen_protected(prev, next)
 }
 
 fn is_quoted_run(span: &str, start: usize, end: usize) -> bool {
@@ -1096,7 +1088,7 @@ pub fn preprocess_symbols(text: &str) -> Cow<'_, str> {
                 if c == '-' {
                     let prev_word = get_prev_alpha(run, run_offset);
                     let next_word = get_next_alpha(run, run_offset + 1);
-                    if is_hyphen_protected(prev_word, next_word) {
+                    if crate::engine::rules::RuleRegistry::global().is_hyphen_protected(prev_word, next_word) {
                         prev = c;
                         continue;
                     }

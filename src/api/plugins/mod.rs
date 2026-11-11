@@ -61,15 +61,6 @@ impl<T> OneOrMany<T> {
         }
     }
 
-    /// Convert the container into an owned `Vec<T>`.
-    #[inline]
-    pub fn into_vec(self) -> Vec<T> {
-        match self {
-            OneOrMany::One(item) => vec![item],
-            OneOrMany::Many(items) => items,
-        }
-    }
-
     /// Return the number of elements contained.
     #[inline]
     pub fn len(&self) -> usize {

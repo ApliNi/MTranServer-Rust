@@ -183,8 +183,7 @@ const MAX_FALLBACK_DETECTION_BYTES: usize = 1023;
 
 /// Detect the dominant language of a text. Returns language code or "en" if undetectable.
 ///
-/// Mirrors `detectLanguage` in the original TypeScript: skip leading
-/// non-alphanumeric content, try the pure-CJK heuristic first, then fall back to whatlang.
+/// Uses the unified zero-allocation detection engine with LRU caching.
 pub async fn detect_language(text: &str) -> String {
     detect_language_with_max_bytes(text, MAX_DETECTION_BYTES).await
 }
@@ -338,7 +337,7 @@ pub async fn detect_multiple_languages(text: &str) -> Vec<TextSegment> {
             let candidate = if confidence >= DEFAULT_CONFIDENCE_THRESHOLD && !detected_lang.is_empty() && detected_lang != "un" {
                 detected_lang
             } else {
-                let dom = detect_dominant_language(sentence);
+                let dom = crate::engine::rules::detect::detect_dominant_language(sentence);
                 if !dom.is_empty() && dom != "en" {
                     dom.to_string()
                 } else if !detected_lang.is_empty() && detected_lang != "un" {
@@ -381,7 +380,7 @@ pub async fn detect_multiple_languages(text: &str) -> Vec<TextSegment> {
         };
 
         if final_lang == "zh-Hans" || final_lang == "zh-Hant" || final_lang == "zh" {
-            final_lang = distinguish_chinese_variant(sentence).to_string();
+            final_lang = crate::engine::rules::detect::distinguish_chinese_variant(sentence).to_string();
         }
 
         previous_lang = Some(final_lang.clone());
@@ -478,83 +477,6 @@ fn truncate_by_utf8_bytes(text: &str, max_bytes: usize) -> &str {
     &text[..end]
 }
 
-/// Distinguish Traditional Chinese (`zh-Hant`) from Simplified Chinese (`zh-Hans`)
-/// based on statistical hits of distinctive feature characters.
-#[inline]
-pub fn distinguish_chinese_variant(text: &str) -> &'static str {
-    crate::engine::rules::detect::distinguish_chinese_variant(text)
-}
-
-/// Pure CJK heuristic: detect ja/ko/zh (zh-Hans vs zh-Hant) by script ranges.
-pub fn detect_pure_cjk_language(text: &str, start_index: usize) -> Option<&'static str> {
-    let safe_start = if text.is_char_boundary(start_index) {
-        start_index
-    } else {
-        let mut b = start_index;
-        while b > 0 && !text.is_char_boundary(b) {
-            b -= 1;
-        }
-        b
-    };
-    let target_limit = text.len().min(safe_start.saturating_add(2000));
-    let mut limit = target_limit;
-    while limit > 0 && !text.is_char_boundary(limit) {
-        limit -= 1;
-    }
-
-    let mut has_han = false;
-    let mut has_kana = false;
-    let mut has_hangul = false;
-    let mut cjk_count = 0usize;
-    let mut ascii_letter_count = 0usize;
-
-    for (i, c) in text.char_indices() {
-        if i < safe_start {
-            continue;
-        }
-        if i >= limit {
-            break;
-        }
-
-        let code = c as u32;
-
-        if (0x41..=0x5A).contains(&code) || (0x61..=0x7A).contains(&code) {
-            ascii_letter_count += 1;
-            continue;
-        }
-
-        if (0x3040..=0x30FF).contains(&code) {
-            has_kana = true;
-            cjk_count += 1;
-        } else if (0xAC00..=0xD7AF).contains(&code) {
-            has_hangul = true;
-            cjk_count += 1;
-        } else if (0x4E00..=0x9FFF).contains(&code) {
-            has_han = true;
-            cjk_count += 1;
-        }
-    }
-
-    // If ASCII letters dominate or no CJK was found, do not classify as CJK.
-    if cjk_count == 0 || (ascii_letter_count > 0 && cjk_count < ascii_letter_count * 2) {
-        return None;
-    }
-
-    if has_kana {
-        Some("ja")
-    } else if has_hangul {
-        Some("ko")
-    } else if has_han {
-        let scan = if safe_start < limit {
-            &text[safe_start..limit]
-        } else {
-            &text[..limit]
-        };
-        Some(distinguish_chinese_variant(scan))
-    } else {
-        None
-    }
-}
 
 /// Get the index where actual content starts (skip leading non-letter/number chars).
 pub fn get_valid_content_start_index(text: &str) -> usize {
@@ -634,23 +556,6 @@ pub fn split_sentence_spans(text: &str) -> Vec<(usize, usize)> {
     spans
 }
 
-/// Split text into sentences using Unicode sentence boundary rules (UAX #29),
-/// matching Intl.Segmenter with granularity: 'sentence'.
-pub fn split_sentence_boundaries(text: &str) -> Vec<(String, usize)> {
-    split_sentence_spans(text)
-        .into_iter()
-        .map(|(start, end)| (text[start..end].to_string(), start))
-        .collect()
-}
-
-/// Heuristically and synchronously detect the dominant language of a text for language rule profiles.
-///
-/// Combines pure-CJK script inspection (ja, ko, zh), unique scripts (ru, ar, he, el, th, hi),
-/// distinctive character diacritics (de, es, pt, fr, it), distinctive words, and dual-engine fallback (whatlang / whichlang).
-pub fn detect_dominant_language(text: &str) -> &'static str {
-    crate::engine::rules::detect::detect_dominant_language(text)
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -710,13 +615,13 @@ mod tests {
     #[test]
     fn test_distinguish_chinese_variant() {
         let trad_text = "我們正在實施繁體中文的語言識別優化，測試繁簡特徵字。這點會讓我們學習與說話更標準。";
-        assert_eq!(distinguish_chinese_variant(trad_text), "zh-Hant");
+        assert_eq!(crate::engine::rules::detect::distinguish_chinese_variant(trad_text), "zh-Hant");
 
         let simp_text = "我们正在实施简体中文的语言识别优化，测试繁简特征字。这点会让我们学习与说话更标准。";
-        assert_eq!(distinguish_chinese_variant(simp_text), "zh-Hans");
+        assert_eq!(crate::engine::rules::detect::distinguish_chinese_variant(simp_text), "zh-Hans");
 
         // Neutral / no distinctive characters defaults to zh-Hans
-        assert_eq!(distinguish_chinese_variant("你好世界"), "zh-Hans");
+        assert_eq!(crate::engine::rules::detect::distinguish_chinese_variant("你好世界"), "zh-Hans");
     }
 
     #[tokio::test]
@@ -766,24 +671,24 @@ mod tests {
 
     #[test]
     fn test_detect_dominant_language_sync() {
-        assert_eq!(detect_dominant_language("こんにちは世界"), "ja");
-        assert_eq!(detect_dominant_language("안녕하세요 세계"), "ko");
-        assert_eq!(detect_dominant_language("你好，这是一个测试。"), "zh");
-        assert_eq!(detect_dominant_language("Привет мир!"), "ru");
-        assert_eq!(detect_dominant_language("مرحبا بالعالم"), "ar");
-        assert_eq!(detect_dominant_language("שלום עולם"), "he");
-        assert_eq!(detect_dominant_language("¡Hola! ¿Cómo estás?"), "es");
-        assert_eq!(detect_dominant_language("Das ist ein großes Problem."), "de");
-        assert_eq!(detect_dominant_language("C'est une belle journée."), "fr");
-        assert_eq!(detect_dominant_language("Não temos informações."), "pt");
-        assert_eq!(detect_dominant_language("This is a simple English sentence."), "en");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("こんにちは世界"), "ja");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("안녕하세요 세계"), "ko");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("你好，这是一个测试。"), "zh");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("Привет мир!"), "ru");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("مرحبا بالعالم"), "ar");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("שלום עולם"), "he");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("¡Hola! ¿Cómo estás?"), "es");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("Das ist ein großes Problem."), "de");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("C'est une belle journée."), "fr");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("Não temos informações."), "pt");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("This is a simple English sentence."), "en");
     }
 
     #[tokio::test]
     async fn test_detect_greek_math_symbol_and_diaeresis_guards() {
         // Single Greek letter in English math/science context must not be misclassified as Greek ("el")
         assert_eq!(detect_language("The angle θ is measured in radians.").await, "en");
-        assert_eq!(detect_dominant_language("The learning rate α is set to 0.001."), "en");
+        assert_eq!(crate::engine::rules::detect::detect_dominant_language("The learning rate α is set to 0.001."), "en");
 
         // French and Dutch words with 'ë' (0x00EB) must not be misclassified as Albanian ("sq")
         assert_eq!(detect_language("Joyeux Noël à tous et bonne année!").await, "fr");
@@ -802,7 +707,7 @@ mod tests {
 
         // CJK mixed with English brand/acronym should still be recognized by CJK heuristic
         let mixed_cjk = "我的 iPhone 真的很实用，推荐大家使用。";
-        assert_eq!(detect_pure_cjk_language(mixed_cjk, 0), Some("zh-Hans"));
+        assert_eq!(detect_language(mixed_cjk).await, "zh-Hans");
     }
 
     #[test]

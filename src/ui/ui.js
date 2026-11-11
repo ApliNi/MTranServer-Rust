@@ -3,7 +3,6 @@
 import {
 	t,
 	initI18n,
-	applyI18n,
 	localizedName,
 	nativeName,
 	getUiLanguage,
@@ -74,10 +73,6 @@ const el = {
 
 /* ------------------------------- API helpers ------------------------------- */
 
-function apiUrl(path) {
-	return path;
-}
-
 function authHeaders() {
 	if (!state.token) return {};
 	return { Authorization: `Bearer ${state.token}` };
@@ -85,7 +80,7 @@ function authHeaders() {
 
 async function apiFetch(path, options = {}) {
 	const headers = { ...authHeaders(), ...(options.headers || {}) };
-	const res = await fetch(apiUrl(path), { ...options, headers });
+	const res = await fetch(path, { ...options, headers });
 	if (res.status === 401) {
 		const ok = await promptForToken();
 		if (!ok) throw new AuthError();
@@ -788,7 +783,6 @@ async function init() {
 	initI18n();
 	state.uiLanguage = getUiLanguage();
 	bindEvents();
-	applyI18n();
 
 	// Pick up token from URL query parameter.
 	const urlParams = new URLSearchParams(location.search);

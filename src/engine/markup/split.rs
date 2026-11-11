@@ -86,11 +86,10 @@ where
     offset
 }
 
-/// Heuristically detect dominant language from text character statistics and detector service.
+#[inline]
 pub fn detect_dominant_lang(text: &str) -> &'static str {
-    crate::engine::rules::detect::detect_dominant_language(text)
+    detect_dominant_language(text)
 }
-
 /// Unified dominant language detection delegating to rules::detect.
 #[inline]
 pub fn detect_dominant_language(text: &str) -> &'static str {

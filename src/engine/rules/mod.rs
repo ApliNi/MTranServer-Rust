@@ -49,8 +49,6 @@ pub struct RawRuleProfile {
     pub hyphenation: HyphenationRules,
 }
 
-pub type RawLanguageRuleProfile = RawRuleProfile;
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawMetadata {
     pub language: String,
@@ -190,15 +188,10 @@ impl Default for SyntaxRules {
 /// Language detection rules for script and orthography classification.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DetectionRules {
-    pub script: Option<String>,
-    #[serde(default)]
-    pub unique_script: bool,
     #[serde(default)]
     pub unique_chars: Vec<char>,
     #[serde(default)]
     pub distinctive_chars: Vec<char>,
-    #[serde(default)]
-    pub exclude_chars: Vec<char>,
     #[serde(default)]
     pub whole_words: Vec<String>,
     #[serde(default)]
@@ -1086,15 +1079,6 @@ pub fn ends_with_ignore_case(s: &str, suffix: &str) -> bool {
     eq_ignore_case(&s[start_idx..], suffix)
 }
 
-#[inline]
-pub fn starts_with_ignore_ascii_case(s: &str, prefix: &str) -> bool {
-    starts_with_ignore_case(s, prefix)
-}
-
-#[inline]
-pub fn ends_with_ignore_ascii_case(s: &str, suffix: &str) -> bool {
-    ends_with_ignore_case(s, suffix)
-}
 
 /// Compare two strings ignoring Unicode case and internal whitespace.
 /// Guaranteed 0 heap allocation.
@@ -1316,11 +1300,6 @@ impl RuleRegistry {
         self.len() == 0
     }
 
-    /// Alias for get(lang) returning language profile.
-    #[inline]
-    pub fn profile(&self, lang: &str) -> Option<Arc<LanguageRuleProfile>> {
-        self.get(lang)
-    }
 
     /// Check if tokens around hyphen qualify for morphological protection without heap allocation.
     #[inline]
@@ -2376,22 +2355,16 @@ version = "1.0.0"
 word_boundary = false
 
 [detection]
-script = "Japanese"
-unique_script = true
 unique_chars = ['ぁ', 'ぃ']
 distinctive_chars = ['の', 'は']
-exclude_chars = ['a', 'b']
 whole_words = ["こんにちは"]
 substring_terms = ["です"]
 "#;
         let profile_ja = LanguageRuleProfile::from_toml_str(toml_with_detection).unwrap();
         assert!(profile_ja.detection.is_some());
         let det = profile_ja.detection.unwrap();
-        assert_eq!(det.script.as_deref(), Some("Japanese"));
-        assert!(det.unique_script);
         assert_eq!(det.unique_chars, vec!['ぁ', 'ぃ']);
         assert_eq!(det.distinctive_chars, vec!['の', 'は']);
-        assert_eq!(det.exclude_chars, vec!['a', 'b']);
         assert_eq!(det.whole_words, vec!["こんにちは".to_string()]);
         assert_eq!(det.substring_terms, vec!["です".to_string()]);
     }

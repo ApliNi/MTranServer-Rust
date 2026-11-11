@@ -9,7 +9,6 @@ dependencies = [
  "axum",
  "clap",
  "futures",
- "hyper",
  "lru",
  "memmap2",
  "mimalloc",
@@ -27,7 +26,6 @@ dependencies = [
  "tracing-subscriber",
  "unicode-segmentation",
  "whatlang",
- "whichlang",
  "zstd",
 ]
 
@@ -997,14 +995,11 @@ name = "mtranserver-test"
 version = "0.1.0"
 dependencies = [
  "MTranServer-Rust",
- "axum",
  "clap",
- "parking_lot",
  "serde",
  "serde_json",
  "tokio",
  "toml",
- "tower",
 ]
 
 [[package]]
@@ -1812,16 +1807,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-serde"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
-dependencies = [
- "serde",
- "tracing-core",
-]
-
-[[package]]
 name = "tracing-subscriber"
 version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1831,15 +1816,12 @@ dependencies = [
  "nu-ansi-term",
  "once_cell",
  "regex-automata",
- "serde",
- "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
- "tracing-serde",
 ]
 
 [[package]]
@@ -2032,12 +2014,6 @@ dependencies = [
  "hashbrown 0.14.5",
  "once_cell",
 ]
-
-[[package]]
-name = "whichlang"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b9aa3ad29c3d08283ac6b769e3ec15ad1ddb88af7d2e9bc402c574973b937e7"
 
 [[package]]
 name = "winapi-util"

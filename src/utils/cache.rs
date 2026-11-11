@@ -195,15 +195,6 @@ pub fn get(key: CacheKey) -> Option<std::sync::Arc<str>> {
     Some(val)
 }
 
-/// Read a value from the cache by key. Returns None if disabled or missing.
-///
-/// On cache hit, clones the `Arc<str>` reference directly without heap allocation
-/// or string copying. Alias for [`get`].
-#[inline]
-pub fn read_cached(key: CacheKey) -> Option<std::sync::Arc<str>> {
-    get(key)
-}
-
 /// Write a value into the cache under a precomputed key.
 pub fn set(key: CacheKey, result: impl Into<std::sync::Arc<str>>) {
     if !enabled() {
@@ -214,12 +205,6 @@ pub fn set(key: CacheKey, result: impl Into<std::sync::Arc<str>>) {
     if let Some(cache) = guard.as_mut() {
         cache.put(key, val);
     }
-}
-
-/// Insert a value into the cache under a precomputed key. Alias for [`set`].
-#[inline]
-pub fn insert(key: CacheKey, result: impl Into<std::sync::Arc<str>>) {
-    set(key, result);
 }
 
 /// Remove a specific entry from the cache by key. Returns true if the key was present.
@@ -233,12 +218,6 @@ pub fn invalidate(key: CacheKey) -> bool {
     } else {
         false
     }
-}
-
-/// Write a value into the cache under a precomputed key.
-#[inline]
-pub fn write_cached(result: &str, key: CacheKey) {
-    set(key, result);
 }
 
 /// Remove all cached entries across all shards.
@@ -364,9 +343,9 @@ mod tests {
         assert_eq!(k_v1, k_v1_again);
 
         // Test version sync triggers cache eviction
-        write_cached("result_v1", k_v1);
+        set(k_v1, "result_v1");
         assert!(contains(k_v1));
-        assert_eq!(read_cached(k_v1).as_deref(), Some("result_v1"));
+        assert_eq!(get(k_v1).as_deref(), Some("result_v1"));
 
         // Syncing with same version does not flush
         assert!(!sync_rules_version(1));
@@ -427,7 +406,6 @@ mod tests {
         set(k1, "value_1");
         assert!(contains(k1));
         assert_eq!(get(k1).as_deref(), Some("value_1"));
-        assert_eq!(read_cached(k1).as_deref(), Some("value_1"));
         assert_eq!(len(), 1);
         assert!(!is_empty());
 
@@ -453,19 +431,19 @@ mod tests {
         let _lock = setup_test_cache();
         assert!(enabled());
         let key = compute_key(&["en", "zh", "zero copy test string"]);
-        write_cached("零拷贝测试结果", key);
+        set(key, "零拷贝测试结果");
 
-        let cached1 = read_cached(key).expect("cache should hit");
+        let cached1 = get(key).expect("cache should hit");
         assert_eq!(&*cached1, "零拷贝测试结果");
         assert_eq!(std::sync::Arc::strong_count(&cached1), 2);
 
-        let cached2 = read_cached(key).expect("cache should hit again");
+        let cached2 = get(key).expect("cache should hit again");
         assert_eq!(&*cached2, "零拷贝测试结果");
         assert_eq!(std::sync::Arc::strong_count(&cached2), 3);
         assert!(std::sync::Arc::ptr_eq(&cached1, &cached2));
 
         let missing_key = compute_key(&["en", "zh", "nonexistent"]);
-        assert!(read_cached(missing_key).is_none());
+        assert!(get(missing_key).is_none());
     }
     #[test]
     fn test_cache_enabled_atomic_flag() {

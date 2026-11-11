@@ -301,33 +301,17 @@ impl Tensor2 {
         out
     }
 
-    /// Quantized matmul with an optional broadcast bias fused into the store.
+    /// Quantized matmul with an optional broadcast bias fused into the store,
+    /// writing into the caller-owned buffer `out`.
     ///
     /// `self` is `[m, k]` f32 activations.  `w` is `[n, k]` i8 weights
     /// (row-major, one output neuron's weight vector per row — the on-disk
     /// layout for non-Wemb tensors).  Activations are quantised on-the-fly
     /// with `qa`, the result is dequantised by `qa * w.quant_mult`.
     ///
-    /// Uses int32 accumulation (no saturation) for correctness.
-    #[inline]
-    pub fn quantized_matmul_biased(
-        &self,
-        w: &Quant8Tensor,
-        qa: f32,
-        bias: Option<&Tensor2>,
-    ) -> Tensor2 {
-        let mut out = Tensor2 {
-            shape: [0, 0],
-            data: Vec::new(),
-        };
-        self.quantized_matmul_biased_into(w, qa, bias, &mut out);
-        out
-    }
-
-    /// Buffer-reusing variant of [`Self::quantized_matmul_biased`]: resizes
-    /// and overwrites `out`'s data so hot callers (the decode loop) avoid
-    /// per-step output allocations. Numerically identical to
-    /// [`Self::quantized_matmul_biased`].
+    /// Uses int32 accumulation (no saturation) for correctness. Resizes and
+    /// overwrites `out`'s data so hot callers (the decode loop) avoid per-step
+    /// output allocations.
     #[inline]
     pub fn quantized_matmul_biased_into(
         &self,
@@ -703,11 +687,6 @@ impl Tensor2 {
     }
 
     #[inline]
-    pub fn add(&self, other: &Tensor2) -> Tensor2 {
-        ops::add(self, other)
-    }
-
-    #[inline]
     pub fn add_into(&self, other: &Tensor2, out: &mut Tensor2) {
         ops::add_into(self, other, out)
     }
@@ -725,11 +704,6 @@ impl Tensor2 {
     #[inline]
     pub fn softmax_inplace(&mut self) {
         ops::softmax_inplace(self)
-    }
-
-    #[inline]
-    pub fn relu(&self) -> Tensor2 {
-        ops::relu(self)
     }
 
     #[inline]
@@ -755,11 +729,6 @@ impl Tensor2 {
     #[inline]
     pub fn gelu_inplace(&mut self) {
         ops::gelu_inplace(self)
-    }
-
-    #[inline]
-    pub fn sigmoid(&self) -> Tensor2 {
-        ops::sigmoid(self)
     }
 
     #[inline]

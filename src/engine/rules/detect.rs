@@ -13,15 +13,6 @@
 
 use super::{CompiledDetectionModel, RuleRegistry};
 
-#[inline]
-pub fn is_traditional_char(c: char) -> bool {
-    RuleRegistry::global().detection_model().is_zh_hant_char(c)
-}
-
-#[inline]
-pub fn is_simplified_char(c: char) -> bool {
-    RuleRegistry::global().detection_model().is_zh_hans_char(c)
-}
 
 /// Distinguish Traditional Chinese from Simplified Chinese.
 pub fn distinguish_chinese_variant(text: &str) -> &'static str {
@@ -93,15 +84,6 @@ pub fn cmp_ignore_unicode_case(a: &str, b: &str) -> std::cmp::Ordering {
             }
         }
     }
-}
-
-/// Zero-heap-allocation case-insensitive string equality across full Unicode.
-#[inline]
-pub fn eq_ignore_unicode_case(a: &str, b: &str) -> bool {
-    if a.len() == b.len() && a.eq_ignore_ascii_case(b) {
-        return true;
-    }
-    cmp_ignore_unicode_case(a, b) == std::cmp::Ordering::Equal
 }
 
 /// Minimal compile-time read-only greetings table for ultra-short polite phrases.
@@ -196,7 +178,7 @@ pub fn lookup_greeting(text: &str) -> Option<&'static str> {
         return None;
     }
     for &(greeting, lang) in CORE_GREETINGS {
-        if eq_ignore_unicode_case(trimmed, greeting) {
+        if super::eq_ignore_case(trimmed, greeting) {
             return Some(lang);
         }
     }
@@ -1217,27 +1199,6 @@ pub fn map_detected_code_to_static(code: &str) -> &'static str {
         _ => "en",
     }
 }
-#[inline]
-fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    if haystack.len() < needle.len() {
-        return false;
-    }
-    let n_bytes = needle.as_bytes();
-    let first = n_bytes[0].to_ascii_lowercase();
-    let h_bytes = haystack.as_bytes();
-    let max_idx = h_bytes.len() - n_bytes.len();
-    for i in 0..=max_idx {
-        if h_bytes[i].to_ascii_lowercase() == first
-            && h_bytes[i..i + n_bytes.len()].eq_ignore_ascii_case(n_bytes)
-        {
-            return true;
-        }
-    }
-    false
-}
 
 #[inline]
 fn match_latin_lexical(
@@ -1297,7 +1258,7 @@ fn match_latin_lexical(
 
     for (phrase, lang, prio) in latin.latin_lexical_phrases.iter() {
         if best.map_or(true, |(p, _)| *prio < p)
-            && (text.contains(phrase.as_str()) || contains_ignore_ascii_case(text, phrase.as_str()))
+            && (text.contains(phrase.as_str()) || contains_ascii_ci(text, phrase.as_str()))
         {
             if *prio == 0 {
                 return Some(lang);

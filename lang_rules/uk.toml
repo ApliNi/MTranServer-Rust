@@ -81,5 +81,4 @@ conditional_end_prefixes = [
 [detection]
 unique_chars = ['ї', 'є', 'ґ', 'Ї', 'Є', 'Ґ']
 distinctive_chars = ['і', 'І']
-exclude_chars = ['ы', 'э', 'ё', 'Ы', 'Э', 'Ё']
 substring_terms = ["Україна", "україн", "справи", "Міністерство"]

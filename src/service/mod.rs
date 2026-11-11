@@ -1253,7 +1253,7 @@ async fn translate_segment_with_engines(
                 )
             });
             if let Some(key) = cache_key {
-                if let Some(cached) = crate::utils::cache::read_cached(key) {
+                if let Some(cached) = crate::utils::cache::get(key) {
                     return Ok((TranslatedText::Cached(cached), Duration::ZERO));
                 }
             }
@@ -1266,7 +1266,7 @@ async fn translate_segment_with_engines(
             if let Some(key) = cache_key {
                 match &final_text {
                     TranslatedText::Cached(arc) => crate::utils::cache::set(key, arc.clone()),
-                    TranslatedText::String(s) => crate::utils::cache::write_cached(s, key),
+                    TranslatedText::String(s) => crate::utils::cache::set(key, s.as_str()),
                 }
             }
             Ok((final_text, d1 + d2))
@@ -1314,7 +1314,7 @@ async fn translate_single_language_text_with_engine(
         )
     });
     if let Some(key) = cache_key {
-        if let Some(cached) = crate::utils::cache::read_cached(key) {
+        if let Some(cached) = crate::utils::cache::get(key) {
             return Ok((TranslatedText::Cached(cached), Duration::ZERO));
         }
     }
@@ -1336,7 +1336,7 @@ async fn translate_single_language_text_with_engine(
         ServiceError::Internal(format!("Translation worker panicked: {}", e))
     })?;
     if let Some(key) = cache_key {
-        crate::utils::cache::write_cached(&result, key);
+        crate::utils::cache::set(key, result.as_str());
     }
     Ok((TranslatedText::String(result), duration))
 }
@@ -1405,7 +1405,7 @@ pub async fn translate_long_text_with_engines(
                 &[from_lang, to_lang, &sent.text, if effective_markup { "1" } else { "0" }],
                 rules_version,
             );
-            if let Some(cached) = crate::utils::cache::read_cached(key) {
+            if let Some(cached) = crate::utils::cache::get(key) {
                 results[i] = Some(TranslatedText::Cached(cached));
                 continue;
             }

@@ -41,8 +41,6 @@ pub struct CompiledCyrillicDetection {
     pub sr_unique: Box<[char]>,
     /// Bulgarian distinctive characters (e.g. ъ).
     pub bg_distinctive: Box<[char]>,
-    /// Bulgarian exclude characters.
-    pub bg_exclude: Box<[char]>,
     /// Russian distinctive characters (e.g. ы, э, ё).
     pub ru_distinctive: Box<[char]>,
     /// Ukrainian distinctive characters (e.g. і).
@@ -78,10 +76,6 @@ impl CompiledCyrillicDetection {
         self.bg_distinctive.binary_search(&c).is_ok()
     }
 
-    #[inline]
-    pub fn is_bg_exclude(&self, c: char) -> bool {
-        self.bg_exclude.binary_search(&c).is_ok()
-    }
 
     #[inline]
     pub fn is_ru_distinctive(&self, c: char) -> bool {
@@ -155,17 +149,6 @@ pub struct CompiledLatinDetection {
     pub scand_a_o_umlaut: Box<[char]>,
     pub ro_words: Box<[String]>,
     pub pt_terms: Box<[String]>,
-    pub nn_words: Box<[String]>,
-    pub nn_terms: Box<[String]>,
-    pub nb_terms: Box<[String]>,
-    pub da_terms: Box<[String]>,
-    pub gl_terms: Box<[String]>,
-    pub gl_words: Box<[String]>,
-    pub eu_terms: Box<[String]>,
-    pub sq_terms: Box<[String]>,
-    pub af_terms: Box<[String]>,
-    pub ms_terms: Box<[String]>,
-    pub id_terms: Box<[String]>,
     pub scand_nb_terms: Box<[String]>,
     pub scand_da_terms: Box<[String]>,
     pub scand_sv_terms: Box<[String]>,
@@ -329,29 +312,6 @@ impl CompiledDetectionModel {
         self.zh_hant_distinctive.binary_search(&c).is_ok()
     }
 
-    /// Alias for Simplified Chinese distinctive character check.
-    #[inline]
-    pub fn is_simplified_char(&self, c: char) -> bool {
-        self.is_zh_hans_char(c)
-    }
-
-    /// Alias for Traditional Chinese distinctive character check.
-    #[inline]
-    pub fn is_traditional_char(&self, c: char) -> bool {
-        self.is_zh_hant_char(c)
-    }
-
-    /// Alias for Japanese unique Han character check.
-    #[inline]
-    pub fn is_kokuji(&self, c: char) -> bool {
-        self.is_ja_unique_han(c)
-    }
-
-    /// Alias for Japanese unique Han character check.
-    #[inline]
-    pub fn is_shinjitai(&self, c: char) -> bool {
-        self.is_ja_unique_han(c)
-    }
     /// Compile detection model from active language rule profiles.
     pub fn from_profiles(profiles: &HashMap<String, Arc<LanguageRuleProfile>>) -> Self {
         // Helper to extract sorted unique chars
@@ -398,7 +358,6 @@ impl CompiledDetectionModel {
         let mut be_unique = Vec::new();
         let mut sr_unique = Vec::new();
         let mut bg_distinctive = Vec::new();
-        let mut bg_exclude = Vec::new();
         let mut ru_distinctive = Vec::new();
         let mut uk_distinctive = Vec::new();
         let mut uk_terms = Vec::new();
@@ -428,7 +387,6 @@ impl CompiledDetectionModel {
         if let Some(prof) = profiles.get("bg") {
             if let Some(det) = &prof.detection {
                 bg_distinctive.extend_from_slice(&det.distinctive_chars);
-                bg_exclude.extend_from_slice(&det.exclude_chars);
                 bg_terms.extend_from_slice(&det.substring_terms);
             }
         }
@@ -443,7 +401,6 @@ impl CompiledDetectionModel {
             be_unique: sort_chars(be_unique),
             sr_unique: sort_chars(sr_unique),
             bg_distinctive: sort_chars(bg_distinctive),
-            bg_exclude: sort_chars(bg_exclude),
             ru_distinctive: sort_chars(ru_distinctive),
             uk_distinctive: sort_chars(uk_distinctive),
             uk_terms: uk_terms.into_boxed_slice(),
@@ -757,7 +714,7 @@ impl CompiledDetectionModel {
             }
         }
         latin_lexical_words.sort_by(|a, b| super::detect::cmp_ignore_unicode_case(&a.0, &b.0));
-        latin_lexical_words.dedup_by(|a, b| super::detect::eq_ignore_unicode_case(&a.0, &b.0));
+        latin_lexical_words.dedup_by(|a, b| super::eq_ignore_case(&a.0, &b.0));
         let latin = CompiledLatinDetection {
             vi_chars: sort_chars(vi_chars),
             is_chars: sort_chars(is_chars),
@@ -776,24 +733,13 @@ impl CompiledDetectionModel {
             fr_unique: sort_chars(fr_unique),
             scand_ae_oe: sort_chars(scand_ae_oe),
             scand_a_o_umlaut: sort_chars(scand_a_o_umlaut),
-
             ro_words: ro_words.into_boxed_slice(),
             pt_terms: pt_terms.into_boxed_slice(),
-            nn_words: nn_words.into_boxed_slice(),
-            nn_terms: nn_terms.into_boxed_slice(),
-            nb_terms: nb_terms.into_boxed_slice(),
-            da_terms: da_terms.into_boxed_slice(),
-            gl_terms: gl_terms.into_boxed_slice(),
-            gl_words: gl_words.into_boxed_slice(),
-            eu_terms: eu_terms.into_boxed_slice(),
-            sq_terms: sq_terms.into_boxed_slice(),
-            af_terms: af_terms.into_boxed_slice(),
-            ms_terms: ms_terms.into_boxed_slice(),
-            id_terms: id_terms.into_boxed_slice(),
             scand_nb_terms: scand_nb_terms.into_boxed_slice(),
             scand_da_terms: scand_da_terms.into_boxed_slice(),
             scand_sv_terms: scand_sv_terms.into_boxed_slice(),
             scand_sv_words: scand_sv_words.into_boxed_slice(),
+
             latin_lexical_words: latin_lexical_words.into_boxed_slice(),
             latin_lexical_phrases: latin_lexical_phrases.into_boxed_slice(),
         };

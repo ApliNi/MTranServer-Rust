@@ -23,7 +23,4 @@ tokio = { version = "1", features = [
     "sync",
     "fs",
 ] }
-parking_lot = "0.12"
 clap = { version = "4", features = ["derive", "env"] }
-axum = { version = "0.8", features = ["macros"] }
-tower = { version = "0.5", features = ["util"] }

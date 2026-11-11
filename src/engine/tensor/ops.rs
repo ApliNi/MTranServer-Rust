@@ -770,16 +770,6 @@ pub fn fused_add_layer_norm_in_place(
 // ===========================================================================
 
 #[inline]
-pub fn add(a: &Tensor2, b: &Tensor2) -> Tensor2 {
-    let mut out = Tensor2 {
-        shape: [0, 0],
-        data: Vec::new(),
-    };
-    add_into(a, b, &mut out);
-    out
-}
-
-#[inline]
 pub fn add_into(a: &Tensor2, b: &Tensor2, out: &mut Tensor2) {
     let d = a.shape[1];
     if (b.shape[0] == 1 || b.shape[0] == 0) && b.shape[1] == d && b.data.len() == d {
@@ -1438,13 +1428,6 @@ pub fn relu_f32(x: f32) -> f32 {
 }
 
 #[inline]
-pub fn relu(x: &Tensor2) -> Tensor2 {
-    let mut out = x.clone();
-    relu_inplace(&mut out);
-    out
-}
-
-#[inline]
 pub fn relu_into(x: &Tensor2, out: &mut Tensor2) {
     unsafe {
         out.prepare_uninit(x.data.len());
@@ -1662,13 +1645,6 @@ pub unsafe fn gelu_into_avx2(src: &[f32], dst: &mut [f32]) {
 #[inline]
 pub fn sigmoid_f32(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
-}
-
-#[inline]
-pub fn sigmoid(x: &Tensor2) -> Tensor2 {
-    let mut out = x.clone();
-    sigmoid_inplace(&mut out);
-    out
 }
 
 #[inline]

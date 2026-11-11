@@ -79,5 +79,4 @@ conditional_end_prefixes = [
 
 [detection]
 distinctive_chars = ['ъ', 'Ъ']
-exclude_chars = ['ы', 'э', 'ё', 'Ї', 'Є', 'Ў']
 substring_terms = ["България", "български", "съвет", "Всички", "граждани", "обслужване", "днес"]

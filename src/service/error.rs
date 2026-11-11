@@ -15,14 +15,8 @@ pub enum ServiceError {
     /// Model file or language pair not found in registry / disk.
     ModelNotFound(String),
 
-    /// Requested language code is not supported.
-    LanguageNotSupported(String),
-
     /// Internal engine error (model loading, computation, shortlist, vocab).
     Engine(EngineError),
-
-    /// Operation timed out.
-    Timeout(String),
 
     /// Language detection failed on source text.
     LanguageDetectionFailed(String),
@@ -37,7 +31,7 @@ pub enum ServiceError {
 impl ServiceError {
     /// Whether this error represents a transient failure that may be retried.
     pub fn is_retryable(&self) -> bool {
-        matches!(self, ServiceError::Transient(_) | ServiceError::Timeout(_))
+        matches!(self, ServiceError::Transient(_))
     }
 
     /// Construct a retryable transient error.
@@ -45,18 +39,11 @@ impl ServiceError {
         ServiceError::Transient(msg.into())
     }
 
-    /// Construct a permanent internal error.
-    pub fn permanent(msg: impl Into<String>) -> Self {
-        ServiceError::Internal(msg.into())
-    }
-
     /// Maps domain service error to corresponding HTTP status code.
     pub fn status_code(&self) -> StatusCode {
         match self {
             ServiceError::ModelNotFound(_) => StatusCode::NOT_FOUND,
-            ServiceError::LanguageNotSupported(_) => StatusCode::BAD_REQUEST,
             ServiceError::LanguageDetectionFailed(_) => StatusCode::BAD_REQUEST,
-            ServiceError::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
             ServiceError::Transient(_) => StatusCode::SERVICE_UNAVAILABLE,
             ServiceError::Engine(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServiceError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -66,11 +53,6 @@ impl ServiceError {
     /// Return the error message description.
     pub fn error_message(&self) -> String {
         self.to_string()
-    }
-
-    /// Convert into HTTP status code and error message pair.
-    pub fn to_http_response(&self) -> (StatusCode, String) {
-        (self.status_code(), self.error_message())
     }
 }
 
@@ -84,15 +66,7 @@ impl fmt::Display for ServiceError {
                     write!(f, "Model not found: {msg}")
                 }
             }
-            ServiceError::LanguageNotSupported(msg) => {
-                if msg.starts_with("Language not supported") {
-                    write!(f, "{msg}")
-                } else {
-                    write!(f, "Language not supported: {msg}")
-                }
-            }
             ServiceError::Engine(err) => write!(f, "Engine error: {err}"),
-            ServiceError::Timeout(msg) => write!(f, "Timeout: {msg}"),
             ServiceError::LanguageDetectionFailed(msg) => write!(f, "{msg}"),
             ServiceError::Transient(msg) => write!(f, "Transient error: {msg}"),
             ServiceError::Internal(msg) => write!(f, "{msg}"),
@@ -151,7 +125,6 @@ impl From<ServiceError> for ApiError {
     fn from(err: ServiceError) -> Self {
         match err {
             ServiceError::ModelNotFound(_) => ApiError::NotFound(err.to_string()),
-            ServiceError::LanguageNotSupported(msg) => ApiError::BadRequest(msg),
             ServiceError::LanguageDetectionFailed(msg) => ApiError::BadRequest(msg),
             _ => ApiError::Internal(err.to_string()),
         }
