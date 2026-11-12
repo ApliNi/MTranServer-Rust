@@ -1,6 +1,6 @@
+use serde::de::DeserializeOwned;
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::de::DeserializeOwned;
 
 /// Returns the path to the `cases` directory located inside this test crate.
 pub fn cases_dir() -> PathBuf {
@@ -21,6 +21,15 @@ pub fn load_json<T: DeserializeOwned>(rel_path: impl AsRef<Path>) -> T {
         .unwrap_or_else(|err| panic!("Failed to parse JSON test case from {:?}: {}", path, err))
 }
 
+/// Reads and parses a YAML test case fixture.
+pub fn load_yaml<T: DeserializeOwned>(rel_path: impl AsRef<Path>) -> T {
+    let path = resolve_case_path(rel_path.as_ref());
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("Failed to read YAML test case from {:?}: {}", path, err));
+    serde_yaml::from_str(&content)
+        .unwrap_or_else(|err| panic!("Failed to parse YAML test case from {:?}: {}", path, err))
+}
+
 /// Reads and parses a TOML test case fixture.
 pub fn load_toml<T: DeserializeOwned>(rel_path: impl AsRef<Path>) -> T {
     let path = resolve_case_path(rel_path.as_ref());
@@ -37,7 +46,7 @@ pub fn load_text(rel_path: impl AsRef<Path>) -> String {
         .unwrap_or_else(|err| panic!("Failed to read text test fixture from {:?}: {}", path, err))
 }
 
-/// Loads all test cases from the standard regression fixture (`test/cases/regression.json`).
+/// Loads all test cases from the standard regression fixture (`test/cases/regression.yml`).
 pub fn load_regression_cases() -> Vec<crate::regression::TestCase> {
-    load_json("regression.json")
+    load_yaml("regression.yml")
 }

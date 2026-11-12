@@ -1,8 +1,11 @@
-//! Translation quality regression runner.
+//! Translation and language detection quality regression runner.
 //!
-//! Re-translates test cases from `test/cases/regression.json` and updates
-//! the `output` field in place so differences can be inspected via `git diff`.
+//! Evaluates test cases from `test/cases/regression.yml`, tracking source language
+//! (`lang`), detected language (`detected`), input (`input`), and common target
+//! language multi-lingual output mappings (`output`). Re-translates cases and updates
+//! the corpus in place so differences can be inspected via `git diff`.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Once;
@@ -14,31 +17,39 @@ use mtranserver_lib::{engine, models, service, utils};
 
 static SERVICE_INIT: Once = Once::new();
 
+/// Defined common target languages for regression translation.
+pub const COMMON_LANGUAGES: &[&str] = &[
+    "zh-Hans", "zh-Hant", "en", "ja", "ko", "de", "fr", "es", "ru",
+];
+
 /// A single translation regression test case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestCase {
-    pub target: String,
+    pub lang: String,
+    #[serde(default, alias = "detected_language", alias = "detected_lang")]
+    pub detected: String,
     pub input: String,
-    pub output: String,
+    #[serde(default)]
+    pub output: BTreeMap<String, String>,
 }
 
-/// Returns the default path to corpus: `test/cases/regression.json`.
+/// Returns the default path to corpus: `test/cases/regression.yml`.
 pub fn default_corpus_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("cases")
-        .join("regression.json")
+        .join("regression.yml")
 }
 
-/// Loads regression test cases from a JSON file.
+/// Loads regression test cases from a YAML file.
 pub fn load_cases(path: impl AsRef<Path>) -> Result<Vec<TestCase>, String> {
     let path = path.as_ref();
     let content = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read regression cases from {:?}: {}", path, e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse regression cases JSON {:?}: {}", path, e))
+    serde_yaml::from_str(&content)
+        .map_err(|e| format!("Failed to parse regression cases YAML {:?}: {}", path, e))
 }
 
-/// Saves regression test cases to a JSON file.
+/// Saves regression test cases to a YAML file.
 pub fn save_cases(path: impl AsRef<Path>, cases: &[TestCase]) -> Result<(), String> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
@@ -47,9 +58,9 @@ pub fn save_cases(path: impl AsRef<Path>, cases: &[TestCase]) -> Result<(), Stri
                 .map_err(|e| format!("Failed to create directory {:?}: {}", parent, e))?;
         }
     }
-    let json = serde_json::to_string_pretty(cases)
+    let yaml = serde_yaml::to_string(cases)
         .map_err(|e| format!("Failed to serialize regression cases: {}", e))?;
-    fs::write(path, json.as_bytes())
+    fs::write(path, yaml.as_bytes())
         .map_err(|e| format!("Failed to write regression cases to {:?}: {}", path, e))
 }
 
@@ -113,11 +124,27 @@ pub async fn init_test_environment() -> Result<(), String> {
     models::init_records().await.map_err(|e| e.to_string())
 }
 
-/// Translates text using the real Marian translation service with automatic language detection.
-pub async fn translate_case(target: &str, input: &str) -> Result<String, String> {
-    service::translate_with_pivot("auto", target, input)
+/// Detects source language for a regression test case.
+pub async fn detect_case_language(input: &str) -> String {
+    setup_test_service();
+    service::detector::detect_language(input).await
+}
+
+/// Translates text using the real Marian translation service with automatic language detection,
+/// returning both translated text and detected source language.
+pub async fn translate_case_with_detected(
+    target: &str,
+    input: &str,
+) -> Result<(String, String), String> {
+    service::translate_with_pivot_detected("auto", target, input)
         .await
         .map_err(|e| format!("Translation failed: {:?}", e))
+}
+
+/// Translates text using the real Marian translation service with automatic language detection.
+pub async fn translate_case(target: &str, input: &str) -> Result<String, String> {
+    let (output, _) = translate_case_with_detected(target, input).await?;
+    Ok(output)
 }
 
 /// Deterministic mock translation for lightweight CI and unit testing without local models.
@@ -125,18 +152,26 @@ pub fn mock_translate_case(target: &str, input: &str) -> String {
     format!("[{}:{}]", target, input.trim())
 }
 
-/// Re-translates all cases in `path` and updates the `output` field in place.
+/// Re-translates all cases in `path` and updates `detected` and `output` fields in place.
 pub async fn update_cases_file(path: impl AsRef<Path>, use_mock: bool) -> Result<usize, String> {
     let path = path.as_ref();
     let mut cases = load_cases(path)?;
 
     for case in &mut cases {
-        let actual = if use_mock {
-            mock_translate_case(&case.target, &case.input)
-        } else {
-            translate_case(&case.target, &case.input).await?
-        };
-        case.output = actual;
+        case.detected = detect_case_language(&case.input).await;
+        let mut outputs = BTreeMap::new();
+        for &target in COMMON_LANGUAGES {
+            if target == case.lang || target == case.detected {
+                continue;
+            }
+            let translated = if use_mock {
+                mock_translate_case(target, &case.input)
+            } else {
+                translate_case(target, &case.input).await?
+            };
+            outputs.insert(target.to_string(), translated);
+        }
+        case.output = outputs;
     }
 
     save_cases(path, &cases)?;

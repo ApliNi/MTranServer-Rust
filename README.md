@@ -138,7 +138,7 @@ data/
 
 该文件包含一些测试用例, 并将翻译结果一并保存在该文件中, 以便后续对比翻译质量变化.
 
-https://github.com/ApliNi/MTranServer-Rust/commits/main/test/cases/regression.json
+https://github.com/ApliNi/MTranServer-Rust/commits/main/test/cases/regression.yml
 
 ### 已知问题
 
